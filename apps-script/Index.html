@@ -248,12 +248,12 @@ function telaLogin(msg, aba) {
     <div class="lg-t"><button type="button" data-aba="in" aria-pressed="${!up}">Entrar</button><button type="button" data-aba="up" aria-pressed="${up}">Criar acesso</button></div>
     <form class="lg-f" id="lgf" novalidate>
       <div id="lgmsg">${msg ? `<div class="msgbox ${msg.ok ? 'ok' : 'er'}">${esc(msg.t)}</div>` : ''}</div>
-      ${up ? '<label class="f">Nome completo<input name="nome" autocomplete="name"></label><label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel"></label>' : ''}
+      ${up ? '<label class="f">Nome completo<input name="nome" autocomplete="name"></label><label class="f">E-mail (para receber o aviso de aprovação)<input name="email" type="email" autocomplete="email" autocapitalize="none"></label><label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel"></label>' : ''}
       <label class="f">Login<input name="login" autocapitalize="none" autocomplete="username" inputmode="email" placeholder="seu e-mail ou ex.: joao.silva"></label>
       <label class="f">Senha<input name="senha" type="password" autocomplete="${up ? 'new-password' : 'current-password'}"></label>
       ${up ? '<label class="f">Repita a senha<input name="senha2" type="password" autocomplete="new-password"></label>' : ''}
       <button class="btn pr" type="submit">${up ? 'Enviar cadastro para aprovação' : 'Entrar'}</button>
-      <p class="lg-n">${up ? 'O administrador aprova seu acesso e define quais revendas e setores você vai ver.' : 'Ainda não tem acesso? Toque em <b>Criar acesso</b>.'}</p>
+      <p class="lg-n">${up ? 'Quando o administrador aprovar, você recebe um e-mail com o link de acesso.' : 'Ainda não tem acesso? Toque em <b>Criar acesso</b>.'}</p>
     </form></div></div>`;
   root.querySelectorAll('[data-aba]').forEach(b => { b.onclick = () => telaLogin(null, b.dataset.aba); });
   $('#lgf').onsubmit = e => {
@@ -263,13 +263,14 @@ function telaLogin(msg, aba) {
     const erro = t => { box.innerHTML = `<div class="msgbox er">${esc(t)}</div>`; };
     if (!f.login || !f.senha) return erro('Preencha login e senha.');
     if (up && f.senha !== f.senha2) return erro('As senhas não conferem.');
+    if (up && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(f.email || '').trim())) return erro('Informe um e-mail válido para receber o aviso de aprovação.');
     bt.disabled = true; const h = bt.innerHTML; bt.innerHTML = '<span class="spin"></span> Aguarde…';
     (async () => {
       try {
         if (up) {
           const r = await call('registrar', f);
           if (r.primeiro) { entrar(await call('login', f)); toast('Você é o <b>administrador</b> do sistema.'); return; }
-          telaLogin({ ok: true, t: 'Cadastro enviado. Assim que o administrador aprovar, você já consegue entrar.' }, 'in');
+          telaLogin({ ok: true, t: 'Cadastro enviado. Quando o administrador aprovar, você recebe um e-mail e já consegue entrar.' }, 'in');
         } else entrar(await call('login', f));
       } catch (err) { erro(err.message); bt.disabled = false; bt.innerHTML = h; }
     })();
@@ -802,7 +803,7 @@ function desenhaUsuarios(m) {
   const U = S.users, pend = U.filter(u => u.status === 'PENDENTE'), out = U.filter(u => u.status !== 'PENDENTE');
   const esc2 = a => a.includes('*') ? 'todas' : a.join(', ') || '—';
   const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
-      <small>Login: ${esc(u.login)}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
+      <small>Login: ${esc(u.login)}${u.email && u.email !== u.login ? ' · ' + esc(u.email) : ''}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
       ${u.status !== 'PENDENTE' ? `<small>Revendas: ${esc(esc2(u.revendas))} · Setores: ${esc(esc2(u.setores))}</small>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       ${u.status === 'PENDENTE' ? `<button type="button" class="btn sm ok" data-u="abrir" data-id="${esc(u.id)}">Aprovar</button><button type="button" class="btn sm er" data-u="BLOQUEADO" data-id="${esc(u.id)}">Recusar</button>`
@@ -821,7 +822,7 @@ function desenhaUsuarios(m) {
       const f = b.closest('[data-form]');
       const pick = n => [...f.querySelectorAll(`[data-${n}]:checked`)].map(x => x.getAttribute('data-' + n));
       let rv = pick('rv'), sts = pick('st'); if (rv.includes('*')) rv = ['*']; if (sts.includes('*')) sts = ['*'];
-      return ocupado(b, async () => { await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv, setores: sts }); S.editUser = null; toast('Acesso salvo.'); vUsuarios(m); });
+      return ocupado(b, async () => { const r = await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv, setores: sts }); S.editUser = null; toast(r.emailEnviado ? `Acesso aprovado. E-mail enviado para <b>${esc(r.emailEnviado)}</b>.` : 'Acesso salvo.'); vUsuarios(m); });
     }
     if (a === 'reset') {
       if (!confirm('Gerar uma senha temporária para este usuário?')) return;

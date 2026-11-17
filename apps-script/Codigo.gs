@@ -11,7 +11,7 @@
 
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
-  Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso'],
+  Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
@@ -19,6 +19,7 @@ const ABAS = {
 
 const CFG_PADRAO = [
   ['EMPRESA', 'Revalle', 'Nome no cabeçalho dos PDFs'],
+  ['LINK_SISTEMA', 'https://revalle-logistica.github.io/escala-5x2/', 'Link enviado no e-mail de aprovação'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10', 'Horas diárias máximas na transição (8h + até 2h distribuídas na semana)'],
@@ -123,6 +124,9 @@ function prepararBase_(s) {
       sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).setNumberFormat('@');
       sh.getRange(1, 1, 1, ABAS[n].length).setValues([ABAS[n]]).setFontWeight('bold').setBackground('#0b2a6b').setFontColor('#ffffff');
       sh.setFrozenRows(1);
+    } else if (sh.getLastColumn() < ABAS[n].length) {
+      sh.getRange(1, 1, sh.getMaxRows(), ABAS[n].length).setNumberFormat('@');
+      sh.getRange(1, 1, 1, ABAS[n].length).setValues([ABAS[n]]).setFontWeight('bold').setBackground('#0b2a6b').setFontColor('#ffffff');
     }
   });
   ['Sheet1', 'Página1', 'Planilha1'].forEach(function (n) { const d = s.getSheetByName(n); if (d && s.getSheets().length > 1) s.deleteSheet(d); });
@@ -223,7 +227,7 @@ function hash_(senha, salt) {
 function novoSalt_() { return Utilities.getUuid().replace(/-/g, ''); }
 function normLogin_(l) { return String(l || '').trim().toLowerCase(); }
 function publico_(u) {
-  return { id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, status: u.status, revendas: lista_(u.revendas), setores: lista_(u.setores), telefone: u.telefone, criadoEm: u.criadoEm, ultimoAcesso: u.ultimoAcesso };
+  return { id: u.id, nome: u.nome, login: u.login, email: u.email, perfil: u.perfil, status: u.status, revendas: lista_(u.revendas), setores: lista_(u.setores), telefone: u.telefone, criadoEm: u.criadoEm, ultimoAcesso: u.ultimoAcesso };
 }
 
 function registrar_(d) {
@@ -231,12 +235,14 @@ function registrar_(d) {
   if (nome.length < 3) throw new Error('Informe seu nome completo.');
   if (!/^[a-z0-9._@+-]{3,60}$/.test(login)) throw new Error('Login: use seu e-mail ou um nome sem espaços (letras, números, ponto, hífen).');
   if (senha.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
+  const email = String(d.email || (login.indexOf('@') > 0 ? login : '')).trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Informe um e-mail válido: é por ele que você recebe o aviso de aprovação.');
   return comLock_(function () {
     const us = ler_('Usuarios');
     if (us.some(function (u) { return u.login === login; })) throw new Error('Esse login já existe. Escolha outro.');
     const primeiro = us.length === 0, salt = novoSalt_();
     const u = {
-      id: Utilities.getUuid(), nome: nome, login: login, telefone: String(d.telefone || '').trim(),
+      id: Utilities.getUuid(), nome: nome, login: login, telefone: String(d.telefone || '').trim(), email: email,
       senhaHash: hash_(senha, salt), salt: salt,
       perfil: primeiro ? 'ADMIN' : 'SUPERVISOR', status: primeiro ? 'ATIVO' : 'PENDENTE',
       revendas: primeiro ? '*' : '', setores: primeiro ? '*' : '', criadoEm: agora_(),
@@ -310,11 +316,38 @@ function aprovarUsuario_(adm, d) {
     u.perfil = perfil;
     u.revendas = perfil === 'ADMIN' ? '*' : rv.join(',');
     u.setores = perfil === 'ADMIN' ? '*' : st.join(',');
-    if (u.status === 'PENDENTE') { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
+    const novo = u.status === 'PENDENTE';
+    if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
     gravarLinha_('Usuarios', u);
+    if (novo) u._email = avisarAprovacao_(u, adm);
     log_(adm, '', 'aprovou/editou usuário', u.login + ' · ' + u.perfil + ' · ' + u.revendas + ' · ' + u.setores);
-    return publico_(u);
+    const r = publico_(u);
+    r.emailEnviado = u._email || '';
+    return r;
   });
+}
+/** E-mail ao supervisor quando o acesso é aprovado. Retorna o endereço usado ou '' se não enviou. */
+function avisarAprovacao_(u, adm) {
+  if (!u.email) return '';
+  const cfg = cfg_(), link = cfg.LINK_SISTEMA, h = h_;
+  const lst = s => { const a = lista_(s); return a.indexOf('*') >= 0 ? 'todas' : a.join(', '); };
+  const html = '<div style="font-family:Arial,sans-serif;max-width:520px;color:#0c1a33">' +
+    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">Escala 5x2 · ' + h(cfg.EMPRESA) + '</b></div>' +
+    '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
+    '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
+    '<p>Seu acesso ao sistema de escalas 5x2 foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
+    '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
+    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revendas: <b>' + h(lst(u.revendas)) + '</b><br>Setores: <b>' + h(lst(u.setores)) + '</b>') + '</p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir a Escala 5x2</a></p>' +
+    '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
+  try {
+    MailApp.sendEmail({ to: u.email, subject: 'Seu acesso à Escala 5x2 foi aprovado', htmlBody: html, name: 'Escala 5x2 · ' + cfg.EMPRESA });
+    log_(adm, '', 'e-mail de aprovação', u.email);
+    return u.email;
+  } catch (e) {
+    log_(adm, '', 'falha no e-mail de aprovação', u.email + ' · ' + e.message);
+    return '';
+  }
 }
 function statusUsuario_(adm, d) {
   if (d.id === adm.id) throw new Error('Você não pode bloquear o próprio acesso.');
