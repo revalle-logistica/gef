@@ -6,6 +6,12 @@
  * O acesso ao sistema é por login e senha próprios, aprovados pelo administrador.
  */
 
+/** Rode no editor se aparecer "não tem permissão para chamar UrlFetchApp": pede ao Google a autorização de acesso externo. */
+function autorizarAcessoExterno() {
+  const r = UrlFetchApp.fetch(String(cfg_().FERIAS_SISTEMA_URL || 'https://www.google.com'), { muteHttpExceptions: true });
+  Logger.log('Acesso externo autorizado. Resposta: ' + r.getResponseCode());
+}
+
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],

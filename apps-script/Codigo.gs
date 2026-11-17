@@ -9,6 +9,12 @@
  * O acesso ao sistema é por login e senha próprios, aprovados pelo administrador.
  */
 
+/** Rode no editor se aparecer "não tem permissão para chamar UrlFetchApp": pede ao Google a autorização de acesso externo. */
+function autorizarAcessoExterno() {
+  const r = UrlFetchApp.fetch(String(cfg_().FERIAS_SISTEMA_URL || 'https://www.google.com'), { muteHttpExceptions: true });
+  Logger.log('Acesso externo autorizado. Resposta: ' + r.getResponseCode());
+}
+
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
@@ -1166,11 +1172,6 @@ function diaBomPerto_(iso, fer) {
   if (!ruim(iso)) return iso;
   for (let k = 1; k < 31; k++) for (const s of [-k, k]) { const d = isoMaisDias(iso, s); if (d.slice(0, 7) === iso.slice(0, 7) && !ruim(d)) return d; }
   return iso;
-}
-/** Rode no editor se aparecer "não tem permissão para chamar UrlFetchApp": pede ao Google a autorização de acesso externo. */
-function autorizarAcessoExterno() {
-  const r = UrlFetchApp.fetch(String(cfg_().FERIAS_SISTEMA_URL || 'https://www.google.com'), { muteHttpExceptions: true });
-  Logger.log('Acesso externo autorizado. Resposta: ' + r.getResponseCode());
 }
 
 
