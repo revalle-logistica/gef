@@ -21,15 +21,14 @@ function publico_(u) {
 }
 
 function registrar_(d) {
-  const nome = String(d.nome || '').trim(), login = normLogin_(d.login), senha = String(d.senha || '');
+  const nome = String(d.nome || '').trim(), senha = String(d.senha || '');
+  const email = normLogin_(d.email || d.login), login = email; // o login é sempre o e-mail
   if (nome.length < 3) throw new Error('Informe seu nome completo.');
-  if (!/^[a-z0-9._@+-]{3,60}$/.test(login)) throw new Error('Login: use seu e-mail ou um nome sem espaços (letras, números, ponto, hífen).');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Informe um e-mail válido: ele será o seu login.');
   if (senha.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
-  const email = String(d.email || (login.indexOf('@') > 0 ? login : '')).trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Informe um e-mail válido: é por ele que você recebe o aviso de aprovação.');
   return comLock_(function () {
     const us = ler_('Usuarios');
-    if (us.some(function (u) { return u.login === login; })) throw new Error('Esse login já existe. Escolha outro.');
+    if (us.some(function (u) { return u.login === login; })) throw new Error('Esse e-mail já tem cadastro. Use Entrar ou peça uma nova senha ao administrador.');
     const primeiro = us.length === 0, salt = novoSalt_();
     const u = {
       id: Utilities.getUuid(), nome: nome, login: login, telefone: String(d.telefone || '').trim(), email: email,
@@ -52,7 +51,7 @@ function login_(d) {
   const u = ler_('Usuarios').filter(function (x) { return x.login === login; })[0];
   if (!u || hash_(senha, u.salt) !== u.senhaHash) {
     cache.put(kf, String(falhas + 1), 900);
-    throw new Error('Login ou senha incorretos.');
+    throw new Error('E-mail ou senha incorretos.');
   }
   cache.remove(kf);
   if (u.status === 'PENDENTE') throw new Error('Seu cadastro está aguardando a aprovação do administrador.');
