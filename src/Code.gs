@@ -92,6 +92,7 @@ function rotas_() {
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
+  atualizarDoDP: { f: atualizarDoDP_, admin: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },

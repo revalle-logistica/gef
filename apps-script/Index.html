@@ -174,6 +174,7 @@ main{max-width:1280px;margin:0 auto;padding:18px;display:grid;gap:16px}
 .tg2{font-weight:800;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--acs);color:var(--b8)}.tg2.adm{background:var(--sunk);color:var(--mut)}
 .pts{padding:0 16px 12px;display:grid;gap:6px}.pts b{font-size:13px;color:var(--b8)}
 a.btn{text-decoration:none}
+.mud{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--ln);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--sf)}.mud input{width:auto;margin-top:3px}.mud small{color:var(--mut)}.mud.dsl{border-color:#f3b7b0;background:var(--ers)}
 .dpt{display:grid;gap:6px}.dpt label{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--ln);border-radius:8px;padding:6px 10px;font-size:13px;background:var(--sf)}.dpt label.off{opacity:.6;background:var(--sunk)}.dpt select{width:auto}
 .ptab{display:grid;gap:6px;margin:8px 0 10px}.pr{display:flex;gap:8px;align-items:center}.pr input,.pr select{flex:1}.pr select{max-width:200px}.pk{flex:1;font-size:13px;font-weight:600}
 .lkb{border:1px solid var(--ln);background:var(--sf);border-radius:7px;padding:0 4px;margin-right:6px;cursor:pointer;font-size:13px;line-height:20px;filter:grayscale(1);opacity:.55;vertical-align:1px}.lkb:hover{opacity:1;filter:none}.lkb.on{filter:none;opacity:1;border-color:var(--ok);background:var(--oks)}
@@ -1086,10 +1087,18 @@ async function lerArquivo(file) {
   const amostra = abas.flatMap(a => a.valores.map(l => l.map(x => String(x == null ? '' : x).trim()).filter(Boolean).join(' | ')).filter(Boolean).slice(0, 8).map(l => a.nome + ': ' + l.slice(0, 160)));
   return { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (linhas "Departamento:" com os colaboradores abaixo).', amostra, via };
 }
+function blocoMudancas(muds) {
+  if (!muds.length) return '';
+  return `<section class="card" id="muds"><div class="card-h"><h3>Mudanças no DP <span class="hint">(${muds.length})</span></h3><button type="button" class="btn sm" data-mtodos>Marcar/desmarcar todas</button></div>
+    <div class="card-b" style="display:grid;gap:6px"><p class="hint">Colaboradores que já estão no sistema e mudaram no relatório. Nada muda sem você marcar. Supervisor e escala ficam como estão.</p>
+    ${muds.map((x, i) => `<label class="mud${x.desligar ? ' dsl' : ''}"><input type="checkbox" data-mud="${i}"><span><b>${esc(x.c.nome)}</b> <small>Matr. ${esc(codigoMatricula(x.c.matricula))} · ${esc(x.c.revenda)}</small><br>${x.txt.map(s => `<small>${s}</small>`).join('<br>')}</span></label>`).join('')}
+    <div style="display:flex;justify-content:flex-end"><button type="button" class="btn ok" data-mapl disabled>Aplicar mudanças marcadas</button></div></div></section>`;
+}
+function contaMud(m) { const n = m.querySelectorAll('[data-mud]:checked').length, b = m.querySelector('[data-mapl]'); if (b) { b.disabled = !n; b.textContent = n ? `Aplicar ${n} mudança${n > 1 ? 's' : ''}` : 'Aplicar mudanças marcadas'; } }
 function vImportar(m) {
   const I = S.imp, des = r => /demit|deslig|rescis/i.test(r.situacao);
   m.innerHTML = `<section class="hero"><h2>Importar o relatório do DP</h2>
-      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram os departamentos marcados em <b>Regras → Departamentos</b> (Armazém e Entrega, se nada for marcado). Só entram <b>colaboradores novos</b>: quem já foi importado não é alterado. Para tirar alguém, use <b>Remover</b> na aba Cadastro. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
+      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram os departamentos marcados em <b>Regras → Departamentos</b> (Armazém e Entrega, se nada for marcado). Só entram <b>colaboradores novos</b>. Se alguém que já está no sistema mudou de cargo, departamento ou foi demitido, aparece em <b>Mudanças no DP</b> para você decidir. Para tirar alguém, use <b>Remover</b> na aba Cadastro. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
     <section class="card"><div class="card-b" style="display:grid;gap:12px">
       <label class="drop" for="imp-file"><b>Escolher arquivos (.xls ou .xlsx)</b><span class="hint">Pode enviar os relatórios de várias revendas de uma vez</span></label>
       <input type="file" id="imp-file" accept=".xls,.xlsx,.xlsb,.csv" multiple hidden>
@@ -1103,6 +1112,19 @@ function vImportar(m) {
   if (!I) return;
   const ok = I.arqs.filter(a => !a.erro);
   const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length, 0);
+  // quem já está no sistema e mudou no DP
+  const muds = [], ar = s => { const a = areaSetor(s); return a === 'arm' || a === 'ent' ? a : 'adm'; };
+  ok.forEach(a => a.rows.forEach(r => {
+    const c = S.cols.find(x => x.matricula === r.matricula); if (!c) return;
+    if (des(r)) return muds.push({ c, r, desligar: true, txt: ['Demitido no DP: sai das escalas'] });
+    const txt = [];
+    if (nrm(r.funcao) !== nrm(c.funcao)) txt.push(`Cargo: ${esc(c.funcao)} → <b>${esc(r.funcao)}</b>`);
+    if (nrm(r.departamento) !== nrm(c.departamento)) txt.push(`Departamento: ${esc(c.departamento || '—')} → <b>${esc(r.departamento)}</b>`);
+    if (ar(r.setor) !== ar(c.setor)) txt.push(`<b>Muda de área</b>: ${AREA_TXT[ar(c.setor)]} → ${AREA_TXT[ar(r.setor)]} (turno/ponto ficam pendentes)`);
+    if (r.situacao && nrm(r.situacao) !== nrm(c.situacao)) txt.push(`Situação: ${esc(c.situacao || '—')} → ${esc(r.situacao)}`);
+    if (txt.length) muds.push({ c, r, txt });
+  }));
+  I.muds = muds;
   $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}${a.amostra ? `<details style="margin-top:6px"><summary>O que foi lido${a.via ? ' (' + esc(a.via) + ')' : ''}: ${a.amostra.length} linhas</summary><pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0">${esc(a.amostra.join('\n')) || '(nada)'}</pre></details>` : ''}</div>` : `
     <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
     <div class="card-b" style="display:grid;gap:8px">
@@ -1113,8 +1135,19 @@ function vImportar(m) {
       <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Cargo</th><th>Setor</th><th>Situação</th></tr>
         ${a.rows.slice(0, 5).map(r => `<tr><td>${esc(codigoMatricula(r.matricula))}</td><td>${esc(r.nome)}</td><td>${esc(r.funcao)}</td><td>${esc(r.setor)}</td><td>${esc(r.situacao)}</td></tr>`).join('')}</table></div>
     </div></div>`).join('') +
+    blocoMudancas(muds) +
     (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp ${total ? '' : 'disabled'}>${ic('up')}${total ? 'Incluir ' + total + ' novos' : 'Nenhum colaborador novo'}</button></div>` : '');
   const cx = m.querySelector('[data-cancel]'); if (cx) cx.onclick = () => { S.imp = null; vImportar(m); };
+  const mt = m.querySelector('[data-mtodos]'); if (mt) mt.onclick = () => { const cs = [...m.querySelectorAll('[data-mud]')], todos = cs.every(x => x.checked); cs.forEach(x => { x.checked = !todos; }); contaMud(m); };
+  m.querySelectorAll('[data-mud]').forEach(x => { x.onchange = () => contaMud(m); });
+  const ma = m.querySelector('[data-mapl]');
+  if (ma) ma.onclick = () => ocupado(ma, async () => {
+    const sel = [...m.querySelectorAll('[data-mud]:checked')].map(x => I.muds[+x.dataset.mud]);
+    if (!sel.length) throw new Error('Marque ao menos uma mudança.');
+    const r = await call('atualizarDoDP', { itens: sel.map(x => ({ matricula: x.c.matricula, funcao: x.r.funcao, departamento: x.r.departamento, setor: x.r.setor, situacao: x.r.situacao, desligar: !!x.desligar })) });
+    toast(`Mudanças aplicadas: <b>${r.atualizados}</b> atualizado(s)${r.desligados ? `, ${r.desligados} demitido(s) fora das escalas` : ''}${r.mudouArea ? `. ${r.mudouArea} mudou de área: complete turno/ponto no Cadastro` : ''}.`);
+    await carregar(); S.view = 'importar'; render();
+  });
   m.querySelectorAll('[data-dep]').forEach(s => { s.onchange = async () => {
     const map = cfgJson('DEPARTAMENTOS'); Object.keys(map).forEach(k => { if (nrm(k) === nrm(s.dataset.dep)) delete map[k]; }); map[s.dataset.dep.toUpperCase()] = s.value;
     try { S.cfg = await call('salvarConfig', { DEPARTAMENTOS: JSON.stringify(map) }); } catch (e) { return toast(esc(e.message), true); }

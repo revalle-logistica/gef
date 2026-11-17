@@ -288,6 +288,30 @@ function salvarPontos_(u, d) {
   });
 }
 /**
+ * Aplica as mudanças do DP que o admin marcou na prévia da importação (cargo, departamento, situação, demissão).
+ * Supervisor e escala ficam. Se a pessoa mudar de área (ex.: Armazém -> Entrega), turno/ponto/rota voltam a ficar pendentes.
+ */
+function atualizarDoDP_(u, d) {
+  const itens = d.itens || [];
+  if (!itens.length) throw new Error('Nenhuma mudança marcada.');
+  return comLock_(function () {
+    const todos = ler_('Colaboradores'), mapa = {}, res = { atualizados: 0, desligados: 0, mudouArea: 0 }, quando = agora_();
+    todos.forEach(function (c) { mapa[c.matricula] = c; });
+    itens.forEach(function (it) {
+      const c = mapa[String(it.matricula)];
+      if (!c) return;
+      if (it.desligar) { c.ativo = 'N'; c.situacao = String(it.situacao || c.situacao); c.atualizadoEm = quando; res.desligados++; log_(u, c.matricula, 'demitido no DP', c.situacao); return; }
+      const antes = c.funcao + ' / ' + c.departamento;
+      if (it.setor && areaSetor(it.setor) !== areaSetor(c.setor)) { c.turno = ''; c.lotacao = ''; c.tipoMot = ''; res.mudouArea++; }
+      ['funcao', 'departamento', 'setor', 'situacao'].forEach(function (k) { if (it[k] != null && String(it[k]).trim()) c[k] = String(it[k]).trim(); });
+      c.atualizadoEm = quando; res.atualizados++;
+      log_(u, c.matricula, 'mudança do DP', antes + ' -> ' + c.funcao + ' / ' + c.departamento);
+    });
+    gravarTudo_('Colaboradores', todos);
+    return res;
+  });
+}
+/**
  * Converte um .xls/.xlsx que o navegador não conseguiu ler (o relatório do sistema de folha sai num .xls
  * que alguns leitores não abrem). Usa o conversor do Google Drive e devolve as células como texto.
  * Requer o serviço avançado "Drive API" (v3) ativado no projeto.
