@@ -11,7 +11,7 @@
 <script>
 (function(){
 // Link /exec do app da Web publicado no Apps Script
-const U="COLE_AQUI_O_LINK_EXEC";
+const U="https://script.google.com/macros/s/AKfycbyeGlvF5tbICPZGpNLu6FOmSRj4k-5q9trZbEKekanPrRRjJ7Q0Zdmflh7yTIAb9M9H7g/exec";
 const K="esc5x2_app_html";
 const prep=h=>h.replace('<base target="_top">','').replace(/<head>/i,'<head><script>window.API_URL='+JSON.stringify(U)+'<\/script>');
 const mostra=h=>{ document.open(); document.write(h); document.close(); };
