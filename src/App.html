@@ -120,7 +120,7 @@ async function carregar() {
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
   [...S.sel].forEach(m => { if (!ok.has(m)) S.sel.delete(m); });
-  const prim = (VISOES.find(([k]) => S.cols.some(c => c.vis.area === k)) || ['todos'])[0];
+  const prim = (visoes().find(([k]) => S.cols.some(c => c.vis.area === k)) || ['todos'])[0];
   if (!S.f.vis) S.f.vis = prim;
   if (!S.pnl.vis) S.pnl.vis = prim;
   render();
@@ -130,7 +130,7 @@ const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
 const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
 function ajustesDe(m) { const o = {}; S.ajustes.forEach(a => { if (a.matricula === m) o[a.data] = a; }); return o; }
 const grupoFuncao = () => { const o = cfgJson('FUNCOES_GRUPO'), r = {}; Object.keys(o).forEach(k => { if (String(o[k] || '').trim()) r[nrm(k)] = String(o[k]).trim(); }); return r; };
-function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; }); }
+function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; });  atualizaVisoesExtra(); }
 
 /* ================= casca ================= */
 function render() {
@@ -179,8 +179,18 @@ function ligaSemana(m, redesenha) {
 
 /* ================= escalas ================= */
 function opts(arr, sel, todos) { return `<option value="">${todos}</option>` + arr.map(v => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join(''); }
-const VIS_TXT = { entrega: 'Entrega · ponto de apoio e função', pux: 'Puxadores', arm: 'Armazém · turno e função', adm: 'Administrativo', todos: 'Todos' };
-const VIS_CURTO = { entrega: 'Entrega', pux: 'Puxadores', arm: 'Armazém', adm: 'Administrativo', todos: 'Todos' };
+const VIS_TXT = { entrega: 'Entrega · ponto de apoio e função', pux: 'Puxadores', arm: 'Armazém · turno e função', adm: 'Administrativo-Logística (time interno)', todos: 'Todos' };
+const VIS_CURTO = { entrega: 'Entrega', pux: 'Puxadores', arm: 'Armazém', adm: 'Adm. Logística', todos: 'Todos' };
+/** Abas: as fixas + um departamento próprio para cada um que existir na base (Regras > Departamentos). */
+let VIS_EXTRA = [];
+const visoes = () => VISOES.concat(VIS_EXTRA);
+function atualizaVisoesExtra() {
+  const m = new Map();
+  S.cols.forEach(c => { if (c.vis && c.vis.proprio) m.set(c.vis.area, c.vis.areaNome); });
+  (S.qlp || []).forEach(r => { if (/^p_/.test(r.area) && !m.has(r.area)) m.set(r.area, r.areaNome || r.area.slice(2)); });
+  VIS_EXTRA = [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+  VIS_EXTRA.forEach(([k, n]) => { VIS_TXT[k] = n + ' · função'; VIS_CURTO[k] = n; });
+}
 function filtrados(ignSt, ignVis) {
   const f = S.f, q = nrm(f.q);
   return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
@@ -249,7 +259,7 @@ function vEscalas(m) {
 let grupoSel = {};
 function lista() {
   const f = S.f, tudo = filtrados(true, true), base = filtrados(true), L = filtrados();
-  $('#vt').innerHTML = VISOES.concat([['todos', 'Todos']]).map(([k]) => {
+  $('#vt').innerHTML = visoes().concat([['todos', 'Todos']]).map(([k]) => {
     const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length;
     return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'} title="${esc(VIS_TXT[k])}">${VIS_CURTO[k]}<i>${n}</i></button>`;
   }).join('');
@@ -574,7 +584,7 @@ function vMes(m) {
       <label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês<input type="month" data-mes value="${esc(S.mes)}" style="width:auto"></label>
       <button type="button" class="btn sm" data-mm="1" aria-label="Próximo mês">›</button><b style="color:var(--b8)">${esc(nomeMes(S.mes))}</b>
       ${nErro ? `<span class="pill p-ERRO">${nErro} colaborador(es) com semana fora das regras</span>` : ''}</div>
-    <div class="vt">${VISOES.concat([['todos', 'Todos']]).map(([k]) => { const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length; return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`; }).join('')}</div>
+    <div class="vt">${visoes().concat([['todos', 'Todos']]).map(([k]) => { const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length; return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`; }).join('')}</div>
     <div class="filt"><label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
       <label class="f">Buscar<input data-f="q" value="${esc(f.q)}" placeholder="Nome, matrícula, função ou ponto"></label></div>
     <div class="acts"><span class="hint">Clique num dia para trocar só aquela data (trabalho, folga ou horário). Clique no nome para mudar o padrão semanal. Número = hora de entrada, <b>F</b> = folga, <b>V</b> = férias, borda vermelha = feriado, ponto amarelo = dia alterado.</span><span class="sp"></span>
@@ -724,7 +734,7 @@ function vPainel(m) {
   const cnt = a => { const o = { OK: 0, ALERTA: 0, ERRO: 0, SEM: 0 }; a.forEach(c => o[st(c)]++); return o; };
   const k = cnt(L), tot = L.length, pc = x => tot ? Math.round(x / tot * 100) : 0;
   const and = P.rev
-    ? VISOES.map(([v, nome]) => ({ g: nome, a: L.filter(c => c.vis.area === v) })).filter(x => x.a.length)
+    ? visoes().map(([v, nome]) => ({ g: nome, a: L.filter(c => c.vis.area === v) })).filter(x => x.a.length)
     : revs.map(r => ({ g: r, a: L.filter(c => c.revenda === r) }));
   const LV = L.filter(c => P.vis === 'todos' || c.vis.area === P.vis);
   const salvaRev = S.f.rev; S.f.rev = P.rev; const G = agrupar(LV, P.vis === 'todos'); S.f.rev = salvaRev;
@@ -749,7 +759,7 @@ function vPainel(m) {
     <section class="card"><div class="card-h"><h3>Andamento por ${P.rev ? 'visão' : 'revenda'}</h3><div class="leg"><span><span class="dot d-OK"></span> OK</span><span><span class="dot d-ALERTA"></span> Alerta</span><span><span class="dot d-ERRO"></span> Erro</span><span><span class="dot d-SEM"></span> Sem escala</span></div></div>
       <div class="card-b prg">${and.map(x => { const c = cnt(x.a), n = x.a.length; return `<div class="pr"><b title="${esc(x.g)}">${esc(x.g)}</b><div class="stk">${['OK', 'ALERTA', 'ERRO', 'SEM'].map(s => c[s] ? `<i class="${s}" style="width:${c[s] / n * 100}%" title="${ROT[s]}: ${c[s]}"></i>` : '').join('')}</div><span class="pc">${Math.round((c.OK + c.ALERTA) / n * 100)}%</span></div>`; }).join('') || '<p class="hint">Sem dados.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pessoas trabalhando por dia</h3><span class="hint">semana de ${dataBr(S.semana)} · sem quem está de férias · a última coluna mostra quem está sem escala</span></div>
-      <div class="vt">${VISOES.concat([['todos', 'Todos']]).map(([v]) => { const n = v === 'todos' ? L.length : L.filter(c => c.vis.area === v).length; return `<button type="button" data-pv="${v}" aria-pressed="${P.vis === v}" ${n || v === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[v]}<i>${n}</i></button>`; }).join('')}</div>
+      <div class="vt">${visoes().concat([['todos', 'Todos']]).map(([v]) => { const n = v === 'todos' ? L.length : L.filter(c => c.vis.area === v).length; return `<button type="button" data-pv="${v}" aria-pressed="${P.vis === v}" ${n || v === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[v]}<i>${n}</i></button>`; }).join('')}</div>
       <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map((d, i) => `<th>${d}<br>${ddmm(isoMaisDias(S.semana, i))}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pendências</h3><span class="hint">erros primeiro · toque para abrir</span></div>
       <div class="pend">${pend.map(c => `<button type="button" data-ed="${esc(c.matricula)}"><span class="pill p-${st(c)}">${ROT[st(c)]}</span><b>${esc(c.nome)}</b><small>${esc(c.funcao)} · ${esc(c.vis.areaNome)}${c.vis.area === 'adm' ? '' : ' · ' + esc(c.vis.grupo)} · ${esc(c.revenda)}${c.val ? '<br>' + esc((c.val.msgs.find(x => x.nivel === 'erro') || {}).texto || '') : ''}</small></button>`).join('') || '<p class="empty">Nada pendente. Todas as escalas estão válidas.</p>'}</div></section>`;
@@ -779,7 +789,7 @@ function areaDepto(dep) {
   if (k) return map[k] || 'nao';
   const a = areaSetor(nomeDepto(dep)); return a === 'arm' || a === 'ent' ? a : 'nao';
 }
-const AREA_TXT = { arm: 'Armazém', ent: 'Entrega', adm: 'Administrativo', nao: 'Não importar' };
+const AREA_TXT = { arm: 'Armazém', ent: 'Entrega', adm: 'Administrativo-Logística', prop: 'Departamento próprio (aba separada)', nao: 'Não importar' };
 const titulo = s => String(s || '').toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase());
 function revDoArquivo(nome) {
   const up = String(nome).toUpperCase(), sig = Object.keys(codRev()).join('|'), mm = sig ? up.match(new RegExp('(?:^|[^A-Z])(' + sig + ')(?:[^A-Z]|$)')) : null;
@@ -810,7 +820,7 @@ function lerRelacaoDP(A, nomeArq) {
       dep = v[di].replace(/^departamento\s*:?\s*/i, '') || v[di + 1] || '';
       const m = dep.match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/);
       const a = areaDepto(dep);
-      setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : a === 'adm' ? 'Administrativo · ' + titulo(nomeDepto(dep)) : '';
+      setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : a === 'adm' ? 'Administrativo · ' + titulo(nomeDepto(dep)) : a === 'prop' ? PREFIXO_DEPTO + titulo(nomeDepto(dep)) : '';
       rev = m ? (COD_REV[m[2].toUpperCase()] || m[2].toUpperCase()) : '';
       return;
     }
@@ -898,7 +908,7 @@ function vImportar(m) {
   const ok = I.arqs.filter(a => !a.erro);
   const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length, 0);
   // quem já está no sistema e mudou no DP
-  const muds = [], ar = s => { const a = areaSetor(s); return a === 'arm' || a === 'ent' ? a : 'adm'; };
+  const muds = [], ar = s => { if (String(s || '').indexOf(PREFIXO_DEPTO) === 0) return 'prop'; const a = areaSetor(s); return a === 'arm' || a === 'ent' ? a : 'adm'; };
   ok.forEach(a => a.rows.forEach(r => {
     const c = S.cols.find(x => x.matricula === r.matricula); if (!c) return;
     if (des(r)) return muds.push({ c, r, desligar: true, txt: ['Demitido no DP: sai das escalas'] });
@@ -913,7 +923,7 @@ function vImportar(m) {
   $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}${a.amostra ? `<details style="margin-top:6px"><summary>O que foi lido${a.via ? ' (' + esc(a.via) + ')' : ''}: ${a.amostra.length} linhas</summary><pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0">${esc(a.amostra.join('\n')) || '(nada)'}</pre></details>` : ''}</div>` : `
     <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
     <div class="card-b" style="display:grid;gap:8px">
-      <div class="dpt">${Object.entries(Object.assign({}, a.deps, a.ign)).sort((x, y) => x[0].localeCompare(y[0])).map(([d, n]) => { const ar = areaDepto(d); return `<label class="${ar === 'nao' ? 'off' : ''}"><span>${esc(d)} <b>${n}</b></span><select data-dep="${esc(nomeDepto(d))}">${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === ar ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select></label>`; }).join('')}</div>
+      <div class="dpt">${Object.entries(Object.assign({}, a.deps, a.ign)).sort((x, y) => x[0].localeCompare(y[0])).map(([d, n]) => { const ar = areaDepto(d); return `<label class="${ar === 'nao' ? 'off' : ''}"><span>${esc(d)} <b>${n}</b></span><select data-dep="${esc(nomeDepto(d))}">${['arm', 'ent', 'adm', 'prop', 'nao'].map(k => `<option value="${k}" ${k === ar ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select></label>`; }).join('')}</div>
       <p class="hint">Mude a visão de um departamento para incluir ou tirar da importação. A escolha fica salva em <b>Regras → Departamentos</b> e vale para as próximas importações.</p>
       ${a.rows.filter(des).length ? `<p class="hint">${a.rows.filter(des).length} demitido(s) no relatório não entram.</p>` : ''}
       <p class="hint"><b>${a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length}</b> novos · ${a.rows.filter(r => !des(r) && S.cols.some(c => c.matricula === r.matricula)).length} já cadastrados (não mudam)</p>
@@ -955,7 +965,7 @@ const lstCfg = k => String(S.cfg[k] || '').split(',').map(x => x.trim()).filter(
 function pontosRev(rev) { try { return (JSON.parse(S.cfg.PONTOS_APOIO || '{}')[rev] || []).slice().sort((a, b) => a.localeCompare(b, 'pt')); } catch (e) { return []; } }
 const nomeSup = id => { const s = S.sups.find(x => x.id === id); return s ? s.nome : ''; };
 function detalheCad(c) {
-  const a = areaSetor(c.setor), p = [c.setor];
+  const a = areaSetor(c.setor), p = [deptoProprio(c.setor) || c.setor];
   if (a === 'arm') p.push(c.turno || 'turno?');
   if (a === 'ent' && papelEntrega(c.funcao) !== 'adm') p.push((c.lotacao || 'sede/ponto?') + (papelEntrega(c.funcao) === 'mot' ? ' · ' + (c.tipoMot || 'rota/puxador?') : ''));
   if (S.user.perfil === 'ADMIN') p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
@@ -1017,7 +1027,7 @@ function vCadastro(m) {
     <div class="vt">${ABAS_CAD.map(([k, n, x]) => `<button type="button" data-aba="${k}" aria-pressed="${C.aba === k}">${n}<i>${x}</i></button>`).join('')}</div>
     <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
       ${C.aba === 'col' || C.aba === 'ferias' ? `<label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label>` : ''}</div>
-    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Administrativo e outros']].filter(([k]) => k !== 'outro' || doRev.some(c => areaSetor(c.setor) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
+    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Adm. Logística e outros']].filter(([k]) => k !== 'outro' || doRev.some(c => areaSetor(c.setor) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
         ${C.area === 'outro' ? '' : C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
@@ -1294,7 +1304,7 @@ function cartoesParam() {
   const gfv = k => { const kk = Object.keys(gf).find(x => nrm(x) === nrm(k)); return kk ? gf[kk] : ''; };
   return `<section class="card" id="pc-dep"><div class="card-h"><h3>Departamentos do DP</h3><button type="button" class="btn sm pr" data-psave="dep">Salvar</button></div>
       <div class="card-b"><p class="hint">Em qual visão cada departamento do relatório entra. "Não importar" deixa de fora. Use o nome sem código e sigla (ex.: PUXADA, VENDAS).</p>
-      <div class="ptab" data-lst="dep">${dnomes.map(n => `<div class="pr"><input value="${esc(n)}" data-a><select data-b>${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === areaDepto(n) ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button></div>`).join('')}</div>
+      <div class="ptab" data-lst="dep">${dnomes.map(n => `<div class="pr"><input value="${esc(n)}" data-a><select data-b>${['arm', 'ent', 'adm', 'prop', 'nao'].map(k => `<option value="${k}" ${k === areaDepto(n) ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button></div>`).join('')}</div>
       <button type="button" class="btn sm" data-padd="dep">+ Departamento</button></div></section>
     <section class="card" id="pc-rev"><div class="card-h"><h3>Revendas (sigla no DP)</h3><button type="button" class="btn sm pr" data-psave="rev">Salvar</button></div>
       <div class="card-b"><p class="hint">A sigla no fim do departamento ("201 - ARMAZEM - <b>AL</b>") vira o nome da revenda. Para uma revenda nova, inclua a sigla e o nome.</p>
@@ -1308,7 +1318,7 @@ function cartoesParam() {
 function ligaCartoesParam(m) {
   m.querySelectorAll('[data-padd]').forEach(b => { b.onclick = () => {
     const l = m.querySelector(`[data-lst="${b.dataset.padd}"]`), d = document.createElement('div'); d.className = 'pr';
-    d.innerHTML = b.dataset.padd === 'dep' ? `<input placeholder="Nome do departamento" data-a><select data-b>${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === 'adm' ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button>`
+    d.innerHTML = b.dataset.padd === 'dep' ? `<input placeholder="Nome do departamento" data-a><select data-b>${['arm', 'ent', 'adm', 'prop', 'nao'].map(k => `<option value="${k}" ${k === 'adm' ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button>`
       : `<input placeholder="Sigla" maxlength="3" data-a style="max-width:90px"><input placeholder="Nome da revenda" data-b><button type="button" class="xp" data-prm>×</button>`;
     l.appendChild(d); d.querySelector('input').focus();
   }; });

@@ -84,8 +84,8 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 /** Envia as regras de Regras.gs para o navegador (mesma validação nos dois lados). */
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
-    ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
+    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -1226,7 +1226,7 @@ function qlpLimpo_(d) {
 function salvarQlp_(u, d) {
   const rev = String(d.revenda || '').trim(), area = String(d.area || ''), grupo = String(d.grupo || '').trim() || '*', funcao = String(d.funcao || '').trim() || '*';
   if (!rev) throw new Error('Informe a revenda.');
-  if (!QLP_AREAS[area]) throw new Error('Informe o departamento.');
+  if (!QLP_AREAS[area] && !/^p_[a-z0-9]+$/.test(area)) throw new Error('Informe o departamento.');
   if (u.perfil !== 'ADMIN' && qlpRevendas_(u).indexOf(rev) < 0) throw new Error('Você não tem colaboradores nesta revenda.');
   const L = qlpLimpo_(d);
   return comLock_(function () {
@@ -1326,7 +1326,7 @@ function ordemVisao_(a, b) {
 function quadroPdf_(cols, esc, cfg, ctx) {
   const grupos = {}, ordem = [];
   cols.forEach(function (c) {
-    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' || v.proprio ? '' : ' · ' + v.grupo);
     if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
     grupos[k].push(c);
   });
@@ -1431,7 +1431,7 @@ function quadroMesPdf_(cols, esc, cfg, ctx) {
   const ferAll = {}; Object.keys(ctx.feriados).forEach(function (r) { ctx.feriados[r].forEach(function (f) { ferAll[f.data] = true; }); });
   const grupos = {}, ordem = [];
   cols.forEach(function (c) {
-    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' || v.proprio ? '' : ' · ' + v.grupo);
     if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
     grupos[k].push(c);
   });
@@ -1614,7 +1614,7 @@ function semanaModelo(folga2, ent, sai, int) {
  *            motorista "Puxador" vai para Puxadores (da sede ou residente do ponto)
  *            motoristas de rota e ajudantes ficam em Entrega, por Sede / ponto de apoio
  */
-var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo']];
+var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo-Logística']];
 var TURNOS_ORDEM = ['T1', 'T1/T2', 'T2', 'T2/T3', 'T3', 'T3/T1'];
 function normTxt(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
 function turnoTag(t) {
@@ -1642,11 +1642,17 @@ function pendenciasCadastro(c) {
   if (!String(c.supervisor || '').trim()) p.push('supervisor');
   return p;
 }
+/** Departamento próprio (Regras > Departamentos): setor "Departamento · Nome" vira uma aba só dele. */
+var PREFIXO_DEPTO = 'Departamento · ';
+function deptoProprio(setor) { var s = String(setor || ''); return s.indexOf(PREFIXO_DEPTO) === 0 ? s.slice(PREFIXO_DEPTO.length).trim() || 'Outro' : ''; }
+function areaDeptoProprio(nome) { return 'p_' + normTxt(nome).replace(/[^a-z0-9]+/g, ''); }
 function visaoColaborador(c) {
+  var dp = deptoProprio(c.setor);
+  if (dp) { var ff = String(c.funcao || '').trim() || 'Sem função'; return { area: areaDeptoProprio(dp), areaNome: dp, grupo: dp, ordem: '4' + normTxt(dp), funcao: ff, fordem: '3' + normTxt(ff), proprio: true }; }
   var a = areaSetor(c.setor), f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f);
   var lot = String(c.lotacao || '').trim(), sede = ehSede(lot);
   var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
-  var adm = { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+  var adm = { area: 'adm', areaNome: 'Administrativo-Logística', grupo: 'Administrativo-Logística', ordem: '3', funcao: f, fordem: fo };
   if (a === 'arm') {
     var t = String(c.turno || '').trim();
     if (normTxt(t) === 'administrativo') return adm;

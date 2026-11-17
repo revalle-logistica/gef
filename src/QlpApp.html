@@ -72,7 +72,7 @@ function vQlp(m) {
   const gl = QLP_GL[Q.vis];
   m.innerHTML = `<section class="card">
     <div class="esc-top">${barraSemana()}<button type="button" class="btn sm dk" data-q="novo" style="margin:8px 0">+ Nova necessidade</button></div>
-    <div class="vt vt2">${VISOES.map(([k]) => `<button type="button" data-qv="${k}" aria-pressed="${Q.vis === k}">${VIS_CURTO[k]}<i>${nArea(k)}</i></button>`).join('')}</div>
+    <div class="vt vt2">${visoes().map(([k]) => `<button type="button" data-qv="${k}" aria-pressed="${Q.vis === k}">${VIS_CURTO[k]}<i>${nArea(k)}</i></button>`).join('')}</div>
     <div class="fbar">${revs.length > 1 ? `<select data-qf="rev" aria-label="Revenda">${revs.map(v => `<option ${v === Q.rev ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
       ${gl ? `<select data-qf="grp" class="${Q.grp ? 'on' : ''}" aria-label="${gl}">${opts(grs, Q.grp, QLP_TODOS[Q.vis])}</select>` : ''}
       <span class="cnt">${RV.length} necessidade${RV.length === 1 ? '' : 's'} cadastrada${RV.length === 1 ? '' : 's'}</span></div>
@@ -150,7 +150,7 @@ function qlpEditor(r, base) {
     const num = (v, a) => `<input type="number" min="0" max="999" inputmode="numeric" value="${+v || 0}" ${a}>`;
     w.innerHTML = `<div class="qe-g">
       <label class="f">Revenda<select data-k="revenda" data-re>${revs.map(v => `<option ${v === ed.revenda ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
-      <label class="f">Departamento<select data-k="area" data-re>${VISOES.map(([k]) => `<option value="${k}" ${k === ed.area ? 'selected' : ''}>${VIS_CURTO[k]}</option>`).join('')}</select></label>
+      <label class="f">Departamento<select data-k="area" data-re>${visoes().map(([k]) => `<option value="${k}" ${k === ed.area ? 'selected' : ''}>${VIS_CURTO[k]}</option>`).join('')}</select></label>
       ${gl ? `<label class="f">${gl}<select data-k="grupo" data-re><option value="*" ${ed.grupo === '*' ? 'selected' : ''}>${QLP_TODOS[ed.area]}</option>${grs.map(v => `<option ${v === ed.grupo ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
       <label class="f">Função<select data-k="funcao" data-re><option value="">Escolha…</option><option value="*" ${ed.funcao === '*' ? 'selected' : ''}>Todas as funções</option>${fns.map(v => `<option ${v === ed.funcao ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label></div>
       <p class="hint" style="margin:6px 0 14px">${ed.funcao ? `${n} ${n === 1 ? 'pessoa' : 'pessoas'} nessa combinação.` : 'Escolha a função.'}</p>

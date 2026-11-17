@@ -153,7 +153,7 @@ function semanaModelo(folga2, ent, sai, int) {
  *            motorista "Puxador" vai para Puxadores (da sede ou residente do ponto)
  *            motoristas de rota e ajudantes ficam em Entrega, por Sede / ponto de apoio
  */
-var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo']];
+var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo-Logística']];
 var TURNOS_ORDEM = ['T1', 'T1/T2', 'T2', 'T2/T3', 'T3', 'T3/T1'];
 function normTxt(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
 function turnoTag(t) {
@@ -181,11 +181,17 @@ function pendenciasCadastro(c) {
   if (!String(c.supervisor || '').trim()) p.push('supervisor');
   return p;
 }
+/** Departamento próprio (Regras > Departamentos): setor "Departamento · Nome" vira uma aba só dele. */
+var PREFIXO_DEPTO = 'Departamento · ';
+function deptoProprio(setor) { var s = String(setor || ''); return s.indexOf(PREFIXO_DEPTO) === 0 ? s.slice(PREFIXO_DEPTO.length).trim() || 'Outro' : ''; }
+function areaDeptoProprio(nome) { return 'p_' + normTxt(nome).replace(/[^a-z0-9]+/g, ''); }
 function visaoColaborador(c) {
+  var dp = deptoProprio(c.setor);
+  if (dp) { var ff = String(c.funcao || '').trim() || 'Sem função'; return { area: areaDeptoProprio(dp), areaNome: dp, grupo: dp, ordem: '4' + normTxt(dp), funcao: ff, fordem: '3' + normTxt(ff), proprio: true }; }
   var a = areaSetor(c.setor), f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f);
   var lot = String(c.lotacao || '').trim(), sede = ehSede(lot);
   var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
-  var adm = { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+  var adm = { area: 'adm', areaNome: 'Administrativo-Logística', grupo: 'Administrativo-Logística', ordem: '3', funcao: f, fordem: fo };
   if (a === 'arm') {
     var t = String(c.turno || '').trim();
     if (normTxt(t) === 'administrativo') return adm;

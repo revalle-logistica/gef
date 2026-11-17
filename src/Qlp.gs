@@ -43,7 +43,7 @@ function qlpLimpo_(d) {
 function salvarQlp_(u, d) {
   const rev = String(d.revenda || '').trim(), area = String(d.area || ''), grupo = String(d.grupo || '').trim() || '*', funcao = String(d.funcao || '').trim() || '*';
   if (!rev) throw new Error('Informe a revenda.');
-  if (!QLP_AREAS[area]) throw new Error('Informe o departamento.');
+  if (!QLP_AREAS[area] && !/^p_[a-z0-9]+$/.test(area)) throw new Error('Informe o departamento.');
   if (u.perfil !== 'ADMIN' && qlpRevendas_(u).indexOf(rev) < 0) throw new Error('Você não tem colaboradores nesta revenda.');
   const L = qlpLimpo_(d);
   return comLock_(function () {

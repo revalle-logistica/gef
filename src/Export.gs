@@ -68,7 +68,7 @@ function ordemVisao_(a, b) {
 function quadroPdf_(cols, esc, cfg, ctx) {
   const grupos = {}, ordem = [];
   cols.forEach(function (c) {
-    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' || v.proprio ? '' : ' · ' + v.grupo);
     if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
     grupos[k].push(c);
   });
@@ -173,7 +173,7 @@ function quadroMesPdf_(cols, esc, cfg, ctx) {
   const ferAll = {}; Object.keys(ctx.feriados).forEach(function (r) { ctx.feriados[r].forEach(function (f) { ferAll[f.data] = true; }); });
   const grupos = {}, ordem = [];
   cols.forEach(function (c) {
-    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' || v.proprio ? '' : ' · ' + v.grupo);
     if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
     grupos[k].push(c);
   });

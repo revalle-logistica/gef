@@ -118,3 +118,12 @@ test('máximo diário: 10h24 em geral e 12h24 para motorista/ajudante de entrega
   assert.ok(ctxVm.ehEntregaCampo({ setor: 'ENTREGA', funcao: 'AJUDANTE DE ENTREGA' }));
   assert.ok(!ctxVm.ehEntregaCampo({ setor: 'ENTREGA', funcao: 'ASSISTENTE ADMINISTRATIVO' }));
 });
+
+test('departamento próprio vira aba separada; administrativo da logística mantém a aba adm', () => {
+  const v = ctxVm.visaoColaborador({ setor: 'Departamento · Vendas', funcao: 'VENDEDOR' });
+  assert.strictEqual(v.area, 'p_vendas'); assert.strictEqual(v.areaNome, 'Vendas'); assert.ok(v.proprio);
+  assert.strictEqual(ctxVm.visaoColaborador({ setor: 'Departamento · Puxada', funcao: 'X' }).area, 'p_puxada');
+  const a = ctxVm.visaoColaborador({ setor: 'Administrativo · Logistica', funcao: 'ASSISTENTE' });
+  assert.strictEqual(a.area, 'adm'); assert.strictEqual(a.areaNome, 'Administrativo-Logística');
+  assert.strictEqual(ctxVm.pendenciasCadastro({ setor: 'Departamento · Vendas', funcao: 'VENDEDOR', supervisor: 's' }).length, 0);
+});
