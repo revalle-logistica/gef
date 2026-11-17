@@ -173,6 +173,7 @@ main{max-width:1280px;margin:0 auto;padding:18px;display:grid;gap:16px}
 .pd{color:var(--al)!important;font-weight:700}.okc{color:var(--ok)!important;font-weight:700}
 .tg2{font-weight:800;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--acs);color:var(--b8)}.tg2.adm{background:var(--sunk);color:var(--mut)}
 .pts{padding:0 16px 12px;display:grid;gap:6px}.pts b{font-size:13px;color:var(--b8)}
+.alrt{background:#fff6e0;border:1px solid #f1c76b;color:#6b4a00;border-radius:8px;padding:8px 12px;font-size:13px}
 .xp{border:0;background:transparent;color:var(--er);font-weight:900;cursor:pointer;padding:0 2px;font-size:15px;line-height:1}
 .addp{display:flex;gap:8px;max-width:460px}
 .acts select{width:auto;padding:5px 8px;font-size:12.5px}
@@ -1092,7 +1093,12 @@ function vCadastro(m) {
   const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length], ['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length], ['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]];
   const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span><label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden></div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
-      <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador">${selOpts(doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)).map(c => [c.matricula, c.nome + ' · ' + c.funcao]), '', '— colaborador —')}</select><input type="date" name="inicio" aria-label="Início" style="width:auto"><input type="date" name="fim" aria-label="Fim" style="width:auto"><input name="obs" placeholder="Obs. (opcional)" maxlength="120" style="flex:1 1 140px"><button class="btn sm" type="submit">Adicionar</button></form></div>`;
+      <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador"><option value="">— colaborador —</option>${(() => {
+        const ord = doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)), tem = c => S.ferias.filter(f => f.matricula === c.matricula && f.fim >= hj).sort((a, b) => a.inicio.localeCompare(b.inicio));
+        const sem = ord.filter(c => !tem(c).length), com = ord.filter(c => tem(c).length), cd = d => dataBr(d).slice(0, 6) + d.slice(2, 4);
+        return `<optgroup label="Sem férias programadas (${sem.length})">${sem.map(c => `<option value="${esc(c.matricula)}">${esc(c.nome)} · ${esc(c.funcao)}</option>`).join('')}</optgroup>` +
+          (com.length ? `<optgroup label="✓ Já com férias programadas (${com.length})">${com.map(c => `<option value="${esc(c.matricula)}">✓ ${esc(c.nome)} · já tem ${tem(c).map(f => cd(f.inicio) + ' a ' + cd(f.fim)).join(' e ')}</option>`).join('')}</optgroup>` : '');
+      })()}</select><input type="date" name="inicio" aria-label="Início" style="width:auto"><input type="date" name="fim" aria-label="Fim" style="width:auto"><input name="obs" placeholder="Obs. (opcional)" maxlength="120" style="flex:1 1 140px"><button class="btn sm" type="submit">Adicionar</button></form><div id="fv-av"></div></div>`;
   m.innerHTML = `<section class="card">
     <div class="vt">${ABAS_CAD.map(([k, n, x]) => `<button type="button" data-aba="${k}" aria-pressed="${C.aba === k}">${n}<i>${x}</i></button>`).join('')}</div>
     <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
@@ -1159,9 +1165,16 @@ function vCadastro(m) {
   const ff = m.querySelector('#fer-file');
   if (ff) ff.onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { previaFeriados(await lerFeriados(fl), C.rev, () => vCadastro(m)); } catch (err) { toast(esc(err.message), true); } };
   const fv = m.querySelector('[data-addf]');
+  const jaTem = mt => S.ferias.filter(f => f.matricula === mt && f.fim >= hoje()).sort((a, b) => a.inicio.localeCompare(b.inicio));
+  if (fv) fv.querySelector('select').onchange = e => {
+    const L = jaTem(e.target.value), w = m.querySelector('#fv-av');
+    w.innerHTML = L.length ? `<div class="alrt">⚠ <b>${esc(nomeDe[e.target.value])}</b> já tem férias programadas: ${L.map(f => dataBr(f.inicio) + ' a ' + dataBr(f.fim)).join(' e ')}. Dá para incluir outro período (ex.: férias divididas), desde que não se sobreponha.</div>` : '';
+  };
   if (fv) fv.onsubmit = e => {
     e.preventDefault(); const fd = Object.fromEntries(new FormData(fv));
     if (!fd.matricula || !fd.inicio || !fd.fim) return toast('Escolha o colaborador e informe início e fim.', true);
+    const L = jaTem(fd.matricula);
+    if (L.length && !confirm(`${nomeDe[fd.matricula]} já tem férias programadas (${L.map(f => dataBr(f.inicio) + ' a ' + dataBr(f.fim)).join(' e ')}).\n\nIncluir mais este período?`)) return;
     ocupado(fv.querySelector('button'), async () => { const f = await call('salvarFerias', fd); S.ferias.push(f); revalida(); toast('Férias cadastradas.'); vCadastro(m); });
   };
   const fa = m.querySelector('[data-addp]');
