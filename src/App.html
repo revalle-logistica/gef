@@ -1273,7 +1273,7 @@ function vRegras(m) {
       <p>Base: Emenda Constitucional nº 141/2026 (fim da 6x1), em vigor a partir de ${dataBr(c.DATA_INICIO_5X2)}, e a CLT. Escalas com erro ficam em vermelho${SN(c.BLOQUEAR_ERRO) ? ' e não podem ser salvas' : ''}. Regimes diferentes previstos em acordo ou convenção coletiva devem ser confirmados com o DP.</p></section>
     <div class="rg">${cards.map(([t, v, p]) => `<div class="rc"><b>${t}</b><span class="v">${esc(v)}</span><p>${esc(p)}</p></div>`).join('')}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>Parâmetros (administrador)</h3><button type="button" class="btn sm pr" data-cfg>Salvar parâmetros</button></div>
-      <div class="card-b row2">${Object.keys(c).filter(k => !['PONTOS_APOIO', 'DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'FUNCOES_GRUPO'].includes(k)).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
+      <div class="card-b row2">${Object.keys(c).filter(k => !['PONTOS_APOIO', 'DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'FUNCOES_GRUPO', 'VOLUME_FERIAS'].includes(k)).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
       <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>${cartoesParam()}` : ''}`;
   if (adm) ligaCartoesParam(m);
   const b = m.querySelector('[data-cfg]');
@@ -1335,15 +1335,6 @@ function modalSenha() {
     if (f.nova !== f.nova2) return toast('As senhas não conferem.', true);
     ocupado(e.target.querySelector('button'), async () => { await call('trocarSenha', f); fecharModal(true); toast('Senha alterada.'); });
   };
-}
-
-/* ================= Férias: sistema de programação de férias dentro da Gestão ================= */
-function vFeriasSis(m) {
-  const url = String(S.cfg.FERIAS_SISTEMA_URL || '').trim(), sf = S.sincFerias;
-  if (!url) { m.innerHTML = '<div class="card empty"><h3>Sistema de férias não configurado</h3><p>Informe o endereço em Regras → Parâmetros (FERIAS SISTEMA URL).</p></div>'; return; }
-  m.innerHTML = `<section class="card fsis"><div class="fsis-h"><div><b>Programação de férias</b><span class="hint">As férias <b>confirmadas</b> aqui entram sozinhas nas escalas (sincroniza de hora em hora)${sf && sf.em ? ` · última sincronização ${esc(dh(sf.em))}` : ''}.</span></div>
-      <a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Abrir em tela cheia ↗</a></div>
-    <iframe src="${esc(url)}" title="Programação de férias" loading="lazy"></iframe></section>`;
 }
 
 /* ================= minha escala (link do colaborador, só leitura) ================= */

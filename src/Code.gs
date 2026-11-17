@@ -15,6 +15,9 @@ const ABAS = {
   Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
   Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
   Links: ['token', 'matricula', 'ativo', 'criadoPor', 'criadoEm', 'acessos', 'ultimoAcesso'],
+  FeriasPeriodos: ['id', 'revenda', 'sig', 'codigo', 'nome', 'depto', 'setorF', 'grupo', 'cargo', 'admissao', 'ativoDP', 'situacao', 'local', 'turno',
+    'iniAq', 'fimAq', 'prazo', 'direito', 'abono', 'gozados', 'saldo', 'origem', 'ano', 'sugestao', 'plano', 'conf', 'por', 'em',
+    'acomp', 'acompPor', 'acompEm', 'fonte', 'editadoGestao'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -28,6 +31,7 @@ const CFG_PADRAO = [
   ['REVENDAS_SIGLAS', '{}', 'Sigla do departamento no DP e o nome da revenda (editado em Regras)'],
   ['FUNCOES_GRUPO', '{}', 'Cargos do DP agrupados para os filtros (editado em Regras)'],
   ['FERIAS_SISTEMA_URL', 'https://ferias27-revalle.netlify.app/', 'Endereço do sistema de programação de férias (aba Férias)'],
+  ['VOLUME_FERIAS', '{}', 'Volume OBZ por mês e revenda, usado no painel de férias (vem do sistema anterior)'],
   ['FERIAS_API_URL', 'https://script.google.com/macros/s/AKfycbz-weII57gIVYlcJOdiJeQXV3Zei_n-xqAaATOLKxxViKO_R50csjZ8IDXPqLlR34s24w/exec', 'Endereço de dados do sistema de férias (sincronização)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
@@ -96,6 +100,12 @@ function rotas_() {
   importar: { f: importar_, admin: true },
   atualizarDoDP: { f: atualizarDoDP_, admin: true },
   sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true },
+  feriasDados: { f: feriasDados_ },
+  feriasSalvar: { f: feriasSalvar_ },
+  feriasLote: { f: feriasLote_ },
+  feriasAcomp: { f: feriasAcomp_ },
+  feriasMigrar: { f: feriasMigrar_, admin: true },
+  feriasImportarDP: { f: feriasImportarDP_, admin: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
