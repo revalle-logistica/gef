@@ -1242,6 +1242,26 @@ async function telaMinha(tk) {
     const txt = dd.tipo === 'T' ? `<b>${esc(dd.ent)} às ${esc(dd.sai)}</b><small>Trabalho${dd.int ? ' · intervalo de ' + fh(dd.int) : ''}</small>` : dd.tipo === 'FER' ? '<b>Férias</b>' : dd.tipo === 'F' ? `<b>Folga</b>${diaSemanaIso(data) === 6 ? '<small>Descanso semanal</small>' : ''}` : '<b>—</b><small>Escala ainda não definida</small>';
     return `<div class="mn-d ${cls}${data === hj ? ' hj' : ''}"><div class="mn-dt"><b>${data.slice(8)}</b><small>${ds.slice(0, 3)}</small></div><div class="mn-tx">${txt}${dd.feriado ? `<span class="tg">🎉 ${esc(dd.feriado)}</span>` : ''}${dd.ajuste ? '<span class="tg">alterado</span>' : ''}</div>${data === hj ? '<em>hoje</em>' : ''}</div>`;
   };
+  // dias seguidos de férias viram um bloco só, com o retorno
+  const linhas = L => {
+    let h = '';
+    for (let i = 0; i < L.length; i++) {
+      if (L[i][1].tipo !== 'FER') { h += linha(L[i][0], L[i][1]); continue; }
+      let j = i; while (j + 1 < L.length && L[j + 1][1].tipo === 'FER') j++;
+      const ini = L[i][0], fimMes = L[j][0];
+      let fim = fimMes, r = isoMaisDias(fimMes, 1), k = 0;
+      while (k++ < 60 && diaEfetivo(D.escala, r, D.ferias, D.feriados, aj).tipo === 'FER') { fim = r; r = isoMaisDias(r, 1); }
+      let inicioReal = ini, b = isoMaisDias(ini, -1); k = 0;
+      while (k++ < 60 && diaEfetivo(D.escala, b, D.ferias, D.feriados, aj).tipo === 'FER') { inicioReal = b; b = isoMaisDias(b, -1); }
+      let rd = r, rv = diaEfetivo(D.escala, rd, D.ferias, D.feriados, aj); k = 0;
+      while (k++ < 14 && rv.tipo === 'F') { rd = isoMaisDias(rd, 1); rv = diaEfetivo(D.escala, rd, D.ferias, D.feriados, aj); }
+      const tot = Math.round((Date.parse(fim) - Date.parse(inicioReal)) / 864e5) + 1, ehHoje = hj >= ini && hj <= fimMes;
+      const dd = s => DIAS_SEMANA[diaSemanaIso(s)].slice(0, 3).toLowerCase() + ' ' + dataBr(s).slice(0, 5);
+      h += `<div class="mn-d v mn-fer${ehHoje ? ' hj' : ''}"><div class="mn-dt"><b>🏖</b></div><div class="mn-tx"><b>Férias · ${dataBr(inicioReal).slice(0, 5)} a ${dataBr(fim).slice(0, 5)}</b><small>${tot} ${tot === 1 ? 'dia' : 'dias'}${inicioReal < ini || fim > fimMes ? ` (${j - i + 1} neste mês)` : ''}</small>${rv.tipo === 'T' ? `<small>Volta ao trabalho: <b>${dd(rd)} às ${esc(rv.ent)}</b></small>` : `<small>Retorno: ${dd(r)}</small>`}</div>${ehHoje ? '<em>hoje</em>' : ''}</div>`;
+      i = j;
+    }
+    return h;
+  };
   const desenha = () => {
     const dias = diasDoMes(ym), DD = dias.map(d => [d, diaEfetivo(D.escala, d, D.ferias, D.feriados, aj)]);
     const n = k => DD.filter(x => x[1].tipo === k).length, hoj = diaEfetivo(D.escala, hj, D.ferias, D.feriados, aj);
@@ -1249,8 +1269,8 @@ async function telaMinha(tk) {
     root.innerHTML = `<div class="mn"><header class="mn-h"><span class="logo">R</span><div><small>Minha escala · ${esc(D.empresa || 'Revalle')}</small><b>${esc(D.nome)}</b><small>${esc(D.funcao)} · ${esc(D.revenda)}</small></div></header>
       <div class="mn-c"><div class="mn-hoje ${hoj.tipo === 'T' ? 't' : hoj.tipo === 'FER' ? 'v' : hoj.tipo === 'F' ? 'f' : 'n'}"><small>Hoje, ${dataBr(hj).slice(0, 5)}</small><b>${hoj.tipo === 'T' ? esc(hoj.ent) + ' às ' + esc(hoj.sai) : hoj.tipo === 'FER' ? 'Férias' : hoj.tipo === 'F' ? 'Folga' : 'Sem escala definida'}</b>${hoj.feriado ? `<small>Feriado: ${esc(hoj.feriado)}</small>` : ''}</div>
         <div class="mn-nav"><button type="button" class="btn sm" data-m="${pv}" ${pv ? '' : 'disabled'} aria-label="Mês anterior">‹</button><b>${nomeMes(ym)}</b><button type="button" class="btn sm" data-m="${nx}" ${podeNx ? '' : 'disabled'} aria-label="Próximo mês">›</button></div>
-        <div class="mn-res"><span><b>${n('T')}</b> dias de trabalho</span><span><b>${n('F')}</b> folgas</span>${n('FER') ? `<span><b>${n('FER')}</b> de férias</span>` : ''}</div>
-        <div class="mn-l">${DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)).map(x => linha(x[0], x[1])).join('')}</div>
+        <div class="mn-res"><span><b>${n('T')}</b> ${n('T') === 1 ? 'dia' : 'dias'} de trabalho</span><span><b>${n('F')}</b> ${n('F') === 1 ? 'folga' : 'folgas'}</span>${n('FER') ? `<span><b>${n('FER')}</b> ${n('FER') === 1 ? 'dia' : 'dias'} de férias</span>` : ''}</div>
+        <div class="mn-l">${linhas(DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)))}</div>
         <p class="hint" style="text-align:center;margin:14px 0 4px">A escala pode mudar. Abra este link sempre que precisar conferir.<br>Dúvidas? Fale com seu supervisor.</p></div></div>`;
     root.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => { if (b.dataset.m) { ym = b.dataset.m; desenha(); window.scrollTo(0, 0); } }; });
   };
