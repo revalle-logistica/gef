@@ -844,10 +844,13 @@ function supsDaRevenda(rev) {
   const da = S.sups.filter(s => s.revendas.includes('*') || s.revendas.includes(rev)), outros = S.sups.filter(s => !da.includes(s));
   return da.concat(outros).map(s => [s.id, s.nome + (s.perfil === 'ADMIN' ? ' (admin)' : '')]);
 }
+/** Aplica na tela na hora e grava no servidor em segundo plano; se o servidor recusar, desfaz. */
 async function classificar(mats, campos) {
-  await call('classificar', { matriculas: mats, campos });
-  S.cols.forEach(c => { if (mats.includes(c.matricula)) Object.assign(c, campos); });
+  const ks = Object.keys(campos), antes = [];
+  S.cols.forEach(c => { if (mats.includes(c.matricula)) { antes.push([c, ks.reduce((o, k) => (o[k] = c[k], o), {})]); Object.assign(c, campos); } });
   revalida();
+  try { await call('classificar', { matriculas: mats, campos }); }
+  catch (e) { antes.forEach(([c, o]) => Object.assign(c, o)); revalida(); throw e; }
 }
 function vCadastro(m) {
   const C = S.cad, revs = uniq(S.cols.map(c => c.revenda));
@@ -921,15 +924,17 @@ function vCadastro(m) {
     else if (b.hasAttribute('data-bapl')) {
       const campos = {}; m.querySelectorAll('[data-b]').forEach(s => { if (s.value) campos[s.dataset.b] = s.value; });
       if (!Object.keys(campos).length) return toast('Escolha ao menos um campo para aplicar.', true);
-      ocupado(b, async () => { await classificar([...C.sel], campos); toast(`Cadastro atualizado para <b>${C.sel.size}</b> colaboradores.`); C.sel.clear(); vCadastro(m); });
+      const n = C.sel.size, pr = classificar([...C.sel], campos); C.sel.clear(); vCadastro(m);
+      pr.then(() => toast(`Cadastro atualizado para <b>${n}</b> colaboradores.`)).catch(err => { toast(esc(err.message), true); vCadastro(m); });
     }
   };
   m.onchange = e => {
     const s = e.target;
     if (s.hasAttribute('data-cs')) { const mt = s.closest('[data-m]').dataset.m; s.checked ? C.sel.add(mt) : C.sel.delete(mt); vCadastro(m); return; }
     if (s.dataset.k) {
-      const mt = s.closest('[data-m]').dataset.m; s.disabled = true;
-      classificar([mt], { [s.dataset.k]: s.value }).then(() => { toast('Salvo.'); vCadastro(m); }).catch(err => { toast(esc(err.message), true); s.disabled = false; });
+      const mt = s.closest('[data-m]').dataset.m;
+      const pr = classificar([mt], { [s.dataset.k]: s.value }); vCadastro(m);
+      pr.then(() => toast('Salvo.')).catch(err => { toast(esc(err.message), true); vCadastro(m); });
     }
   };
   const fh = m.querySelector('[data-addh]');
@@ -987,8 +992,10 @@ function previaFeriados(P, revAtual, depois) {
 }
 async function salvaPontos(rev, lista, m) {
   let o = {}; try { o = JSON.parse(S.cfg.PONTOS_APOIO || '{}'); } catch (e) { o = {}; }
-  o[rev] = lista;
-  try { S.cfg = await call('salvarConfig', { PONTOS_APOIO: JSON.stringify(o) }); revalida(); toast('Pontos de apoio salvos.'); vCadastro(m); } catch (e) { toast(esc(e.message), true); }
+  const ant = S.cfg.PONTOS_APOIO;
+  o[rev] = lista; S.cfg.PONTOS_APOIO = JSON.stringify(o); revalida(); vCadastro(m);
+  try { await call('salvarConfig', { PONTOS_APOIO: S.cfg.PONTOS_APOIO }); toast('Pontos de apoio salvos.'); }
+  catch (e) { S.cfg.PONTOS_APOIO = ant; revalida(); vCadastro(m); toast(esc(e.message), true); }
 }
 
 /* ================= usuários ================= */

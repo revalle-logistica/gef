@@ -125,7 +125,17 @@ function ss_() {
   if (SS_CACHE) return SS_CACHE;
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('DB_ID');
-  if (id) { try { SS_CACHE = SpreadsheetApp.openById(id); prepararBase_(SS_CACHE); return SS_CACHE; } catch (e) { /* recria abaixo */ } }
+  if (id) {
+    let s = null;
+    try { s = SpreadsheetApp.openById(id); } catch (e) { s = null; /* base apagada: recria abaixo */ }
+    if (s) {
+      SS_CACHE = s;
+      // a estrutura só é conferida quando muda (versão nova do código), não a cada chamada
+      const ver = JSON.stringify([ABAS, CFG_PADRAO.map(function (c) { return c[0]; })]);
+      if (props.getProperty('DB_VER') !== ver) { prepararBase_(s); props.setProperty('DB_VER', ver); }
+      return s;
+    }
+  }
   SS_CACHE = SpreadsheetApp.create('Escala 5x2 – Base do sistema');
   props.setProperty('DB_ID', SS_CACHE.getId());
   prepararBase_(SS_CACHE);
