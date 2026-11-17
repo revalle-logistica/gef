@@ -127,7 +127,8 @@ const feriasDe = m => S.ferias.filter(f => f.matricula === m);
 const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
 const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
 function ajustesDe(m) { const o = {}; S.ajustes.forEach(a => { if (a.matricula === m) o[a.data] = a; }); return o; }
-function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; }); }
+const grupoFuncao = () => { const o = cfgJson('FUNCOES_GRUPO'), r = {}; Object.keys(o).forEach(k => { if (String(o[k] || '').trim()) r[nrm(k)] = String(o[k]).trim(); }); return r; };
+function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; }); }
 
 /* ================= casca ================= */
 function render() {
@@ -747,11 +748,25 @@ function cor(v, mx) { const a = mx && v ? 0.12 + 0.78 * v / mx : 0; return `back
 /* ================= importar relatório do DP ================= */
 // Relatório "Relação de Empregados" do sistema de folha: blocos por "Departamento: 201 - ARMAZEM - AL".
 // Só Armazém e Entrega entram; a revenda vem da sigla no fim do departamento.
-const COD_REV = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
+const COD_REV_PADRAO = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
 const SIT = { 1: 'Trabalhando', 2: 'Afastado', 3: 'Acidente de trabalho', 4: 'Serviço militar', 5: 'Licença maternidade', 6: 'Doença', 7: 'Licença sem vencimento', 8: 'Demitido', 9: 'Férias', 17: 'Acidente de trabalho', 18: 'Doença', 24: 'Afastado' };
+const cfgJson = (k, def) => { let o = {}; try { o = JSON.parse(S.cfg[k] || '{}') || {}; } catch (e) { o = {}; } return Object.assign({}, def || {}, o); };
+/** Sigla do DP -> nome da revenda (padrão + o que o admin cadastrou em Regras). */
+const codRev = () => { const o = cfgJson('REVENDAS_SIGLAS', COD_REV_PADRAO), r = {}; Object.keys(o).forEach(k => { if (o[k]) r[k.toUpperCase()] = o[k]; }); return r; };
+const COD_REV = new Proxy({}, { get: (_, k) => codRev()[String(k).toUpperCase()] });
+/** Nome do departamento sem código e sigla: "201 - ARMAZEM - AL" -> "ARMAZEM". */
+const nomeDepto = dep => { const m = String(dep || '').match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/); return (m ? m[1] : String(dep || '')).trim(); };
+/** Visão de um departamento: o que está em Regras > Departamentos; sem cadastro, Armazém/Entrega pelo nome e o resto fica de fora. */
+function areaDepto(dep) {
+  const n = nrm(nomeDepto(dep)), map = cfgJson('DEPARTAMENTOS'), k = Object.keys(map).find(x => nrm(x) === n);
+  if (k) return map[k] || 'nao';
+  const a = areaSetor(nomeDepto(dep)); return a === 'arm' || a === 'ent' ? a : 'nao';
+}
+const AREA_TXT = { arm: 'Armazém', ent: 'Entrega', adm: 'Administrativo', nao: 'Não importar' };
+const titulo = s => String(s || '').toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase());
 function revDoArquivo(nome) {
-  const up = String(nome).toUpperCase(), mm = up.match(/(?:^|[^A-Z])(AL|SE|PA|RP|JZ|BF|PE|PT|BR)(?:[^A-Z]|$)/);
-  return mm ? COD_REV[mm[1]] : '';
+  const up = String(nome).toUpperCase(), sig = Object.keys(codRev()).join('|'), mm = sig ? up.match(new RegExp('(?:^|[^A-Z])(' + sig + ')(?:[^A-Z]|$)')) : null;
+  return mm ? codRev()[mm[1]] : '';
 }
 /**
  * Lê o relatório pelo conteúdo de cada linha (não depende da posição das colunas, que muda conforme
@@ -777,8 +792,8 @@ function lerRelacaoDP(A, nomeArq) {
     if (di >= 0) {
       dep = v[di].replace(/^departamento\s*:?\s*/i, '') || v[di + 1] || '';
       const m = dep.match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/);
-      const a = areaSetor(m ? m[1] : dep);
-      setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : '';
+      const a = areaDepto(dep);
+      setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : a === 'adm' ? 'Administrativo · ' + titulo(nomeDepto(dep)) : '';
       rev = m ? (COD_REV[m[2].toUpperCase()] || m[2].toUpperCase()) : '';
       return;
     }
@@ -828,7 +843,7 @@ async function lerArquivo(file) {
   let abas = [], via = '';
   const abre = b => { try { const wb = X.read(b, { type: 'array' }); return wb.SheetNames.map(n => ({ nome: n, valores: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false }) })); } catch (e) { return []; } };
   abas = abre(bytes.slice());
-  const tenta = () => { for (const a of abas) { const r = lerRelacaoDP(a.valores, file.name); if (r && r.rows.length) return Object.assign({ nome: file.name, aba: a.nome, via }, r); } return null; };
+  const tenta = () => { for (const a of abas) { const r = lerRelacaoDP(a.valores, file.name); if (r && (r.rows.length || Object.keys(r.ign).length)) return Object.assign({ nome: file.name, aba: a.nome, via, valores: a.valores }, r); } return null; };
   let r = tenta();
   if (!r) { const fix = repararXls(X, bytes.slice()); if (fix) { via = 'arquivo do sistema de folha corrigido'; abas = abre(fix); r = tenta(); } }
   if (!r) { // última tentativa: converter pelo Google
@@ -843,7 +858,7 @@ async function lerArquivo(file) {
 function vImportar(m) {
   const I = S.imp, des = r => /demit|deslig|rescis/i.test(r.situacao);
   m.innerHTML = `<section class="hero"><h2>Importar o relatório do DP</h2>
-      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram só os departamentos de <b>Armazém</b> e <b>Entrega</b>. Só entram <b>colaboradores novos</b>: quem já foi importado não é alterado. Para tirar alguém, use <b>Remover</b> na aba Cadastro. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
+      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram os departamentos marcados em <b>Regras → Departamentos</b> (Armazém e Entrega, se nada for marcado). Só entram <b>colaboradores novos</b>: quem já foi importado não é alterado. Para tirar alguém, use <b>Remover</b> na aba Cadastro. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
     <section class="card"><div class="card-b" style="display:grid;gap:12px">
       <label class="drop" for="imp-file"><b>Escolher arquivos (.xls ou .xlsx)</b><span class="hint">Pode enviar os relatórios de várias revendas de uma vez</span></label>
       <input type="file" id="imp-file" accept=".xls,.xlsx,.xlsb,.csv" multiple hidden>
@@ -860,8 +875,8 @@ function vImportar(m) {
   $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}${a.amostra ? `<details style="margin-top:6px"><summary>O que foi lido${a.via ? ' (' + esc(a.via) + ')' : ''}: ${a.amostra.length} linhas</summary><pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0">${esc(a.amostra.join('\n')) || '(nada)'}</pre></details>` : ''}</div>` : `
     <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
     <div class="card-b" style="display:grid;gap:8px">
-      <div class="ck">${Object.entries(a.deps).map(([d, n]) => `<label style="cursor:default">✓ ${esc(d)} <b>${n}</b></label>`).join('')}</div>
-      ${Object.keys(a.ign).length ? `<p class="hint">Fora do foco (não entram): ${Object.entries(a.ign).map(([d, n]) => esc(d) + ' (' + n + ')').join(' · ')}</p>` : ''}
+      <div class="dpt">${Object.entries(Object.assign({}, a.deps, a.ign)).sort((x, y) => x[0].localeCompare(y[0])).map(([d, n]) => { const ar = areaDepto(d); return `<label class="${ar === 'nao' ? 'off' : ''}"><span>${esc(d)} <b>${n}</b></span><select data-dep="${esc(nomeDepto(d))}">${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === ar ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select></label>`; }).join('')}</div>
+      <p class="hint">Mude a visão de um departamento para incluir ou tirar da importação. A escolha fica salva em <b>Regras → Departamentos</b> e vale para as próximas importações.</p>
       ${a.rows.filter(des).length ? `<p class="hint">${a.rows.filter(des).length} demitido(s) no relatório não entram.</p>` : ''}
       <p class="hint"><b>${a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length}</b> novos · ${a.rows.filter(r => !des(r) && S.cols.some(c => c.matricula === r.matricula)).length} já cadastrados (não mudam)</p>
       <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Cargo</th><th>Setor</th><th>Situação</th></tr>
@@ -869,6 +884,12 @@ function vImportar(m) {
     </div></div>`).join('') +
     (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp ${total ? '' : 'disabled'}>${ic('up')}${total ? 'Incluir ' + total + ' novos' : 'Nenhum colaborador novo'}</button></div>` : '');
   const cx = m.querySelector('[data-cancel]'); if (cx) cx.onclick = () => { S.imp = null; vImportar(m); };
+  m.querySelectorAll('[data-dep]').forEach(s => { s.onchange = async () => {
+    const map = cfgJson('DEPARTAMENTOS'); Object.keys(map).forEach(k => { if (nrm(k) === nrm(s.dataset.dep)) delete map[k]; }); map[s.dataset.dep.toUpperCase()] = s.value;
+    try { S.cfg = await call('salvarConfig', { DEPARTAMENTOS: JSON.stringify(map) }); } catch (e) { return toast(esc(e.message), true); }
+    S.imp.arqs.forEach(a => { if (a.valores) Object.assign(a, lerRelacaoDP(a.valores, a.nome)); });
+    toast(`${esc(s.dataset.dep)}: ${AREA_TXT[s.value]}.`); vImportar(m);
+  }; });
   const bt = m.querySelector('[data-imp]');
   if (bt) bt.onclick = () => ocupado(bt, async () => {
     const rows = ok.flatMap(a => a.rows);
@@ -891,7 +912,7 @@ function detalheCad(c) {
   if (S.user.perfil === 'ADMIN') p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
   return p.join(' · ');
 }
-function nPendCad() { return S.user ? S.cols.filter(c => areaSetor(c.setor) !== 'outro' && pendenciasCadastro(c).length).length : 0; }
+function nPendCad() { return S.user ? S.cols.filter(c => pendenciasCadastro(c).length && (S.user.perfil === 'ADMIN' || areaSetor(c.setor) !== 'outro')).length : 0; }
 const PAPEL = { mot: 'Motorista', aj: 'Ajudante', adm: 'Administrativo' };
 function selOpts(lista, val, vazio) { return `<option value="">${vazio}</option>` + lista.map(v => { const [k, t] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`; }).join(''); }
 function supsDaRevenda(rev) {
@@ -920,7 +941,7 @@ function vCadastro(m) {
   const turnos = lstCfg('TURNOS_ARMAZEM'), tipos = lstCfg('TIPOS_MOTORISTA'), pontos = ['Sede'].concat(pontosRev(C.rev)), sups = supsDaRevenda(C.rev);
   const linha = c => {
     const pe = papelEntrega(c.funcao), pc = pendenciasCadastro(c);
-    const campos = C.area === 'arm'
+    const campos = C.area === 'outro' ? (admC ? '' : '<span class="hint" style="align-self:end">Nada a preencher</span>') : C.area === 'arm'
       ? `<label class="f">Turno<select data-k="turno">${selOpts(turnos, c.turno, '— turno —')}</select></label>`
       : (pe === 'adm' ? '<span class="hint" style="align-self:end">Administrativo: só o supervisor</span>' : `<label class="f">Sede / ponto<select data-k="lotacao">${selOpts(pontos, c.lotacao, '— sede/ponto —')}</select></label>`) +
         (pe === 'mot' ? `<label class="f">Motorista<select data-k="tipoMot">${selOpts(tipos, c.tipoMot, '— rota/puxador —')}</select></label>` : '');
@@ -946,10 +967,10 @@ function vCadastro(m) {
     <div class="vt">${ABAS_CAD.map(([k, n, x]) => `<button type="button" data-aba="${k}" aria-pressed="${C.aba === k}">${n}<i>${x}</i></button>`).join('')}</div>
     <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
       ${C.aba === 'col' || C.aba === 'ferias' ? `<label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label>` : ''}</div>
-    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega']].map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
+    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Administrativo e outros']].filter(([k]) => k !== 'outro' || doRev.some(c => areaSetor(c.setor) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
-        ${C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
+        ${C.area === 'outro' ? '' : C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
         ${admC ? `<select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>` : ''}
         <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span>${admC ? `<button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>` : ''}`
       : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
@@ -1205,13 +1226,54 @@ function vRegras(m) {
       <p>Base: Emenda Constitucional nº 141/2026 (fim da 6x1), em vigor a partir de ${dataBr(c.DATA_INICIO_5X2)}, e a CLT. Escalas com erro ficam em vermelho${SN(c.BLOQUEAR_ERRO) ? ' e não podem ser salvas' : ''}. Regimes diferentes previstos em acordo ou convenção coletiva devem ser confirmados com o DP.</p></section>
     <div class="rg">${cards.map(([t, v, p]) => `<div class="rc"><b>${t}</b><span class="v">${esc(v)}</span><p>${esc(p)}</p></div>`).join('')}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>Parâmetros (administrador)</h3><button type="button" class="btn sm pr" data-cfg>Salvar parâmetros</button></div>
-      <div class="card-b row2">${Object.keys(c).filter(k => k !== 'PONTOS_APOIO').map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
-      <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>` : ''}`;
+      <div class="card-b row2">${Object.keys(c).filter(k => !['PONTOS_APOIO', 'DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'FUNCOES_GRUPO'].includes(k)).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
+      <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>${cartoesParam()}` : ''}`;
+  if (adm) ligaCartoesParam(m);
   const b = m.querySelector('[data-cfg]');
   if (b) b.onclick = () => ocupado(b, async () => {
     const d = {}; m.querySelectorAll('input[data-k]').forEach(i => { d[i.dataset.k] = i.value; });
     S.cfg = await call('salvarConfig', d); revalida(); toast('Parâmetros salvos. As escalas foram reavaliadas com as novas regras.'); render();
   });
+}
+
+/* ---------- parâmetros em tabela: departamentos, revendas, funções ---------- */
+function cartoesParam() {
+  const dmap = cfgJson('DEPARTAMENTOS'), dnomes = uniq(Object.keys(dmap).concat(S.cols.map(c => nomeDepto(c.departamento)).filter(Boolean)).map(x => x.toUpperCase()));
+  const sig = codRev(), gf = cfgJson('FUNCOES_GRUPO'), cargos = uniq(S.cols.map(c => c.funcao));
+  const gfv = k => { const kk = Object.keys(gf).find(x => nrm(x) === nrm(k)); return kk ? gf[kk] : ''; };
+  return `<section class="card" id="pc-dep"><div class="card-h"><h3>Departamentos do DP</h3><button type="button" class="btn sm pr" data-psave="dep">Salvar</button></div>
+      <div class="card-b"><p class="hint">Em qual visão cada departamento do relatório entra. "Não importar" deixa de fora. Use o nome sem código e sigla (ex.: PUXADA, VENDAS).</p>
+      <div class="ptab" data-lst="dep">${dnomes.map(n => `<div class="pr"><input value="${esc(n)}" data-a><select data-b>${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === areaDepto(n) ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button></div>`).join('')}</div>
+      <button type="button" class="btn sm" data-padd="dep">+ Departamento</button></div></section>
+    <section class="card" id="pc-rev"><div class="card-h"><h3>Revendas (sigla no DP)</h3><button type="button" class="btn sm pr" data-psave="rev">Salvar</button></div>
+      <div class="card-b"><p class="hint">A sigla no fim do departamento ("201 - ARMAZEM - <b>AL</b>") vira o nome da revenda. Para uma revenda nova, inclua a sigla e o nome.</p>
+      <div class="ptab" data-lst="rev">${Object.keys(sig).sort().map(k => `<div class="pr"><input value="${esc(k)}" maxlength="3" data-a style="max-width:90px"><input value="${esc(sig[k])}" data-b><button type="button" class="xp" data-prm>×</button></div>`).join('')}</div>
+      <button type="button" class="btn sm" data-padd="rev">+ Revenda</button></div></section>
+    <section class="card" id="pc-fn"><div class="card-h"><h3>Funções para os filtros</h3><button type="button" class="btn sm pr" data-psave="fn">Salvar</button></div>
+      <div class="card-b"><p class="hint">Dê o mesmo nome de grupo a cargos que devem aparecer juntos no filtro "Função" e nos agrupamentos (ex.: "AJUDANTE DE ENTREGA I" e "II" → "Ajudante de entrega"). Em branco, fica o cargo do DP.</p>
+      <div class="ptab" data-lst="fn">${cargos.map(k => `<div class="pr"><span class="pk" data-a="${esc(k)}">${esc(k)}</span><input value="${esc(gfv(k))}" placeholder="${esc(k)}" data-b list="gf-sug"></div>`).join('')}</div>
+      <datalist id="gf-sug">${uniq(Object.values(gf)).map(v => `<option value="${esc(v)}">`).join('')}</datalist></div></section>`;
+}
+function ligaCartoesParam(m) {
+  m.querySelectorAll('[data-padd]').forEach(b => { b.onclick = () => {
+    const l = m.querySelector(`[data-lst="${b.dataset.padd}"]`), d = document.createElement('div'); d.className = 'pr';
+    d.innerHTML = b.dataset.padd === 'dep' ? `<input placeholder="Nome do departamento" data-a><select data-b>${['arm', 'ent', 'adm', 'nao'].map(k => `<option value="${k}" ${k === 'adm' ? 'selected' : ''}>${AREA_TXT[k]}</option>`).join('')}</select><button type="button" class="xp" data-prm>×</button>`
+      : `<input placeholder="Sigla" maxlength="3" data-a style="max-width:90px"><input placeholder="Nome da revenda" data-b><button type="button" class="xp" data-prm>×</button>`;
+    l.appendChild(d); d.querySelector('input').focus();
+  }; });
+  m.addEventListener('click', e => { const x = e.target.closest('[data-prm]'); if (x) x.closest('.pr').remove(); });
+  m.querySelectorAll('[data-psave]').forEach(b => { b.onclick = () => ocupado(b, async () => {
+    const k = b.dataset.psave, o = {};
+    m.querySelectorAll(`[data-lst="${k}"] .pr`).forEach(r => {
+      const a = r.querySelector('[data-a]'), v = r.querySelector('[data-b]').value.trim(), chave = (a.tagName === 'INPUT' ? a.value : a.dataset.a).trim();
+      if (!chave) return;
+      if (k === 'dep') o[chave.toUpperCase()] = v; else if (k === 'rev') { if (v) o[chave.toUpperCase()] = v; } else if (v && v !== chave) o[chave] = v;
+    });
+    // revendas: grava o mapa inteiro (inclusive a remoção de uma sigla padrão)
+    if (k === 'rev') Object.keys(COD_REV_PADRAO).forEach(s => { if (!o[s]) o[s] = ''; });
+    const chaveCfg = { dep: 'DEPARTAMENTOS', rev: 'REVENDAS_SIGLAS', fn: 'FUNCOES_GRUPO' }[k];
+    S.cfg = await call('salvarConfig', { [chaveCfg]: JSON.stringify(o) }); revalida(); toast('Salvo.'); render();
+  }); });
 }
 
 /* ================= trocar senha ================= */
