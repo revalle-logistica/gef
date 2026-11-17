@@ -1027,7 +1027,11 @@ function feriasSalvar_(u, d) {
     const lst = pfLista_(), a = pfAcha_(u, d.id, lst), p = a.p;
     if (d.reset) { p.plano = ''; p.conf = 'N'; }
     else {
-      if (d.plano !== undefined) { const pl = pfPlanoLimpo_(d.plano); p.plano = pl === null ? '' : JSON.stringify(pl); }
+      if (d.plano !== undefined) {
+        const pl = pfPlanoLimpo_(d.plano);
+        if (pl && !pl.length && String(p.prazo) <= p.ano + '-12-31') throw new Error('Não dá para deixar sem férias: o prazo (' + String(p.prazo).split('-').reverse().join('/') + ') vence em ' + p.ano + '.');
+        p.plano = pl === null ? '' : JSON.stringify(pl);
+      }
       if (d.conf !== undefined) p.conf = d.conf ? 'S' : 'N';
       if (d.saldo !== undefined) {
         if (u.perfil !== 'ADMIN') throw new Error('Só o administrador corrige o saldo de férias.');

@@ -1856,11 +1856,15 @@ function diaBomPerto(rev, y, m, d) {
 function diaBomDesde(rev, iso) { for (let k = 0; k < 20; k++) { const d = isoMaisDias(iso, k); if (!inicioRuim(rev, d)) return d; } return iso; }
 const plano = p => (p.plano !== null && p.plano !== undefined) ? p.plano : (p.sugestao || []);
 const editado = p => p.plano !== null && p.plano !== undefined;
+/** Decidido não tirar férias deste período no ano em tela (fica para o ano seguinte, dentro do prazo). */
+const naoProg = p => editado(p) && !p.plano.length;
+const podeAdiar = p => p.prazo > FX.ano + '-12-31';
 const obrig = p => p.ativo && (p.origem === 'ref' || p.origem === 'sem_ref');
 function statusF(p) {
   if (p.origem === 'gozado') return 'gozado';
   if (!p.ativo) return 'fora';
   const pl = plano(p);
+  if (naoProg(p) && p.conf) return 'val';
   if (p.origem === 'opc') return pl.length ? (p.conf ? 'val' : 'sug') : 'opc';
   if (!pl.length) return 'sem';
   return p.conf ? 'val' : 'sug';
@@ -1875,7 +1879,7 @@ const vencida = p => p.fimAq < hoje();
 function alertasF(p, pl) {
   pl = pl || plano(p);
   if (!p.ativo) return [['w', 'Afastado/fora do QLP: conferir com o DP']];
-  const a = []; if (!pl.length) { if (obrig(p)) a.push(['c', 'Sem programação (prazo ' + dataBr(p.prazo) + ')']); return a; }
+  const a = []; if (!pl.length) { if (naoProg(p) && p.conf && podeAdiar(p)) return a; if (obrig(p)) a.push(['c', 'Sem programação (prazo ' + dataBr(p.prazo) + ')']); return a; }
   let tot = 0; const pk = picos(p.revenda);
   pl.forEach((x, i) => {
     tot += x.dias; const fim = fimDe(x), pre = pl.length > 1 ? (i + 1) + 'º: ' : '';
@@ -2014,11 +2018,12 @@ function blocoPeriodo(p, k, n, base) {
   const tot = pl.reduce((s, x) => s + x.dias, 0);
   let h = `<div class="fx-pbk ${st === 'val' ? 'ok' : ''} ${cr.length ? 'wn' : ''}" data-fxid="${esc(p.id)}"><div>
     <div class="fx-aq">${n > 1 ? `<b>${k + 1}º período</b> · ` : ''}${vencida(p) ? '<span class="tg er">férias vencidas</span> ' : ''}Aquisitivo <b>${dataBr(p.iniAq)} a ${dataBr(p.fimAq)}</b> · pode sair de <b>${dataBr(isoMaisDias(p.fimAq, 1))}</b> até <b>${dataBr(ultimoInicio(p))}</b> · prazo ${dataBr(p.prazo)} · saldo ${p.saldo} dias</div>
-    <div class="fx-tlw">${linhaMeses(p, pl)}<div>${pl.length ? `<div class="fx-per">${perTxt(pl)}</div>` : '<div class="fx-per er">Sem data: toque num mês</div>'}<small class="hint">${fonte}</small></div></div>
+    <div class="fx-tlw">${linhaMeses(p, pl)}<div>${pl.length ? `<div class="fx-per">${perTxt(pl)}</div>` : naoProg(p) ? `<div class="fx-per">Sem férias em ${FX.ano}</div>` : '<div class="fx-per er">Sem data: toque num mês</div>'}<small class="hint">${naoProg(p) ? 'fica para ' + (+FX.ano + 1) + ' · prazo ' + dataBr(p.prazo) : fonte}</small></div></div>
     ${cr.map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('')}${pl.length && tot < p.saldo ? `<div class="fx-wn al">⚠ Programado ${tot} de ${p.saldo} dias: faltam ${p.saldo - tot}.</div>` : ''}</div>
     <div class="fx-acts">`;
-  if (st === 'val') h += `<div class="fx-ok">✓ Confirmado${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div><button type="button" class="btn sm" data-fxa="edit">Alterar</button><button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`;
+  if (st === 'val') h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div><button type="button" class="btn sm" data-fxa="edit">${naoProg(p) ? 'Programar' : 'Alterar'}</button><button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`;
   else { if (pl.length) h += `<button type="button" class="btn sm ok" data-fxa="ok">✓ Confirmar</button>`; h += `<button type="button" class="btn sm" data-fxa="edit">${pl.length ? 'Trocar mês' : 'Escolher mês'}</button>`; if (editado(p) || p.conf) h += `<button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`; }
+  if (st !== 'val' && podeAdiar(p) && p.ativo) h += `<button type="button" class="fx-lk" data-fxa="naoprog" title="Prazo ${dataBr(p.prazo)}: dá para tirar no ano seguinte">Não programar em ${FX.ano}</button>`;
   h += '</div>';
   if (ed) h += editorPeriodo(p, base);
   return h + '</div>';
@@ -2385,6 +2390,7 @@ function ligaFerias(m) {
     if (d.fxa === 'ok') return salvaPeriodo(p, { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
     if (d.fxa === 'edit') { iniciaEdicao(p); renderFerias(); setTimeout(() => { const el = FX.m.querySelector(`[data-fxid="${CSS.escape(p.id)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); return; }
     if (d.fxa === 'cancel') { FX.ed = null; return renderFerias(); }
+    if (d.fxa === 'naoprog') { FX.ed = null; return salvaPeriodo(p, { plano: [], conf: true }, `${p.nome.split(' ')[0]}: sem férias deste período em ${FX.ano}`); }
     if (d.fxa === 'saldo') {
       const v = prompt(`Saldo correto de dias de férias de ${p.nome} neste período aquisitivo (0 a 30):`, String(+p.saldo || 30)); if (v === null) return;
       const s = Math.round(+String(v).replace(',', '.')); if (!(s >= 0 && s <= 30)) { toast('Informe um número de 0 a 30.', true); return; }
