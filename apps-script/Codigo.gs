@@ -229,7 +229,7 @@ function publico_(u) {
 function registrar_(d) {
   const nome = String(d.nome || '').trim(), login = normLogin_(d.login), senha = String(d.senha || '');
   if (nome.length < 3) throw new Error('Informe seu nome completo.');
-  if (!/^[a-z0-9._-]{3,30}$/.test(login)) throw new Error('Login: de 3 a 30 caracteres, só letras, números, ponto, hífen ou sublinhado.');
+  if (!/^[a-z0-9._@+-]{3,60}$/.test(login)) throw new Error('Login: use seu e-mail ou um nome sem espaços (letras, números, ponto, hífen).');
   if (senha.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
   return comLock_(function () {
     const us = ler_('Usuarios');

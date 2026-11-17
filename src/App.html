@@ -74,7 +74,7 @@ function telaLogin(msg, aba) {
     <form class="lg-f" id="lgf" novalidate>
       <div id="lgmsg">${msg ? `<div class="msgbox ${msg.ok ? 'ok' : 'er'}">${esc(msg.t)}</div>` : ''}</div>
       ${up ? '<label class="f">Nome completo<input name="nome" autocomplete="name"></label><label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel"></label>' : ''}
-      <label class="f">Login<input name="login" autocapitalize="none" autocomplete="username" placeholder="ex.: joao.silva"></label>
+      <label class="f">Login<input name="login" autocapitalize="none" autocomplete="username" inputmode="email" placeholder="seu e-mail ou ex.: joao.silva"></label>
       <label class="f">Senha<input name="senha" type="password" autocomplete="${up ? 'new-password' : 'current-password'}"></label>
       ${up ? '<label class="f">Repita a senha<input name="senha2" type="password" autocomplete="new-password"></label>' : ''}
       <button class="btn pr" type="submit">${up ? 'Enviar cadastro para aprovação' : 'Entrar'}</button>
