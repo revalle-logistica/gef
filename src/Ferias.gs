@@ -80,6 +80,12 @@ function feriasSalvar_(u, d) {
     else {
       if (d.plano !== undefined) { const pl = pfPlanoLimpo_(d.plano); p.plano = pl === null ? '' : JSON.stringify(pl); }
       if (d.conf !== undefined) p.conf = d.conf ? 'S' : 'N';
+      if (d.saldo !== undefined) {
+        if (u.perfil !== 'ADMIN') throw new Error('Só o administrador corrige o saldo de férias.');
+        const s = Math.round(+d.saldo);
+        if (!(s >= 0 && s <= 30)) throw new Error('Saldo deve ser de 0 a 30 dias.');
+        p.saldo = String(s);
+      }
     }
     p.por = u.nome; p.em = agora_(); p.editadoGestao = 'S';
     gravarLinha_('FeriasPeriodos', p);
@@ -89,7 +95,7 @@ function feriasSalvar_(u, d) {
   });
 }
 function feriasUm_(p, c) {
-  return { id: p.id, matricula: c.matricula, plano: p.plano === '' ? null : parse_(p.plano, null), conf: p.conf === 'S', por: p.por, em: p.em, acomp: parse_(p.acomp, null) };
+  return { id: p.id, matricula: c.matricula, plano: p.plano === '' ? null : parse_(p.plano, null), conf: p.conf === 'S', por: p.por, em: p.em, acomp: parse_(p.acomp, null), saldo: +p.saldo || 0 };
 }
 /** Confirmar vários de uma vez, como estão. */
 function feriasLote_(u, d) {

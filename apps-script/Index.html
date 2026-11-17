@@ -1905,10 +1905,10 @@ const ordemIni = p => { const x = plano(p)[0]; return x ? x.ini : '9999'; };
 
 /* ---------- gravação (otimista) ---------- */
 async function salvaPeriodo(p, d, msg) {
-  const antes = { plano: p.plano, conf: p.conf, por: p.por };
-  if (d.reset) { p.plano = null; p.conf = false; } else { if (d.plano !== undefined) p.plano = d.plano; if (d.conf !== undefined) p.conf = d.conf; }
+  const antes = { plano: p.plano, conf: p.conf, por: p.por, saldo: p.saldo };
+  if (d.reset) { p.plano = null; p.conf = false; } else { if (d.plano !== undefined) p.plano = d.plano; if (d.conf !== undefined) p.conf = d.conf; if (d.saldo !== undefined) p.saldo = +d.saldo; }
   p.por = S.user.nome; renderFerias();
-  try { const r = await call('feriasSalvar', Object.assign({ id: p.id }, d)); Object.assign(p, { plano: r.plano, conf: r.conf, por: r.por, em: r.em }); if (msg) toast(msg); atualizaFeriasEscala(p); }
+  try { const r = await call('feriasSalvar', Object.assign({ id: p.id }, d)); Object.assign(p, { plano: r.plano, conf: r.conf, por: r.por, em: r.em, saldo: r.saldo }); if (msg) toast(msg); atualizaFeriasEscala(p); }
   catch (e) { Object.assign(p, antes); renderFerias(); toast(esc(e.message), true); }
 }
 /** As férias confirmadas também valem para as escalas (aba Ferias): atualiza a cópia local. */
@@ -2023,25 +2023,38 @@ function blocoPeriodo(p, k, n, base) {
   if (ed) h += editorPeriodo(p, base);
   return h + '</div>';
 }
+/** Saldo do período (5 a 30 dias). Sem saldo informado, vale 30. */
+const saldoF = p => Math.min(30, Math.max(5, +p.saldo || 30));
+/** Divisão em 2 partes respeitando a regra (uma parte ≥ 14 e a outra ≥ 5): 15+15, 15+10, 14+5… */
+const partesF = s => s >= 30 ? [15, 15] : s >= 20 ? [15, s - 15] : s >= 19 ? [14, s - 14] : null;
+/** Opções de dias conforme o saldo: tudo de uma vez, 20 (vendeu 10) só com saldo de 30, e dividir quando der. */
+function opcoesDias(p) {
+  const s = saldoF(p), pt = partesF(s), o = [['tudo', s + ' dias' + (s < 30 ? ' (todo o saldo)' : '')]];
+  if (s === 30) o.push(['20', '20 dias (vendeu 10)']);
+  if (pt) o.push(['div', pt[0] + ' + ' + pt[1]]);
+  return o;
+}
 function rascunho(p) {
   const e = FX.ed; if (!e.ms[0]) return [];
-  const y = +FX.ano, a = { ini: isoDe(y, e.ms[0], e.d[0]), dias: e.modo === '15' ? 15 : e.modo === '20' ? 20 : Math.min(30, Math.max(p.saldo || 30, 5)) };
-  if (e.modo !== '15' || !e.ms[1]) return [a];
-  return [a, { ini: isoDe(y, e.ms[1], e.d[1]), dias: 15 }].sort((x, z) => x.ini.localeCompare(z.ini));
+  const s = saldoF(p), pt = partesF(s), div = e.modo === 'div' && pt;
+  const y = +FX.ano, a = { ini: isoDe(y, e.ms[0], e.d[0]), dias: div ? pt[0] : e.modo === '20' && s === 30 ? 20 : s };
+  if (!div || !e.ms[1]) return [a];
+  return [a, { ini: isoDe(y, e.ms[1], e.d[1]), dias: pt[1] }].sort((x, z) => x.ini.localeCompare(z.ini));
 }
 function iniciaEdicao(p) {
   const pl = plano(p), noAno = x => x && x.ini.slice(0, 4) === FX.ano;
-  FX.ed = { id: p.id, modo: pl.length === 2 ? '15' : (pl[0] && pl[0].dias <= 20 ? '20' : '30'), ms: [noAno(pl[0]) ? +pl[0].ini.slice(5, 7) : 0, noAno(pl[1]) ? +pl[1].ini.slice(5, 7) : 0], d: [pl[0] ? +pl[0].ini.slice(8, 10) : 1, pl[1] ? +pl[1].ini.slice(8, 10) : 1] };
+  const s = saldoF(p);
+  FX.ed = { id: p.id, modo: pl.length === 2 && partesF(s) ? 'div' : (s === 30 && pl[0] && pl[0].dias === 20 ? '20' : 'tudo'), ms: [noAno(pl[0]) ? +pl[0].ini.slice(5, 7) : 0, noAno(pl[1]) ? +pl[1].ini.slice(5, 7) : 0], d: [pl[0] ? +pl[0].ini.slice(8, 10) : 1, pl[1] ? +pl[1].ini.slice(8, 10) : 1] };
 }
 function foraEquipe(rows, exceto) { const out = Array.from({ length: 12 }, () => new Set()); rows.forEach(r => { if (!r.ativo || r.id === exceto) return; plano(r).forEach(x => porMes(x).forEach((d, i) => { if (d) out[i].add(r.matricula); })); }); return out.map(s => s.size); }
 function editorPeriodo(p, base) {
   const e = FX.ed, fora = foraEquipe(base, p.id), pk = picos(p.revenda), equipe = Math.max(1, new Set(base.map(x => x.matricula)).size), pl = rascunho(p);
   const linhaM = k => `<div class="fx-mp">${FM.map((x, i) => { const c = corMes(p, i), busy = fora[i] / equipe >= 0.2; return `<button type="button" class="mb ${e.ms[k] === i + 1 ? 'on' : ''} ${pk[i] ? 'pk' : ''} ${c} ${busy ? 'busy' : ''}" data-fxmk="${k}" data-fxmm="${i + 1}" title="${fora[i]} da equipe já de férias${pk[i] ? ' · pico de volume' : ''}"><span>${x}</span><small>${fora[i]} fora</small></button>`; }).join('')}</div>`;
-  let h = `<div class="fx-ed"><div class="lbl">Quantos dias?</div><div class="chips" style="padding:0">${[['30', '30 dias'], ['20', '20 dias (vendeu 10)'], ['15', '15 + 15']].map(([k, l]) => `<button type="button" class="chip" data-fxmodoed="${k}" aria-pressed="${e.modo === k}">${l}</button>`).join('')}</div>
-    <div class="lbl">${e.modo === '15' ? '1º período: mês' : 'Mês de início'} <span class="hint">· número = quantos da equipe já estão fora · borda laranja = pico de volume</span></div>${linhaM(0)}`;
-  if (e.modo === '15') h += `<div class="lbl">2º período: mês</div>${linhaM(1)}`;
-  if (e.ms[0]) h += `<div class="lbl">Dia de início${e.modo === '15' ? ' (1º período)' : ''} <span class="hint">· riscado = não pode começar (domingo, sexta/sábado antes da folga, feriado ou 2 dias antes)</span></div>` + calendarioF(p, 0, e.ms[0], e.d[0]);
-  if (e.modo === '15' && e.ms[1]) h += '<div class="lbl">Dia de início (2º período)</div>' + calendarioF(p, 1, e.ms[1], e.d[1]);
+  let h = `<div class="fx-ed"><div class="lbl">Quantos dias? <span class="hint">· saldo deste período: ${saldoF(p)} dias</span>${S.user.perfil === 'ADMIN' ? ' <button type="button" class="fx-lk" data-fxa="saldo">corrigir saldo</button>' : ''}</div><div class="chips" style="padding:0">${opcoesDias(p).map(([k, l]) => `<button type="button" class="chip" data-fxmodoed="${k}" aria-pressed="${e.modo === k}">${l}</button>`).join('')}</div>
+    <div class="lbl">${e.modo === 'div' ? '1º período: mês' : 'Mês de início'} <span class="hint">· número = quantos da equipe já estão fora · borda laranja = pico de volume</span></div>${linhaM(0)}`;
+  if (e.modo === 'div') h += `<div class="lbl">2º período: mês</div>${linhaM(1)}`;
+  if (e.ms[0]) h += `<div class="lbl">Dia de início${e.modo === 'div' ? ' (1º período)' : ''} <span class="hint">· riscado = não pode começar (domingo, sexta/sábado antes da folga, feriado ou 2 dias antes)</span></div>` + calendarioF(p, 0, e.ms[0], e.d[0]);
+  if (e.modo === 'div' && e.ms[1]) h += '<div class="lbl">Dia de início (2º período)</div>' + calendarioF(p, 1, e.ms[1], e.d[1]);
   h += `<div class="lbl">Fica assim</div><div class="fx-per">${pl.length ? perTxt(pl) : 'escolha o mês'}</div>`;
   if (pl.length) h += mesmaFuncao(p, pl);
   h += (pl.length ? alertasF(p, pl).filter(a => a[0] === 'c') : []).map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('');
@@ -2372,6 +2385,11 @@ function ligaFerias(m) {
     if (d.fxa === 'ok') return salvaPeriodo(p, { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
     if (d.fxa === 'edit') { iniciaEdicao(p); renderFerias(); setTimeout(() => { const el = FX.m.querySelector(`[data-fxid="${CSS.escape(p.id)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); return; }
     if (d.fxa === 'cancel') { FX.ed = null; return renderFerias(); }
+    if (d.fxa === 'saldo') {
+      const v = prompt(`Saldo correto de dias de férias de ${p.nome} neste período aquisitivo (0 a 30):`, String(+p.saldo || 30)); if (v === null) return;
+      const s = Math.round(+String(v).replace(',', '.')); if (!(s >= 0 && s <= 30)) { toast('Informe um número de 0 a 30.', true); return; }
+      const ed = FX.ed; salvaPeriodo(p, { saldo: s }, `Saldo de ${p.nome.split(' ')[0]} corrigido para ${s} dias`).then(() => { if (ed && ed.id === p.id) { iniciaEdicao(p); renderFerias(); } }); return;
+    }
     if (d.fxa === 'reset') { FX.ed = null; return salvaPeriodo(p, { reset: true }, '↺ ' + p.nome.split(' ')[0] + ': voltou à sugestão'); }
     if (d.fxa === 'save') { const pl = rascunho(p); if (!pl.length) return; FX.ed = null; return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) ? null : pl, conf: true }, '✓ Férias de ' + p.nome.split(' ')[0] + ' salvas'); }
     if (d.fxtm) {
@@ -2381,7 +2399,7 @@ function ligaFerias(m) {
       pl.sort((a, c) => a.ini.localeCompare(c.ini)); FX.ed = null;
       return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) ? null : pl, conf: true }, '✓ ' + p.nome.split(' ')[0] + ': início em ' + MESES[mm - 1]);
     }
-    if (d.fxmodoed) { FX.ed.modo = d.fxmodoed; if (FX.ed.modo === '15' && !FX.ed.ms[1] && FX.ed.ms[0]) FX.ed.ms[1] = Math.min(12, FX.ed.ms[0] + 3); return renderFerias(); }
+    if (d.fxmodoed) { FX.ed.modo = d.fxmodoed; if (FX.ed.modo === 'div' && !FX.ed.ms[1] && FX.ed.ms[0]) FX.ed.ms[1] = Math.min(12, FX.ed.ms[0] + 3); return renderFerias(); }
     if (d.fxmk !== undefined) { const k = +d.fxmk, mm = +d.fxmm; FX.ed.ms[k] = mm; FX.ed.d[k] = diaBomPerto(p.revenda, +FX.ano, mm, Math.min(FX.ed.d[k] || 1, diasMes(+FX.ano, mm - 1))); return renderFerias(); }
     if (d.fxcd) { FX.ed.d[+d.fxck] = +d.fxcd; return renderFerias(); }
   };
