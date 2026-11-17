@@ -384,3 +384,75 @@ function minhaEscala_(d) {
     ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })
   };
 }
+
+/* ---------------- sincronização com o sistema de programação de férias ---------------- */
+const SIGLAS_PADRAO = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
+const ORIGEM_SINC = 'Sincronização (sistema de férias)';
+/**
+ * Traz as férias CONFIRMADAS do sistema de programação de férias: inclui as novas, ignora as que já existem e
+ * tira as que vieram dele e deixaram de estar confirmadas (ou mudaram de data). Férias lançadas à mão ou por
+ * planilha não são tocadas. Não grava nada no sistema de férias.
+ */
+function sincFerias_(quem) {
+  const cfg = cfg_(), urlSis = String(cfg.FERIAS_SISTEMA_URL || '').trim(), urlApi = String(cfg.FERIAS_API_URL || '').trim();
+  if (!urlSis || !urlApi) throw new Error('Informe os endereços do sistema de férias em Regras > Parâmetros.');
+  const html = UrlFetchApp.fetch(urlSis, { muteHttpExceptions: true }).getContentText();
+  const mb = html.match(/<script[^>]*id=["']base["'][^>]*>([\s\S]*?)<\/script>/);
+  if (!mb) throw new Error('Não encontrei a base de colaboradores no sistema de férias.');
+  const BASE = JSON.parse(mb[1]);
+  const EDITS = JSON.parse(UrlFetchApp.fetch(urlApi + (urlApi.indexOf('?') < 0 ? '?' : '&') + 'api=get&t=' + Date.now(), { muteHttpExceptions: true }).getContentText() || '{}');
+  if (EDITS && EDITS.erro) throw new Error('Sistema de férias: ' + EDITS.erro);
+  const ano = String(BASE.ano || '').trim() || anoDoSistema_(html);
+  let sig = {}; try { sig = JSON.parse(cfg.REVENDAS_SIGLAS || '{}') || {}; } catch (e) { sig = {}; }
+  const SIG = {}; Object.keys(SIGLAS_PADRAO).forEach(function (k) { SIG[k] = SIGLAS_PADRAO[k]; }); Object.keys(sig).forEach(function (k) { if (sig[k]) SIG[k.toUpperCase()] = sig[k]; });
+  const cols = {}; ler_('Colaboradores').forEach(function (c) { if (c.ativo !== 'N') cols[c.revenda + '|' + codigoMatricula(c.matricula)] = c; });
+  const dim = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], dois = function (n) { return String(n).padStart(2, '0'); };
+  const desejados = {}, res = { em: agora_(), por: quem || 'automática', confirmadas: 0, novos: 0, iguais: 0, removidos: 0, conflitos: [], naoAchados: 0, ano: ano };
+  (BASE.units || []).forEach(function (un) {
+    const rev = SIG[String(un.sig || '').toUpperCase()] || un.nome;
+    (un.rows || []).forEach(function (r) {
+      const E = EDITS[r.id];
+      if (!E || !E.c) return;
+      res.confirmadas++;
+      const c = cols[rev + '|' + String(r.cod)];
+      if (!c) { res.naoAchados++; return; }
+      const pl = E.p !== undefined ? E.p : r.p;
+      (pl || []).forEach(function (p) {
+        if (!p || !p.m || !p.dias) return;
+        const ini = ano + '-' + dois(p.m) + '-' + dois(Math.min(p.d || 1, dim[p.m - 1]));
+        const fim = isoMaisDias(ini, +p.dias - 1);
+        desejados[c.matricula + '|' + ini + '|' + fim] = { matricula: c.matricula, inicio: ini, fim: fim, por: E.por || '' };
+      });
+    });
+  });
+  return comLock_(function () {
+    let lst = ler_('Ferias');
+    const antes = lst.length;
+    lst = lst.filter(function (f) { return f.criadoPor !== ORIGEM_SINC || desejados[f.matricula + '|' + f.inicio + '|' + f.fim]; });
+    res.removidos = antes - lst.length;
+    Object.keys(desejados).forEach(function (k) {
+      const it = desejados[k];
+      if (lst.some(function (f) { return f.matricula === it.matricula && f.inicio === it.inicio && f.fim === it.fim; })) { res.iguais++; return; }
+      const choque = lst.filter(function (f) { return f.matricula === it.matricula && f.inicio <= it.fim && it.inicio <= f.fim; })[0];
+      if (choque) { res.conflitos.push(it.matricula + ': ' + dataBr_(it.inicio) + ' a ' + dataBr_(it.fim) + ' choca com ' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim)); return; }
+      lst.push({ id: Utilities.getUuid(), matricula: it.matricula, inicio: it.inicio, fim: it.fim, obs: 'Programação de férias' + (it.por ? ' · confirmada por ' + it.por : ''), criadoPor: ORIGEM_SINC, criadoEm: res.em });
+      res.novos++;
+    });
+    if (res.novos || res.removidos) gravarTudo_('Ferias', lst);
+    res.conflitos = res.conflitos.slice(0, 30);
+    PropertiesService.getScriptProperties().setProperty('FERIAS_SINC', JSON.stringify(res));
+    log_({ login: res.por }, '', 'sincronizou férias', JSON.stringify({ novos: res.novos, removidos: res.removidos, conflitos: res.conflitos.length }));
+    return res;
+  });
+}
+/** O sistema de férias monta as datas com o ano fixo no código ("2027-..."): lê de lá. */
+function anoDoSistema_(html) { const m = html.match(/function isoOf\(m,d\)\{return '(20\d\d)-'/); return m ? m[1] : String(new Date().getFullYear() + 1); }
+/** Gatilho de hora em hora (instalado por configurarSincronizacao). */
+function sincFeriasAuto() { try { sincFerias_('automática'); } catch (e) { PropertiesService.getScriptProperties().setProperty('FERIAS_SINC', JSON.stringify({ em: agora_(), por: 'automática', erro: e.message })); } }
+/** Rode UMA vez no editor: autoriza o acesso ao sistema de férias, liga a sincronização de hora em hora e já sincroniza. */
+function configurarSincronizacao() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'sincFeriasAuto') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('sincFeriasAuto').timeBased().everyHours(1).create();
+  const r = sincFerias_('configuração');
+  Logger.log('Sincronização ligada. ' + JSON.stringify(r));
+}

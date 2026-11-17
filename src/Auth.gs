@@ -121,16 +121,16 @@ function avisarAprovacao_(u, adm) {
   const cfg = cfg_(), link = cfg.LINK_SISTEMA, h = h_;
   const lst = s => { const a = lista_(s); return a.indexOf('*') >= 0 ? 'todas' : a.join(', '); };
   const html = '<div style="font-family:Arial,sans-serif;max-width:520px;color:#0c1a33">' +
-    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">Escala 5x2 · ' + h(cfg.EMPRESA) + '</b></div>' +
+    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">Gestão de Férias e Escala · ' + h(cfg.EMPRESA) + '</b></div>' +
     '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
     '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
-    '<p>Seu acesso ao sistema de escalas 5x2 foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
+    '<p>Seu acesso ao sistema Gestão de Férias e Escala foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
     '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
     (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir a Escala 5x2</a></p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o sistema</a></p>' +
     '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
   try {
-    MailApp.sendEmail({ to: u.email, subject: 'Seu acesso à Escala 5x2 foi aprovado', htmlBody: html, name: 'Escala 5x2 · ' + cfg.EMPRESA });
+    MailApp.sendEmail({ to: u.email, subject: 'Seu acesso à Gestão de Férias e Escala foi aprovado', htmlBody: html, name: 'Gestão de Férias e Escala · ' + cfg.EMPRESA });
     log_(adm, '', 'e-mail de aprovação', u.email);
     return u.email;
   } catch (e) {

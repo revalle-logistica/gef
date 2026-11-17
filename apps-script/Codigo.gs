@@ -2,7 +2,7 @@
 
 // ===================== Code.gs =====================
 /**
- * Escala 5x2 — sistema de escalas da Revalle.
+ * Gestão de Férias e Escala — férias e escalas 5x2 da Revalle.
  * Web app em Apps Script. A base de dados é uma Planilha Google criada automaticamente
  * no primeiro acesso (o ID fica em Propriedades do script: DB_ID).
  * Publicar como: Executar como "Eu" · Acesso "Qualquer pessoa".
@@ -30,6 +30,8 @@ const CFG_PADRAO = [
   ['DEPARTAMENTOS', '{}', 'Departamentos do relatório do DP e a visão de cada um (editado em Regras)'],
   ['REVENDAS_SIGLAS', '{}', 'Sigla do departamento no DP e o nome da revenda (editado em Regras)'],
   ['FUNCOES_GRUPO', '{}', 'Cargos do DP agrupados para os filtros (editado em Regras)'],
+  ['FERIAS_SISTEMA_URL', 'https://ferias27-revalle.netlify.app/', 'Endereço do sistema de programação de férias (aba Férias)'],
+  ['FERIAS_API_URL', 'https://script.google.com/macros/s/AKfycbz-weII57gIVYlcJOdiJeQXV3Zei_n-xqAaATOLKxxViKO_R50csjZ8IDXPqLlR34s24w/exec', 'Endereço de dados do sistema de férias (sincronização)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
@@ -57,7 +59,7 @@ const TZ = 'America/Bahia';
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Index').evaluate();
   if (e && e.parameter && e.parameter.raw) return ContentService.createTextOutput(t.getContent()).setMimeType(ContentService.MimeType.TEXT);
-  return t.setTitle('Escala 5x2 · Revalle').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.setTitle('Gestão de Férias e Escala · Revalle').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 function doPost(e) {
   let r;
@@ -96,6 +98,7 @@ function rotas_() {
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
   atualizarDoDP: { f: atualizarDoDP_, admin: true },
+  sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
@@ -248,6 +251,7 @@ function carregar_(u) {
   const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
   const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes };
   if (u.perfil === 'ADMIN') {
+    r.sincFerias = parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_SINC'), null);
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
     r.todosSetores = uniq_(todos.map(function (c) { return c.setor; }));
@@ -383,16 +387,16 @@ function avisarAprovacao_(u, adm) {
   const cfg = cfg_(), link = cfg.LINK_SISTEMA, h = h_;
   const lst = s => { const a = lista_(s); return a.indexOf('*') >= 0 ? 'todas' : a.join(', '); };
   const html = '<div style="font-family:Arial,sans-serif;max-width:520px;color:#0c1a33">' +
-    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">Escala 5x2 · ' + h(cfg.EMPRESA) + '</b></div>' +
+    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">Gestão de Férias e Escala · ' + h(cfg.EMPRESA) + '</b></div>' +
     '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
     '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
-    '<p>Seu acesso ao sistema de escalas 5x2 foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
+    '<p>Seu acesso ao sistema Gestão de Férias e Escala foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
     '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
     (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir a Escala 5x2</a></p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o sistema</a></p>' +
     '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
   try {
-    MailApp.sendEmail({ to: u.email, subject: 'Seu acesso à Escala 5x2 foi aprovado', htmlBody: html, name: 'Escala 5x2 · ' + cfg.EMPRESA });
+    MailApp.sendEmail({ to: u.email, subject: 'Seu acesso à Gestão de Férias e Escala foi aprovado', htmlBody: html, name: 'Gestão de Férias e Escala · ' + cfg.EMPRESA });
     log_(adm, '', 'e-mail de aprovação', u.email);
     return u.email;
   } catch (e) {
@@ -806,6 +810,78 @@ function minhaEscala_(d) {
     feriados: ler_('Feriados').filter(function (f) { return f.revenda === c.revenda; }).map(function (f) { return { data: f.data, descricao: f.descricao, tipo: f.tipo, contaAlerta: f.contaAlerta }; }),
     ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })
   };
+}
+
+/* ---------------- sincronização com o sistema de programação de férias ---------------- */
+const SIGLAS_PADRAO = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
+const ORIGEM_SINC = 'Sincronização (sistema de férias)';
+/**
+ * Traz as férias CONFIRMADAS do sistema de programação de férias: inclui as novas, ignora as que já existem e
+ * tira as que vieram dele e deixaram de estar confirmadas (ou mudaram de data). Férias lançadas à mão ou por
+ * planilha não são tocadas. Não grava nada no sistema de férias.
+ */
+function sincFerias_(quem) {
+  const cfg = cfg_(), urlSis = String(cfg.FERIAS_SISTEMA_URL || '').trim(), urlApi = String(cfg.FERIAS_API_URL || '').trim();
+  if (!urlSis || !urlApi) throw new Error('Informe os endereços do sistema de férias em Regras > Parâmetros.');
+  const html = UrlFetchApp.fetch(urlSis, { muteHttpExceptions: true }).getContentText();
+  const mb = html.match(/<script[^>]*id=["']base["'][^>]*>([\s\S]*?)<\/script>/);
+  if (!mb) throw new Error('Não encontrei a base de colaboradores no sistema de férias.');
+  const BASE = JSON.parse(mb[1]);
+  const EDITS = JSON.parse(UrlFetchApp.fetch(urlApi + (urlApi.indexOf('?') < 0 ? '?' : '&') + 'api=get&t=' + Date.now(), { muteHttpExceptions: true }).getContentText() || '{}');
+  if (EDITS && EDITS.erro) throw new Error('Sistema de férias: ' + EDITS.erro);
+  const ano = String(BASE.ano || '').trim() || anoDoSistema_(html);
+  let sig = {}; try { sig = JSON.parse(cfg.REVENDAS_SIGLAS || '{}') || {}; } catch (e) { sig = {}; }
+  const SIG = {}; Object.keys(SIGLAS_PADRAO).forEach(function (k) { SIG[k] = SIGLAS_PADRAO[k]; }); Object.keys(sig).forEach(function (k) { if (sig[k]) SIG[k.toUpperCase()] = sig[k]; });
+  const cols = {}; ler_('Colaboradores').forEach(function (c) { if (c.ativo !== 'N') cols[c.revenda + '|' + codigoMatricula(c.matricula)] = c; });
+  const dim = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], dois = function (n) { return String(n).padStart(2, '0'); };
+  const desejados = {}, res = { em: agora_(), por: quem || 'automática', confirmadas: 0, novos: 0, iguais: 0, removidos: 0, conflitos: [], naoAchados: 0, ano: ano };
+  (BASE.units || []).forEach(function (un) {
+    const rev = SIG[String(un.sig || '').toUpperCase()] || un.nome;
+    (un.rows || []).forEach(function (r) {
+      const E = EDITS[r.id];
+      if (!E || !E.c) return;
+      res.confirmadas++;
+      const c = cols[rev + '|' + String(r.cod)];
+      if (!c) { res.naoAchados++; return; }
+      const pl = E.p !== undefined ? E.p : r.p;
+      (pl || []).forEach(function (p) {
+        if (!p || !p.m || !p.dias) return;
+        const ini = ano + '-' + dois(p.m) + '-' + dois(Math.min(p.d || 1, dim[p.m - 1]));
+        const fim = isoMaisDias(ini, +p.dias - 1);
+        desejados[c.matricula + '|' + ini + '|' + fim] = { matricula: c.matricula, inicio: ini, fim: fim, por: E.por || '' };
+      });
+    });
+  });
+  return comLock_(function () {
+    let lst = ler_('Ferias');
+    const antes = lst.length;
+    lst = lst.filter(function (f) { return f.criadoPor !== ORIGEM_SINC || desejados[f.matricula + '|' + f.inicio + '|' + f.fim]; });
+    res.removidos = antes - lst.length;
+    Object.keys(desejados).forEach(function (k) {
+      const it = desejados[k];
+      if (lst.some(function (f) { return f.matricula === it.matricula && f.inicio === it.inicio && f.fim === it.fim; })) { res.iguais++; return; }
+      const choque = lst.filter(function (f) { return f.matricula === it.matricula && f.inicio <= it.fim && it.inicio <= f.fim; })[0];
+      if (choque) { res.conflitos.push(it.matricula + ': ' + dataBr_(it.inicio) + ' a ' + dataBr_(it.fim) + ' choca com ' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim)); return; }
+      lst.push({ id: Utilities.getUuid(), matricula: it.matricula, inicio: it.inicio, fim: it.fim, obs: 'Programação de férias' + (it.por ? ' · confirmada por ' + it.por : ''), criadoPor: ORIGEM_SINC, criadoEm: res.em });
+      res.novos++;
+    });
+    if (res.novos || res.removidos) gravarTudo_('Ferias', lst);
+    res.conflitos = res.conflitos.slice(0, 30);
+    PropertiesService.getScriptProperties().setProperty('FERIAS_SINC', JSON.stringify(res));
+    log_({ login: res.por }, '', 'sincronizou férias', JSON.stringify({ novos: res.novos, removidos: res.removidos, conflitos: res.conflitos.length }));
+    return res;
+  });
+}
+/** O sistema de férias monta as datas com o ano fixo no código ("2027-..."): lê de lá. */
+function anoDoSistema_(html) { const m = html.match(/function isoOf\(m,d\)\{return '(20\d\d)-'/); return m ? m[1] : String(new Date().getFullYear() + 1); }
+/** Gatilho de hora em hora (instalado por configurarSincronizacao). */
+function sincFeriasAuto() { try { sincFerias_('automática'); } catch (e) { PropertiesService.getScriptProperties().setProperty('FERIAS_SINC', JSON.stringify({ em: agora_(), por: 'automática', erro: e.message })); } }
+/** Rode UMA vez no editor: autoriza o acesso ao sistema de férias, liga a sincronização de hora em hora e já sincroniza. */
+function configurarSincronizacao() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'sincFeriasAuto') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('sincFeriasAuto').timeBased().everyHours(1).create();
+  const r = sincFerias_('configuração');
+  Logger.log('Sincronização ligada. ' + JSON.stringify(r));
 }
 
 

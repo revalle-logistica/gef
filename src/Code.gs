@@ -1,5 +1,5 @@
 /**
- * Escala 5x2 — sistema de escalas da Revalle.
+ * Gestão de Férias e Escala — férias e escalas 5x2 da Revalle.
  * Web app em Apps Script. A base de dados é uma Planilha Google criada automaticamente
  * no primeiro acesso (o ID fica em Propriedades do script: DB_ID).
  * Publicar como: Executar como "Eu" · Acesso "Qualquer pessoa".
@@ -27,6 +27,8 @@ const CFG_PADRAO = [
   ['DEPARTAMENTOS', '{}', 'Departamentos do relatório do DP e a visão de cada um (editado em Regras)'],
   ['REVENDAS_SIGLAS', '{}', 'Sigla do departamento no DP e o nome da revenda (editado em Regras)'],
   ['FUNCOES_GRUPO', '{}', 'Cargos do DP agrupados para os filtros (editado em Regras)'],
+  ['FERIAS_SISTEMA_URL', 'https://ferias27-revalle.netlify.app/', 'Endereço do sistema de programação de férias (aba Férias)'],
+  ['FERIAS_API_URL', 'https://script.google.com/macros/s/AKfycbz-weII57gIVYlcJOdiJeQXV3Zei_n-xqAaATOLKxxViKO_R50csjZ8IDXPqLlR34s24w/exec', 'Endereço de dados do sistema de férias (sincronização)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
@@ -54,7 +56,7 @@ const TZ = 'America/Bahia';
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Index').evaluate();
   if (e && e.parameter && e.parameter.raw) return ContentService.createTextOutput(t.getContent()).setMimeType(ContentService.MimeType.TEXT);
-  return t.setTitle('Escala 5x2 · Revalle').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.setTitle('Gestão de Férias e Escala · Revalle').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 function doPost(e) {
   let r;
@@ -93,6 +95,7 @@ function rotas_() {
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
   atualizarDoDP: { f: atualizarDoDP_, admin: true },
+  sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
@@ -245,6 +248,7 @@ function carregar_(u) {
   const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
   const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes };
   if (u.perfil === 'ADMIN') {
+    r.sincFerias = parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_SINC'), null);
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
     r.todosSetores = uniq_(todos.map(function (c) { return c.setor; }));
