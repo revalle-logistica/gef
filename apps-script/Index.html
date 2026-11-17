@@ -909,34 +909,45 @@ function revDoArquivo(nome) {
   const up = String(nome).toUpperCase(), mm = up.match(/(?:^|[^A-Z])(AL|SE|PA|RP|JZ|BF|PE|PT|BR)(?:[^A-Z]|$)/);
   return mm ? COD_REV[mm[1]] : '';
 }
+/**
+ * Lê o relatório pelo conteúdo de cada linha (não depende da posição das colunas, que muda conforme
+ * quem converte o .xls):
+ *   "Departamento: 201 - ARMAZEM - AL"            → muda o departamento/setor/revenda
+ *   363 | NOME | CARGO | 101 | 220.00 | 20/05/2025 | 6 | CPF  → colaborador
+ */
 function lerRelacaoDP(A, nomeArq) {
-  const hi = A.slice(0, 40).findIndex(r => { const H = r.map(nrm); return H.includes('codigo') && H.includes('nome') && H.includes('cargo'); });
-  if (hi < 0) return null;
-  // empresa no cabeçalho do relatório (ex.: "REVENDA REVALLE AGRESTE DA BAHIA LTDA" -> AGRESTE)
-  const emp = A.slice(0, hi).flat().map(x => String(x || '')).find(x => /ltda?\b|revenda/i.test(x)) || '';
+  const linhas = A.map(r => r.map(x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim()));
+  const iDep = linhas.findIndex(L => L.some(x => /^departamento\b/i.test(x)));
+  if (iDep < 0) return null;
+  // empresa no cabeçalho (ex.: "REVENDA REVALLE AGRESTE DA BAHIA LTDA" -> AGRESTE)
+  const emp = linhas.slice(0, iDep).flat().find(x => /ltda?\b|revenda/i.test(x)) || '';
   const STOP = ['REVENDA', 'REVALLE', 'LTDA', 'LTD', 'DA', 'DO', 'DE', 'DOS', 'DAS', 'BAHIA', 'S/A', 'SA', 'ME', 'EIRELI'];
-  const empKey = emp.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w && !STOP.includes(w)).join('_');
-  const H = A[hi].map(nrm), cC = H.indexOf('codigo'), cN = H.indexOf('nome'), cG = H.indexOf('cargo'), cS = H.indexOf('situacao');
+  const empKey = emp.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w && !STOP.includes(w)).join('_');
+  const ehData = x => /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(x) || /^\d{4}-\d{2}-\d{2}/.test(x);
   let dep = '', setor = '', rev = '';
   const rows = [], deps = {}, ign = {};
-  A.slice(hi + 1).forEach(r => {
-    const L = r.map(x => String(x == null ? '' : x).trim());
-    const di = L.findIndex(x => /^departamento:?$/i.test(x));
+  linhas.slice(iDep).forEach(L => {
+    const v = L.filter(Boolean);
+    if (!v.length) return;
+    const di = v.findIndex(x => /^departamento\b/i.test(x));
     if (di >= 0) {
-      dep = L.slice(di + 1).find(Boolean) || '';
+      dep = v[di].replace(/^departamento\s*:?\s*/i, '') || v[di + 1] || '';
       const m = dep.match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/);
       const a = areaSetor(m ? m[1] : dep);
       setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : '';
       rev = m ? (COD_REV[m[2].toUpperCase()] || m[2].toUpperCase()) : '';
       return;
     }
-    if (!/^\d+$/.test(L[cC] || '') || !L[cN]) return;
+    const cod = v[0].replace(/\.0+$/, '');
+    if (!/^\d+$/.test(cod) || v.length < 3 || !/[a-zà-ú]/i.test(v[1]) || !/[a-zà-ú]/i.test(v[2])) return;
     if (!setor) { const k = dep || 'Sem departamento'; ign[k] = (ign[k] || 0) + 1; return; }
-    let sit = L[cS] || ''; if (/^\d+$/.test(sit)) sit = (SIT[+sit] || 'Situação') + ' (' + sit + ')';
-    rows.push({ matricula: (empKey || (rev || revDoArquivo(nomeArq) || 'X').toUpperCase().replace(/[^A-Z0-9]/g, '')) + '-' + L[cC], nome: L[cN], funcao: L[cG], revenda: rev || revDoArquivo(nomeArq), setor, departamento: dep, situacao: sit, admissao: L.find(x => /^\d{2}\/\d{2}\/\d{4}$/.test(x)) || '' });
+    const id = v.findIndex(ehData), adm = id >= 0 ? v[id] : '';
+    const sitCod = id >= 0 ? (v.slice(id + 1).find(x => /^\d{1,2}$/.test(x)) || '') : '';
+    const sit = sitCod ? (SIT[+sitCod] || 'Situação') + ' (' + sitCod + ')' : '';
+    rows.push({ matricula: (empKey || (rev || revDoArquivo(nomeArq) || 'X').toUpperCase().replace(/[^A-Z0-9]/g, '')) + '-' + cod, nome: v[1], funcao: v[2], revenda: rev || revDoArquivo(nomeArq), setor, departamento: dep, situacao: sit, admissao: adm });
     deps[dep] = (deps[dep] || 0) + 1;
   });
-  return { rows, deps, ign, empresa: emp.trim() };
+  return { rows, deps, ign, empresa: emp };
 }
 function paraBase64(file) {
   return new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = () => ko(new Error('Não consegui ler o arquivo.')); fr.readAsDataURL(file); });
@@ -952,7 +963,9 @@ async function lerArquivo(file) {
     abas = await call('converterPlanilha', { nome: file.name, tipo: file.type, base64: await paraBase64(file) });
     r = tenta();
   }
-  return r || { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (Código, Nome, Cargo e Departamento).' };
+  if (r) return r;
+  const amostra = abas.flatMap(a => a.valores.map(l => l.map(x => String(x == null ? '' : x).trim()).filter(Boolean).join(' | ')).filter(Boolean).slice(0, 8).map(l => a.nome + ': ' + l.slice(0, 160)));
+  return { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (linhas "Departamento:" com os colaboradores abaixo).', amostra, via };
 }
 function vImportar(m) {
   const I = S.imp, des = r => /demit|deslig|rescis/i.test(r.situacao);
@@ -971,7 +984,7 @@ function vImportar(m) {
   if (!I) return;
   const ok = I.arqs.filter(a => !a.erro);
   const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length, 0);
-  $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}</div>` : `
+  $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}${a.amostra ? `<details style="margin-top:6px"><summary>O que foi lido${a.via ? ' (' + esc(a.via) + ')' : ''}: ${a.amostra.length} linhas</summary><pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0">${esc(a.amostra.join('\n')) || '(nada)'}</pre></details>` : ''}</div>` : `
     <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
     <div class="card-b" style="display:grid;gap:8px">
       <div class="ck">${Object.entries(a.deps).map(([d, n]) => `<label style="cursor:default">✓ ${esc(d)} <b>${n}</b></label>`).join('')}</div>
