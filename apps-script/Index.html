@@ -637,16 +637,18 @@ function desenhaEditor() {
   };
 }
 /** Botões do quadro de link (editor ou janela própria). Retorna true se tratou o clique. */
+const linkDe = c => { const base = String(S.cfg.LINK_SISTEMA || '').replace(/[?#].*$/, ''); return Object.assign({}, c.link, { link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + c.link.token }); };
 function acaoLink(b, c) {
   const marca = () => document.querySelectorAll('[data-link]').forEach(x => { if (x.dataset.link === c.matricula) x.classList.toggle('on', !!c.temLink); });
   if (b.hasAttribute('data-lnk') || b.hasAttribute('data-lnovo')) {
     if (b.hasAttribute('data-lnovo') && !confirm('Gerar um link novo? O link anterior para de funcionar.')) return true;
-    ocupado(b, async () => { const r = await call('gerarLink', { matricula: c.matricula, novo: b.hasAttribute('data-lnovo') }); c.temLink = true; marca(); mostraLink(c, r); });
+    if (!b.hasAttribute('data-lnovo') && c.link) { mostraLink(c, linkDe(c)); return true; }
+    ocupado(b, async () => { const r = await call('gerarLink', { matricula: c.matricula, novo: b.hasAttribute('data-lnovo') }); c.link = { token: r.token, criadoEm: r.criadoEm, criadoPor: r.criadoPor, acessos: r.acessos, ultimoAcesso: r.ultimoAcesso }; c.temLink = true; marca(); mostraLink(c, r); });
     return true;
   }
   if (b.hasAttribute('data-lcanc')) {
     if (!confirm(`Cancelar o link de ${c.nome}? Ele para de funcionar na hora.`)) return true;
-    ocupado(b, async () => { await call('gerarLink', { matricula: c.matricula, cancelar: true }); c.temLink = false; marca(); semLink(c); toast('Link cancelado.'); });
+    ocupado(b, async () => { await call('gerarLink', { matricula: c.matricula, cancelar: true }); c.link = null; c.temLink = false; marca(); semLink(c); toast('Link cancelado.'); });
     return true;
   }
   if (b.hasAttribute('data-lcopia')) {
@@ -664,10 +666,10 @@ function semLink(c) {
 function abrirLink(mat) {
   const c = S.cols.find(x => x.matricula === mat); if (!c) return;
   abrirModal(`<div class="mdl-h"><div><h2>Link da escala</h2><small>${esc(c.nome)} · ${esc(c.funcao)}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
-    <div class="mdl-b"><div id="ed-lnk"><p class="hint"><span class="spin"></span> Buscando o link…</p></div></div>`, true);
+    <div class="mdl-b"><div id="ed-lnk"></div></div>`, true);
   modal.querySelector('.mdl').addEventListener('click', e => { const b = e.target.closest('button'); if (b) acaoLink(b, c); });
-  if (!c.temLink) return semLink(c);
-  call('gerarLink', { matricula: c.matricula }).then(r => mostraLink(c, r)).catch(e => { toast(esc(e.message), true); fecharModal(true); });
+  if (!c.link) return semLink(c);
+  mostraLink(c, linkDe(c));
 }
 function mostraLink(c, r) {
   const w = modal.querySelector('#ed-lnk'); if (!w) return;

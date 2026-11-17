@@ -362,7 +362,7 @@ function gerarLink_(u, d) {
       log_(u, c.matricula, 'gerou link do colaborador', '');
     }
     const base = String(cfg.LINK_SISTEMA || '').replace(/[?#].*$/, '');
-    return { link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso };
+    return { token: l.token, link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso };
   });
 }
 /** Público: a escala de um colaborador a partir do link (sem login, só leitura). */

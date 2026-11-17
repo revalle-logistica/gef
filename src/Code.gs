@@ -237,8 +237,8 @@ function carregar_(u) {
     };
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
-  const comLink = {}; ler_('Links').forEach(function (l) { if (l.ativo === 'S') comLink[l.matricula] = true; });
-  cols.forEach(function (c) { c.temLink = !!comLink[c.matricula]; });
+  const comLink = {}; ler_('Links').forEach(function (l) { if (l.ativo === 'S' && vis[l.matricula]) comLink[l.matricula] = { token: l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso }; });
+  cols.forEach(function (c) { c.link = comLink[c.matricula] || null; c.temLink = !!c.link; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
   const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
