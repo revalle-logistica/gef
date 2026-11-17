@@ -174,6 +174,7 @@ main{max-width:1280px;margin:0 auto;padding:18px;display:grid;gap:16px}
 .tg2{font-weight:800;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--acs);color:var(--b8)}.tg2.adm{background:var(--sunk);color:var(--mut)}
 .pts{padding:0 16px 12px;display:grid;gap:6px}.pts b{font-size:13px;color:var(--b8)}
 a.btn{text-decoration:none}
+input.int{text-align:center;font-variant-numeric:tabular-nums}input.int.bad{border-color:var(--er);background:var(--ers)}
 .mud{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--ln);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--sf)}.mud input{width:auto;margin-top:3px}.mud small{color:var(--mut)}.mud.dsl{border-color:#f3b7b0;background:var(--ers)}
 .dpt{display:grid;gap:6px}.dpt label{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--ln);border-radius:8px;padding:6px 10px;font-size:13px;background:var(--sf)}.dpt label.off{opacity:.6;background:var(--sunk)}.dpt select{width:auto}
 .ptab{display:grid;gap:6px;margin:8px 0 10px}.pr{display:flex;gap:8px;align-items:center}.pr input,.pr select{flex:1}.pr select{max-width:200px}.pk{flex:1;font-size:13px;font-weight:600}
@@ -545,7 +546,17 @@ function linhaHtml(c) {
 }
 
 /* ================= editor individual ================= */
-const INTS = [0, 15, 30, 45, 60, 75, 90, 120];
+/** Intervalo digitado: "1:12", "1h12", "0:45", "1" (horas) ou "72" (minutos). Devolve minutos ou null se não entender. */
+function intMin(s) {
+  s = String(s == null ? '' : s).trim().toLowerCase(); if (!s) return 0;
+  let m = s.match(/^(\d{1,2})\s*[:h]\s*(\d{0,2})\s*(min)?$/); if (m) { const mi = +(m[2] || 0); return mi < 60 ? +m[1] * 60 + mi : null; }
+  m = s.match(/^(\d{1,3})\s*(min|m)?$/); if (m) { const n = +m[1]; return m[2] || n > 4 ? n : n * 60; }
+  return null;
+}
+const intTxt = n => { n = +n || 0; return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
+const campoInt = (attr, v) => `<input type="text" inputmode="numeric" class="int" ${attr} value="${intTxt(v)}" placeholder="1:00" maxlength="6" title="Digite o intervalo em horas:minutos (ex.: 1:00, 1:12, 0:30)" aria-label="Intervalo">`;
+/** Lê o campo de intervalo: marca em vermelho se não entender e devolve null. */
+function leInt(el) { const v = intMin(el.value); el.classList.toggle('bad', v == null); return v; }
 function vigPadrao() { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; return h > i ? h : i; }
 function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, S.cfg.PADRAO_ENTRADA, S.cfg.PADRAO_SAIDA, S.cfg.PADRAO_INTERVALO) }; }
 function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
@@ -559,12 +570,11 @@ function abrirEditor(mat) {
 }
 function linhaEd(i) {
   const d = S.ed.e.dias[i] || { tipo: 'F' }, T = d.tipo === 'T', dom = i === 6 && domFixo();
-  const ints = INTS.includes(+d.int) ? INTS : INTS.concat(+d.int || 0).sort((a, b) => a - b);
   return `<div class="ed-r ${T ? '' : 'f'}" data-i="${i}"><b>${DIAS_SEMANA[i]}</b>
     <div class="tgl"><button type="button" class="t ${T ? 'on' : ''}" data-tp="T" ${dom ? 'disabled title="Domingo é folga fixa"' : ''}>Trabalho</button><button type="button" class="f ${T ? '' : 'on'}" data-tp="F">Folga</button></div>
     ${T ? `<input type="time" data-k="ent" value="${esc(d.ent || '')}" aria-label="Entrada">
       <input type="time" data-k="sai" value="${esc(d.sai || '')}" aria-label="Saída">
-      <select data-k="int" aria-label="Intervalo">${ints.map(v => `<option value="${v}" ${(+d.int || 0) === v ? 'selected' : ''}>${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select>
+      ${campoInt('data-k="int"', d.int)}
       <span class="hh" data-hh>${horasDia(d)}</span>` : '<span class="fz">FOLGA</span><span class="hh"></span>'}</div>`;
 }
 function desenhaEditor() {
@@ -591,7 +601,8 @@ function desenhaEditor() {
   box.addEventListener('input', ev => {
     const k = ev.target.dataset.k; if (!k) return;
     const r = ev.target.closest('[data-i]'), i = +r.dataset.i;
-    S.ed.e.dias[i][k] = k === 'int' ? +ev.target.value : ev.target.value; S.ed.sujo = true;
+    if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.ed.e.dias[i].int = v; } else S.ed.e.dias[i][k] = ev.target.value;
+    S.ed.sujo = true;
     r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal();
   });
   box.addEventListener('click', ev => {
@@ -607,7 +618,7 @@ function desenhaEditor() {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: ref.ent, sai: ref.sai, int: +ref.int }; }); S.ed.sujo = true; redesenhaDias();
     } else if (b.hasAttribute('data-padrao')) {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
-    } else if (b.hasAttribute('data-salvar')) salvarEditor(b);
+    } else if (b.hasAttribute('data-salvar')) { if (modal.querySelector('input.int.bad')) return toast('Confira o intervalo em vermelho (use horas:minutos, ex.: 1:12).', true); salvarEditor(b); }
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
     else if (acaoLink(b, S.ed.c)) { /* link do colaborador */ }
     else if (b.hasAttribute('data-pdf')) {
@@ -715,7 +726,7 @@ function modalLote() {
         <label class="f">2ª folga da semana<select data-l="folga2">${DIAS_SEMANA.slice(0, 6).map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
         <label class="f">Entrada<input type="time" data-l="ent" value="${esc(S.lote.ent)}"></label>
         <label class="f">Saída<input type="time" data-l="sai" value="${esc(S.lote.sai)}"></label>
-        <label class="f">Intervalo<select data-l="int">${INTS.map(v => `<option value="${v}" ${v === S.lote.int ? 'selected' : ''}>${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select></label>
+        <label class="f">Intervalo${campoInt('data-l="int"', S.lote.int)}</label>
       </div>
       <div id="lt-sem"></div><div id="lt-val"></div>
       ${jaTem ? `<div class="msgbox er">${jaTem} já ${jaTem > 1 ? 'têm' : 'tem'} escala e ${jaTem > 1 ? 'serão substituídos' : 'será substituído'}.</div>` : ''}
@@ -730,7 +741,7 @@ function modalLote() {
     $('#lt-val').innerHTML = caixaVal(v);
     box.querySelector('[data-aplicar]').disabled = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   };
-  box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; S.lote[k] = ['folga2', 'int'].includes(k) ? +ev.target.value : ev.target.value; upd(); });
+  box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.lote.int = v; } else S.lote[k] = k === 'folga2' ? +ev.target.value : ev.target.value; upd(); });
   box.querySelector('[data-aplicar]').onclick = ev => ocupado(ev.currentTarget, async () => {
     const L = S.lote;
     const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
@@ -823,7 +834,7 @@ function abrirDia(mat, data, depois) {
   abrirModal(`<div class="mdl-h"><div><h2>${esc(titulo)}</h2><small>${esc(c.nome)} · ${esc(c.funcao)}${d.feriado ? ' · Feriado: ' + esc(d.feriado) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
     <div class="mdl-b"><div class="tgl" style="max-width:260px"><button type="button" class="t" data-dt="T">Trabalho</button><button type="button" class="f" data-dt="F">Folga</button></div>
       <div class="row2" id="dia-h"><label class="f">Entrada<input type="time" data-dk="ent"></label><label class="f">Saída<input type="time" data-dk="sai"></label>
-        <label class="f">Intervalo<select data-dk="int">${INTS.map(v => `<option value="${v}">${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select></label></div>
+        <label class="f">Intervalo${campoInt('data-dk="int"', 0)}</label></div>
       <p class="hint">Vale só para este dia. O padrão semanal não muda.${d.ajuste ? ' Este dia já foi alterado.' : ''}</p>
       <div id="dia-val"></div></div>
     <div class="mdl-f">${d.ajuste ? '<button type="button" class="btn" data-dpad>Voltar ao padrão</button>' : ''}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-dsalvar>Salvar dia</button></div>`, true);
@@ -831,7 +842,7 @@ function abrirDia(mat, data, depois) {
   const desenha = () => {
     box.querySelectorAll('[data-dt]').forEach(b => b.classList.toggle('on', b.dataset.dt === st.tipo));
     $('#dia-h').style.display = st.tipo === 'T' ? '' : 'none';
-    box.querySelector('[data-dk=ent]').value = st.ent || ''; box.querySelector('[data-dk=sai]').value = st.sai || ''; box.querySelector('[data-dk=int]').value = String(st.int || 0);
+    box.querySelector('[data-dk=ent]').value = st.ent || ''; box.querySelector('[data-dk=sai]').value = st.sai || ''; box.querySelector('[data-dk=int]').value = intTxt(st.int);
     valida();
   };
   const valida = () => {
@@ -840,7 +851,7 @@ function abrirDia(mat, data, depois) {
     $('#dia-val').innerHTML = v ? '<p class="hint" style="margin-bottom:6px">Como fica a semana de ' + ddmm(sem[0].data) + ':</p>' + caixaVal(v) : '<p class="hint">Semana com férias ou sem escala: não é conferida.</p>';
   };
   box.addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) { st.tipo = b.dataset.dt; desenha(); } });
-  box.addEventListener('input', e => { const k = e.target.dataset.dk; if (!k) return; st[k] = k === 'int' ? +e.target.value : e.target.value; valida(); });
+  box.addEventListener('input', e => { const k = e.target.dataset.dk; if (!k) return; if (k === 'int') { const v = leInt(e.target); if (v == null) return; st.int = v; } else st[k] = e.target.value; valida(); });
   const fim = r => { S.ajustes = S.ajustes.filter(a => !(a.matricula === mat && a.data === data)); if (r) S.ajustes.push(r); revalida(); fecharModal(true); depois && depois(); };
   box.querySelector('[data-dsalvar]').onclick = ev => ocupado(ev.currentTarget, async () => { fim(await call('salvarAjuste', { matricula: mat, data, tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int })); toast('Dia salvo.'); });
   const bp = box.querySelector('[data-dpad]'); if (bp) bp.onclick = () => ocupado(bp, async () => { await call('salvarAjuste', { matricula: mat, data, tipo: '' }); fim(null); toast('Dia voltou ao padrão.'); });
