@@ -92,7 +92,8 @@ function rotas_() {
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
-  classificar: { f: classificar_, admin: true },
+  classificar: { f: classificar_ },
+  salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
@@ -235,6 +236,8 @@ function carregar_(u) {
     };
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
+  const comLink = {}; ler_('Links').forEach(function (l) { if (l.ativo === 'S') comLink[l.matricula] = true; });
+  cols.forEach(function (c) { c.temLink = !!comLink[c.matricula]; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
   const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
@@ -668,6 +671,8 @@ function classificar_(u, d) {
   const mats = (d.matriculas || []).map(String), campos = d.campos || {};
   const ok = ['turno', 'lotacao', 'tipoMot', 'supervisor'].filter(function (k) { return Object.prototype.hasOwnProperty.call(campos, k); });
   if (!mats.length || !ok.length) throw new Error('Nada para salvar.');
+  const adm = u.perfil === 'ADMIN';
+  if (!adm && ok.indexOf('supervisor') >= 0) throw new Error('Só o administrador vincula o supervisor ao colaborador.');
   if (campos.supervisor) {
     const s = ler_('Usuarios').filter(function (x) { return x.id === campos.supervisor && x.status === 'ATIVO'; })[0];
     if (!s) throw new Error('Supervisor não encontrado ou sem acesso ativo.');
@@ -676,7 +681,7 @@ function classificar_(u, d) {
     const todos = ler_('Colaboradores');
     let n = 0;
     todos.forEach(function (c) {
-      if (mats.indexOf(c.matricula) < 0) return;
+      if (mats.indexOf(c.matricula) < 0 || !podeVer_(u, c)) return;
       ok.forEach(function (k) { c[k] = String(campos[k] == null ? '' : campos[k]).trim(); });
       n++;
     });
@@ -686,6 +691,21 @@ function classificar_(u, d) {
   });
 }
 
+/** Lista de pontos de apoio de uma revenda. Admin: qualquer revenda; supervisor: revendas dos seus colaboradores. */
+function salvarPontos_(u, d) {
+  const rev = String(d.revenda || '').trim(), lista = (d.lista || []).map(function (x) { return String(x).trim().slice(0, 40); }).filter(String);
+  if (!rev) throw new Error('Informe a revenda.');
+  if (u.perfil !== 'ADMIN' && !ler_('Colaboradores').some(function (c) { return c.revenda === rev && c.ativo !== 'N' && podeVer_(u, c); }))
+    throw new Error('Você não tem colaboradores nesta revenda.');
+  return comLock_(function () {
+    const l = ler_('Config').filter(function (x) { return x.chave === 'PONTOS_APOIO'; })[0];
+    let o = {}; try { o = JSON.parse((l && l.valor) || '{}'); } catch (e) { o = {}; }
+    o[rev] = lista;
+    if (l) { l.valor = JSON.stringify(o); gravarLinha_('Config', l); }
+    log_(u, '', 'pontos de apoio', rev + ': ' + lista.join(', '));
+    return o;
+  });
+}
 /**
  * Converte um .xls/.xlsx que o navegador não conseguiu ler (o relatório do sistema de folha sai num .xls
  * que alguns leitores não abrem). Usa o conversor do Google Drive e devolve as células como texto.
@@ -724,6 +744,11 @@ function gerarLink_(u, d) {
   return comLock_(function () {
     const lst = ler_('Links'), quando = agora_();
     let at = lst.filter(function (l) { return l.matricula === c.matricula && l.ativo === 'S'; });
+    if (d.cancelar) {
+      at.forEach(function (l) { l.ativo = 'N'; gravarLinha_('Links', l); });
+      log_(u, c.matricula, 'cancelou link do colaborador', '');
+      return { cancelado: true };
+    }
     if (d.novo) { at.forEach(function (l) { l.ativo = 'N'; gravarLinha_('Links', l); }); at = []; log_(u, c.matricula, 'cancelou link do colaborador', ''); }
     let l = at[0];
     if (!l) {

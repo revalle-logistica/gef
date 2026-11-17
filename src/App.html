@@ -133,7 +133,8 @@ function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.aj = 
 function render() {
   const adm = S.user.perfil === 'ADMIN';
   const tabs = [['escalas', 'cal', 'Escalas'], ['mes', 'cal', 'Mês'], ['painel', 'chart', 'Painel']]
-    .concat(adm ? [['cadastro', 'users', 'Cadastro'], ['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
+    .concat([['cadastro', 'users', 'Cadastro']])
+    .concat(adm ? [['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
   root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
@@ -179,6 +180,7 @@ const VIS_TXT = { entrega: 'Entrega · ponto de apoio e função', pux: 'Puxador
 function filtrados(ignSt, ignVis) {
   const f = S.f, q = nrm(f.q);
   return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
+    (ignVis || ((!f.fn || c.vis.funcao === f.fn) && (!f.grp || c.vis.grupo === f.grp))) &&
     (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
@@ -214,19 +216,21 @@ function vEscalas(m) {
     <div class="vt" id="vt"></div>
     <div class="filt">
       <label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
+      <span id="ff" style="display:contents"></span>
       <label class="f">Buscar<input data-f="q" value="${esc(f.q)}" placeholder="Nome, matrícula, função ou ponto"></label>
     </div>
     <div class="chips" id="chips"></div>
     <div class="acts" id="acts"></div>
     <div class="ls" id="ls"></div></section>`;
-  m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; vEscalas(m); };
+  m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; f.fn = ''; f.grp = ''; vEscalas(m); };
   ligaSemana(m, () => vEscalas(m));
   m.querySelector('input[data-f=q]').oninput = e => { f.q = e.target.value; lista(); };
   m.onclick = e => {
     const t = e.target.closest('button, [data-chip]');
     if (!t) return;
-    if (t.dataset.vis) { f.vis = t.dataset.vis; lista(); }
+    if (t.dataset.vis) { if (f.vis !== t.dataset.vis) { f.fn = ''; f.grp = ''; } f.vis = t.dataset.vis; lista(); }
     else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else if (k === 'ferias' || k === 'feriado') f.ext = f.ext === k ? '' : k; else f.st = k; lista(); }
+    else if (t.dataset.link) abrirLink(t.dataset.link);
     else if (t.dataset.ed) abrirEditor(t.dataset.ed);
     else if (t.dataset.gsel) { const L = grupoSel[t.dataset.gsel] || []; const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
     else if (t.dataset.ac === 'todos') { const L = filtrados(); const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
@@ -236,7 +240,7 @@ function vEscalas(m) {
     else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', S.semana));
     else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
   };
-  m.onchange = e => { const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
+  m.onchange = e => { if (e.target.dataset.ff) { f[e.target.dataset.ff] = e.target.value; lista(); return; } const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
   lista();
 }
 let grupoSel = {};
@@ -246,6 +250,12 @@ function lista() {
     const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length;
     return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`;
   }).join('');
+  // filtros da visão: Entrega = função + ponto; Puxadores = função + grupo; Armazém = função + turno; Administrativo/Todos = função
+  const pool = S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (f.vis === 'todos' || c.vis.area === f.vis));
+  const gLbl = { entrega: 'Ponto de apoio', ent: 'Ponto de apoio', pux: 'Grupo', arm: 'Turno' }[f.vis];
+  const fns = uniq(pool.filter(c => !f.grp || c.vis.grupo === f.grp).map(c => c.vis.funcao)), grs = uniq(pool.filter(c => !f.fn || c.vis.funcao === f.fn).map(c => c.vis.grupo));
+  if (f.fn && !fns.includes(f.fn)) f.fn = ''; if (f.grp && !grs.includes(f.grp)) f.grp = '';
+  $('#ff').innerHTML = `<label class="f">Função<select data-ff="fn">${opts(fns, f.fn || '', 'Todas')}</select></label>` + (gLbl ? `<label class="f">${gLbl}<select data-ff="grp">${opts(grs, f.grp || '', 'Todos')}</select></label>` : '');
   const n = k => base.filter(c => st(c) === k).length;
   $('#chips').innerHTML = [['', 'Todos', base.length], ['SEM', 'Sem escala', n('SEM')], ['ERRO', 'Com erro', n('ERRO')], ['ALERTA', 'Com alerta', n('ALERTA')], ['OK', 'Dentro das regras', n('OK')]]
     .map(([k, t, q]) => `<button type="button" class="chip" data-chip="${k}" aria-pressed="${f.st === k}">${k ? `<span class="dot d-${k}"></span>` : ''}${t} <i>${q}</i></button>`).join('') +
@@ -293,7 +303,7 @@ function semanaReal(c) {
 function linhaHtml(c) {
   const s = st(c);
   return `<div class="ln"><input type="checkbox" data-sel="${esc(c.matricula)}" ${S.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
-    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}${c.semVal && c.semVal.status === 'ERRO' && c.sem.some(d => d.ajuste) ? `<span class="tg th" title="${esc(c.semVal.msgs.filter(x => x.nivel === 'erro').map(x => x.texto).join(' '))}">SEMANA COM ERRO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
+    <div class="nm"><b><button type="button" class="lkb${c.temLink ? ' on' : ''}" data-link="${esc(c.matricula)}" title="${c.temLink ? 'Link da escala ativo: ver, enviar ou cancelar' : 'Gerar link da escala para o colaborador'}" aria-label="Link da escala de ${esc(c.nome)}">📲</button>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}${c.semVal && c.semVal.status === 'ERRO' && c.sem.some(d => d.ajuste) ? `<span class="tg th" title="${esc(c.semVal.msgs.filter(x => x.nivel === 'erro').map(x => x.texto).join(' '))}">SEMANA COM ERRO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
@@ -366,11 +376,7 @@ function desenhaEditor() {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
     } else if (b.hasAttribute('data-salvar')) salvarEditor(b);
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
-    else if (b.hasAttribute('data-lnk') || b.hasAttribute('data-lnovo')) {
-      if (b.hasAttribute('data-lnovo') && !confirm('Gerar um link novo? O link anterior para de funcionar.')) return;
-      ocupado(b, async () => mostraLink(S.ed.c, await call('gerarLink', { matricula: S.ed.c.matricula, novo: b.hasAttribute('data-lnovo') })));
-    }
-    else if (b.hasAttribute('data-lcopia')) { const v = modal.querySelector('#lnk-url').value; (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Link copiado.')).catch(() => { const i = modal.querySelector('#lnk-url'); i.select(); document.execCommand('copy'); toast('Link copiado.'); }); }
+    else if (acaoLink(b, S.ed.c)) { /* link do colaborador */ }
     else if (b.hasAttribute('data-pdf')) {
       if (S.ed.sujo) return toast('Salve a escala antes de gerar o PDF.', true);
       ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas', S.semana));
@@ -386,13 +392,46 @@ function desenhaEditor() {
     });
   };
 }
+/** Botões do quadro de link (editor ou janela própria). Retorna true se tratou o clique. */
+function acaoLink(b, c) {
+  const marca = () => document.querySelectorAll('[data-link]').forEach(x => { if (x.dataset.link === c.matricula) x.classList.toggle('on', !!c.temLink); });
+  if (b.hasAttribute('data-lnk') || b.hasAttribute('data-lnovo')) {
+    if (b.hasAttribute('data-lnovo') && !confirm('Gerar um link novo? O link anterior para de funcionar.')) return true;
+    ocupado(b, async () => { const r = await call('gerarLink', { matricula: c.matricula, novo: b.hasAttribute('data-lnovo') }); c.temLink = true; marca(); mostraLink(c, r); });
+    return true;
+  }
+  if (b.hasAttribute('data-lcanc')) {
+    if (!confirm(`Cancelar o link de ${c.nome}? Ele para de funcionar na hora.`)) return true;
+    ocupado(b, async () => { await call('gerarLink', { matricula: c.matricula, cancelar: true }); c.temLink = false; marca(); semLink(c); toast('Link cancelado.'); });
+    return true;
+  }
+  if (b.hasAttribute('data-lcopia')) {
+    const i = modal.querySelector('#lnk-url'), v = i.value;
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Link copiado.')).catch(() => { i.select(); document.execCommand('copy'); toast('Link copiado.'); });
+    return true;
+  }
+  return false;
+}
+function semLink(c) {
+  const w = modal.querySelector('#ed-lnk'); if (!w) return;
+  w.innerHTML = `<div class="lnk"><b>${esc(c.nome)} não tem link ativo.</b><span class="hint">O link deixa o colaborador ver a própria escala pelo celular, só para leitura e sem senha.</span><div><button type="button" class="btn sm pr" data-lnk>📲 Gerar link</button></div></div>`;
+}
+/** Janela própria do link, aberta pelo ícone ao lado do nome na lista. */
+function abrirLink(mat) {
+  const c = S.cols.find(x => x.matricula === mat); if (!c) return;
+  abrirModal(`<div class="mdl-h"><div><h2>Link da escala</h2><small>${esc(c.nome)} · ${esc(c.funcao)}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><div id="ed-lnk"><p class="hint"><span class="spin"></span> Buscando o link…</p></div></div>`, true);
+  modal.querySelector('.mdl').addEventListener('click', e => { const b = e.target.closest('button'); if (b) acaoLink(b, c); });
+  if (!c.temLink) return semLink(c);
+  call('gerarLink', { matricula: c.matricula }).then(r => mostraLink(c, r)).catch(e => { toast(esc(e.message), true); fecharModal(true); });
+}
 function mostraLink(c, r) {
   const w = modal.querySelector('#ed-lnk'); if (!w) return;
   const prim = String(c.nome).split(' ')[0], nm = prim.charAt(0) + prim.slice(1).toLowerCase();
   const msg = `Olá, ${nm}! Este é o link da sua escala de trabalho na Revalle. Pelo link você vê seus dias de trabalho, folgas, férias e feriados. É pessoal, não repasse:\n${r.link}`;
   w.innerHTML = `<div class="lnk"><b>Link da escala de ${esc(c.nome)}</b><span class="hint">Só leitura, sem senha. O colaborador vê a escala sempre atualizada. Gerado por ${esc(r.criadoPor)} em ${esc(dh(r.criadoEm))} · ${r.acessos ? `aberto ${r.acessos}x, último em ${esc(dh(r.ultimoAcesso))}` : 'ainda não foi aberto'}.</span>
     <input id="lnk-url" readonly value="${esc(r.link)}" onclick="this.select()">
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm ok" target="_blank" rel="noopener" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msg)}">Enviar pelo WhatsApp</a><button type="button" class="btn sm" data-lcopia>${ic('copy')}Copiar link</button><span style="flex:1"></span><button type="button" class="btn sm er" data-lnovo>Gerar novo (cancela este)</button></div></div>`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm ok" target="_blank" rel="noopener" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msg)}">Enviar pelo WhatsApp</a><button type="button" class="btn sm" data-lcopia>${ic('copy')}Copiar link</button><span style="flex:1"></span><button type="button" class="btn sm" data-lnovo>Gerar novo</button><button type="button" class="btn sm er" data-lcanc>Cancelar link</button></div></div>`;
   w.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function listaFerias() {
@@ -852,7 +891,7 @@ function detalheCad(c) {
   if (S.user.perfil === 'ADMIN') p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
   return p.join(' · ');
 }
-function nPendCad() { return S.user && S.user.perfil === 'ADMIN' ? S.cols.filter(c => areaSetor(c.setor) !== 'outro' && pendenciasCadastro(c).length).length : 0; }
+function nPendCad() { return S.user ? S.cols.filter(c => areaSetor(c.setor) !== 'outro' && pendenciasCadastro(c).length).length : 0; }
 const PAPEL = { mot: 'Motorista', aj: 'Ajudante', adm: 'Administrativo' };
 function selOpts(lista, val, vazio) { return `<option value="">${vazio}</option>` + lista.map(v => { const [k, t] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`; }).join(''); }
 function supsDaRevenda(rev) {
@@ -868,7 +907,7 @@ async function classificar(mats, campos) {
   catch (e) { antes.forEach(([c, o]) => Object.assign(c, o)); revalida(); throw e; }
 }
 function vCadastro(m) {
-  const C = S.cad, revs = uniq(S.cols.map(c => c.revenda));
+  const C = S.cad, revs = uniq(S.cols.map(c => c.revenda)), admC = S.user.perfil === 'ADMIN';
   if (!revs.length) { m.innerHTML = '<div class="card empty"><h3>Nenhum colaborador ainda</h3><p>Importe o relatório do DP na aba <b>Importar DP</b>.</p></div>'; return; }
   if (!revs.includes(C.rev)) C.rev = revs[0];
   const doRev = S.cols.filter(c => c.revenda === C.rev);
@@ -888,13 +927,14 @@ function vCadastro(m) {
     return `<div class="cr" data-m="${esc(c.matricula)}"><input type="checkbox" data-cs ${C.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
       <div class="nm"><b>${esc(c.nome)}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)}${C.area === 'ent' ? ' · <span class="tg2 ' + pe + '">' + PAPEL[pe] + '</span>' : ''}${/trabalhando/i.test(c.situacao) || !c.situacao ? '' : ' · ' + esc(c.situacao)}</small>
         ${pc.length ? `<small class="pd">Falta: ${pc.join(', ')}</small>` : '<small class="okc">✓ completo</small>'}</div>
-      <div class="cf">${campos}<label class="f">Supervisor<select data-k="supervisor">${selOpts(sups, c.supervisor, '— supervisor —')}</select></label></div></div>`;
+      <div class="cf">${campos}${admC ? `<label class="f">Supervisor<select data-k="supervisor">${selOpts(sups, c.supervisor, '— supervisor —')}</select></label>` : ''}</div></div>`;
   };
   const ns = C.sel.size;
   const hj = hoje(), nomeDe = {}; doRev.forEach(c => { nomeDe[c.matricula] = c.nome; });
   const ferRev = S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= isoMaisDias(hj, -30) && (!q || nrm(nomeDe[f.matricula] + ' ' + f.matricula).includes(q))).sort((a, b) => a.inicio.localeCompare(b.inicio) || nomeDe[a.matricula].localeCompare(nomeDe[b.matricula]));
-  const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length], ['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length], ['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]];
-  const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span><label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden></div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
+  const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length]].concat(admC ? [['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length]] : []).concat([['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]]);
+  if (!ABAS_CAD.some(a => a[0] === C.aba)) C.aba = 'col';
+  const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span>${admC ? `<label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden>` : ''}</div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
       <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador"><option value="">— colaborador —</option>${(() => {
         const ord = doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)), tem = c => S.ferias.filter(f => f.matricula === c.matricula && f.fim >= hj).sort((a, b) => a.inicio.localeCompare(b.inicio));
@@ -910,8 +950,8 @@ function vCadastro(m) {
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
         ${C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
-        <select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>
-        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span><button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>`
+        ${admC ? `<select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>` : ''}
+        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span>${admC ? `<button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>` : ''}`
       : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
     <div class="ls">${L.map(linha).join('') || `<div class="empty">${C.f === 'pend' ? 'Tudo preenchido nesta revenda e setor. 🎉' : 'Ninguém aqui.'}</div>`}</div>` : C.aba === 'pontos' ? `<div class="pts" style="padding-top:14px"><b>Pontos de apoio de ${esc(C.rev)}</b><span class="hint">Aparecem no campo “Sede / ponto” de motoristas e ajudantes da Entrega. Quem não tiver ponto fica na Sede.</span><div class="ck">${pontosRev(C.rev).map(p => `<label style="cursor:default">${esc(p)} <button type="button" class="xp" data-delp="${esc(p)}" aria-label="Remover ${esc(p)}">×</button></label>`).join('') || '<span class="hint">Nenhum ponto cadastrado: todos ficam na Sede.</span>'}</div>
       <form class="addp" data-addp><input placeholder="Novo ponto de apoio (ex.: Irará)" maxlength="40"><button class="btn sm" type="submit">Adicionar</button></form></div>
@@ -1084,7 +1124,7 @@ async function salvaPontos(rev, lista, m) {
   let o = {}; try { o = JSON.parse(S.cfg.PONTOS_APOIO || '{}'); } catch (e) { o = {}; }
   const ant = S.cfg.PONTOS_APOIO;
   o[rev] = lista; S.cfg.PONTOS_APOIO = JSON.stringify(o); revalida(); vCadastro(m);
-  try { await call('salvarConfig', { PONTOS_APOIO: S.cfg.PONTOS_APOIO }); toast('Pontos de apoio salvos.'); }
+  try { await call('salvarPontos', { revenda: rev, lista }); toast('Pontos de apoio salvos.'); }
   catch (e) { S.cfg.PONTOS_APOIO = ant; revalida(); vCadastro(m); toast(esc(e.message), true); }
 }
 

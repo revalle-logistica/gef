@@ -89,7 +89,8 @@ function rotas_() {
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
-  classificar: { f: classificar_, admin: true },
+  classificar: { f: classificar_ },
+  salvarPontos: { f: salvarPontos_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
@@ -232,6 +233,8 @@ function carregar_(u) {
     };
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
+  const comLink = {}; ler_('Links').forEach(function (l) { if (l.ativo === 'S') comLink[l.matricula] = true; });
+  cols.forEach(function (c) { c.temLink = !!comLink[c.matricula]; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
   const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
