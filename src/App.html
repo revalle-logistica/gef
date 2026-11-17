@@ -789,7 +789,7 @@ function areaDepto(dep) {
   if (k) return map[k] || 'nao';
   const a = areaSetor(nomeDepto(dep)); return a === 'arm' || a === 'ent' ? a : 'nao';
 }
-const AREA_TXT = { arm: 'Armazém', ent: 'Entrega', adm: 'Administrativo-Logística', prop: 'Departamento próprio (aba separada)', nao: 'Não importar' };
+const AREA_TXT = { arm: 'Armazém', ent: 'Entrega', adm: 'Administrativo-Logística', prop: 'Aba separada com o nome do departamento', nao: 'Não importar' };
 const titulo = s => String(s || '').toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase());
 function revDoArquivo(nome) {
   const up = String(nome).toUpperCase(), sig = Object.keys(codRev()).join('|'), mm = sig ? up.match(new RegExp('(?:^|[^A-Z])(' + sig + ')(?:[^A-Z]|$)')) : null;
