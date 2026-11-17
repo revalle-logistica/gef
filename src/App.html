@@ -991,7 +991,9 @@ function vCadastro(m) {
   if (!revs.length) { m.innerHTML = '<div class="card empty"><h3>Nenhum colaborador ainda</h3><p>Importe o relatório do DP na aba <b>Importar DP</b>.</p></div>'; return; }
   if (!revs.includes(C.rev)) C.rev = revs[0];
   const doRev = S.cols.filter(c => c.revenda === C.rev);
-  const daArea = doRev.filter(c => areaSetor(c.setor) === C.area);
+  const areaCad = c => { const dp = deptoProprio(c.setor); return dp ? areaDeptoProprio(dp) : areaSetor(c.setor); };
+  const abasArea = [['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Adm. Logística e outros']].concat(uniq(doRev.map(c => deptoProprio(c.setor)).filter(Boolean)).map(n => [areaDeptoProprio(n), n]));
+  const daArea = doRev.filter(c => areaCad(c) === C.area);
   const q = nrm(C.q);
   const L = daArea.filter(c => (C.f !== 'pend' || pendenciasCadastro(c).length) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao).includes(q)))
     .sort((a, b) => papelEntrega(a.funcao).localeCompare(papelEntrega(b.funcao)) || a.funcao.localeCompare(b.funcao) || a.nome.localeCompare(b.nome));
@@ -1000,7 +1002,7 @@ function vCadastro(m) {
   const turnos = lstCfg('TURNOS_ARMAZEM'), tipos = lstCfg('TIPOS_MOTORISTA'), pontos = ['Sede'].concat(pontosRev(C.rev)), sups = supsDaRevenda(C.rev);
   const linha = c => {
     const pe = papelEntrega(c.funcao), pc = pendenciasCadastro(c);
-    const campos = C.area === 'outro' ? (admC ? '' : '<span class="hint" style="align-self:end">Nada a preencher</span>') : C.area === 'arm'
+    const campos = (C.area === 'outro' || /^p_/.test(C.area)) ? (admC ? '' : '<span class="hint" style="align-self:end">Nada a preencher</span>') : C.area === 'arm'
       ? `<label class="f">Turno<select data-k="turno">${selOpts(turnos, c.turno, '— turno —')}</select></label>`
       : (pe === 'adm' ? '<span class="hint" style="align-self:end">Administrativo: só o supervisor</span>' : `<label class="f">Sede / ponto<select data-k="lotacao">${selOpts(pontos, c.lotacao, '— sede/ponto —')}</select></label>`) +
         (pe === 'mot' ? `<label class="f">Motorista<select data-k="tipoMot">${selOpts(tipos, c.tipoMot, '— rota/puxador —')}</select></label>` : '');
@@ -1027,10 +1029,10 @@ function vCadastro(m) {
     <div class="vt">${ABAS_CAD.map(([k, n, x]) => `<button type="button" data-aba="${k}" aria-pressed="${C.aba === k}">${n}<i>${x}</i></button>`).join('')}</div>
     <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
       ${C.aba === 'col' || C.aba === 'ferias' ? `<label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label>` : ''}</div>
-    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Adm. Logística e outros']].filter(([k]) => k !== 'outro' || doRev.some(c => areaSetor(c.setor) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
+    ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${abasArea.filter(([k]) => k !== 'outro' || doRev.some(c => areaCad(c) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaCad(c) === k).length}</i></button>`).join('')}</div>
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
-        ${C.area === 'outro' ? '' : C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
+        ${(C.area === 'outro' || /^p_/.test(C.area)) ? '' : C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
         ${admC ? `<select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>` : ''}
         <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span>${admC ? `<button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>` : ''}`
       : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
