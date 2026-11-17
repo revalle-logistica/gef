@@ -91,8 +91,8 @@ function setTele_(u, d) {
 /**
  * Importa o relatório do DP já lido no navegador.
  * d.rows = [{matricula, nome, funcao, revenda, setor, departamento, situacao, admissao}]
- * Os campos de cadastro (turno, sede/ponto, rota/puxador, supervisor) e a marcação de teleatendimento
- * de quem já existia são mantidos. Quem sumir da revenda/setor importado fica inativo.
+ * Só INCLUI colaboradores novos: quem já foi importado antes não é alterado (nem quem foi removido).
+ * A exclusão é manual, na tela Cadastro.
  */
 function importar_(u, d) {
   const rows = d.rows || [];
@@ -100,33 +100,21 @@ function importar_(u, d) {
   return comLock_(function () {
     const atual = ler_('Colaboradores'), mapa = {};
     atual.forEach(function (c) { mapa[c.matricula] = c; });
-    const chave = function (c) { return c.revenda + '|' + areaSetor(c.setor); };
     const grupos = uniq_(rows.map(function (r) { return String(r.revenda || '').trim() + '|' + areaSetor(r.setor); }));
-    const vistos = {}, res = { novos: 0, atualizados: 0, inativados: 0, desligados: 0 };
+    const vistos = {}, res = { novos: 0, jaExistiam: 0, desligados: 0 };
     const quando = agora_();
     rows.forEach(function (r) {
       const m = String(r.matricula || '').trim();
-      if (!m || !String(r.nome || '').trim()) return;
-      const deslig = /demit|deslig|rescis/i.test(String(r.situacao || ''));
-      if (deslig) res.desligados++;
-      const c = mapa[m] || { matricula: m, teleatendimento: 'N', lotacao: '', turno: '', tipoMot: '', supervisor: '' };
-      if (!mapa[m]) { if (!deslig) res.novos++; } else res.atualizados++;
-      c.nome = String(r.nome).trim();
-      c.funcao = String(r.funcao || '').trim();
-      c.revenda = String(r.revenda || '').trim();
-      c.setor = String(r.setor || '').trim();
-      c.departamento = String(r.departamento || '').trim();
-      c.admissao = String(r.admissao || '').trim();
-      c.situacao = String(r.situacao || '').trim();
-      ['lotacao', 'turno'].forEach(function (k) { if (r[k] && !c[k]) c[k] = String(r[k]).trim(); }); // só preenche se ainda vazio
-      c.ativo = deslig ? 'N' : 'S';
-      c.atualizadoEm = quando;
-      mapa[m] = c;
+      if (!m || !String(r.nome || '').trim() || vistos[m]) return;
       vistos[m] = true;
-    });
-    Object.keys(mapa).forEach(function (m) {
-      const c = mapa[m];
-      if (!vistos[m] && grupos.indexOf(chave(c)) >= 0 && c.ativo !== 'N') { c.ativo = 'N'; c.atualizadoEm = quando; res.inativados++; }
+      if (mapa[m]) { res.jaExistiam++; return; } // já importado antes: não altera (exclusão é manual)
+      if (/demit|deslig|rescis/i.test(String(r.situacao || ''))) { res.desligados++; return; }
+      mapa[m] = {
+        matricula: m, nome: String(r.nome).trim(), funcao: String(r.funcao || '').trim(), revenda: String(r.revenda || '').trim(),
+        setor: String(r.setor || '').trim(), departamento: String(r.departamento || '').trim(), admissao: String(r.admissao || '').trim(),
+        situacao: String(r.situacao || '').trim(), lotacao: '', turno: '', tipoMot: '', supervisor: '', teleatendimento: 'N', ativo: 'S', atualizadoEm: quando
+      };
+      res.novos++;
     });
     const tudo = Object.keys(mapa).map(function (k) { return mapa[k]; })
       .sort(function (a, b) { return (a.revenda + a.setor + a.nome).localeCompare(b.revenda + b.setor + b.nome); });
@@ -134,6 +122,66 @@ function importar_(u, d) {
     log_(u, '', 'importou relatório do DP', grupos.join(', ') + ' · ' + JSON.stringify(res));
     res.revendas = uniq_(rows.map(function (r) { return r.revenda; }));
     return res;
+  });
+}
+
+/** Remove (inativa) colaboradores manualmente. A escala e o histórico ficam guardados. */
+function removerColaboradores_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
+  return comLock_(function () {
+    const todos = ler_('Colaboradores'), quando = agora_();
+    let n = 0;
+    todos.forEach(function (c) { if (mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N') { c.ativo = 'N'; c.atualizadoEm = quando; n++; } });
+    gravarTudo_('Colaboradores', todos);
+    log_(u, mats.length === 1 ? mats[0] : '', 'removeu colaboradores', n + ': ' + mats.join(', '));
+    return { removidos: n };
+  });
+}
+
+/* ---------------- férias e feriados ---------------- */
+function dataOk_(v, nome) { v = String(v || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error('Data inválida: ' + nome + '.'); return v; }
+function salvarFerias_(u, d) {
+  const c = achaColab_(u, d.matricula), ini = dataOk_(d.inicio, 'início'), fim = dataOk_(d.fim, 'fim');
+  if (fim < ini) throw new Error('O fim das férias é antes do início.');
+  return comLock_(function () {
+    const choque = ler_('Ferias').filter(function (f) { return f.matricula === c.matricula && f.inicio <= fim && ini <= f.fim; })[0];
+    if (choque) throw new Error('Já existe férias nesse período (' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim) + ').');
+    const f = { id: Utilities.getUuid(), matricula: c.matricula, inicio: ini, fim: fim, obs: String(d.obs || '').trim().slice(0, 120), criadoPor: u.nome, criadoEm: agora_() };
+    gravarLinha_('Ferias', f);
+    log_(u, c.matricula, 'cadastrou férias', ini + ' a ' + fim);
+    return { id: f.id, matricula: f.matricula, inicio: ini, fim: fim, obs: f.obs };
+  });
+}
+function removerFerias_(u, d) {
+  return comLock_(function () {
+    const lst = ler_('Ferias'), f = lst.filter(function (x) { return x.id === d.id; })[0];
+    if (!f) throw new Error('Férias não encontradas.');
+    achaColab_(u, f.matricula);
+    gravarTudo_('Ferias', lst.filter(function (x) { return x.id !== d.id; }));
+    log_(u, f.matricula, 'removeu férias', f.inicio + ' a ' + f.fim);
+    return true;
+  });
+}
+function salvarFeriado_(u, d) {
+  const rev = String(d.revenda || '').trim(), data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 60);
+  if (!rev) throw new Error('Informe a unidade.');
+  if (!desc) throw new Error('Informe o nome do feriado.');
+  return comLock_(function () {
+    if (ler_('Feriados').some(function (f) { return f.revenda === rev && f.data === data; })) throw new Error('Já existe feriado nessa data para ' + rev + '.');
+    const f = { id: Utilities.getUuid(), revenda: rev, data: data, descricao: desc, criadoPor: u.nome, criadoEm: agora_() };
+    gravarLinha_('Feriados', f);
+    log_(u, '', 'cadastrou feriado', rev + ' ' + data + ' ' + desc);
+    return { id: f.id, revenda: rev, data: data, descricao: desc };
+  });
+}
+function removerFeriado_(u, d) {
+  return comLock_(function () {
+    const lst = ler_('Feriados'), f = lst.filter(function (x) { return x.id === d.id; })[0];
+    if (!f) throw new Error('Feriado não encontrado.');
+    gravarTudo_('Feriados', lst.filter(function (x) { return x.id !== d.id; }));
+    log_(u, '', 'removeu feriado', f.revenda + ' ' + f.data);
+    return true;
   });
 }
 

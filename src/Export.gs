@@ -27,7 +27,7 @@ function textoDia_(d) {
   return c ? { ent: d.ent, sai: d.sai, int: d.int ? minParaHm(+d.int) : '—', horas: minParaHm(c.liquido) } : null;
 }
 
-function fichaPdf_(c, e, cfg, ultima) {
+function fichaPdf_(c, e, cfg, ultima, ctx) {
   const tele = c.teleatendimento === 'S';
   let corpo;
   if (!e) {
@@ -35,18 +35,21 @@ function fichaPdf_(c, e, cfg, ultima) {
   } else {
     const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
     const val = validarEscala(esc, { tele: tele, cfg: cfg });
+    const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
+      const sd = sem ? sem[i] : null, rot = nome + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
+      if (sd && sd.tipo === 'FER') return '<tr class="f"><td class="d">' + rot + '</td><td colspan="5" style="background:#ece6fd;color:#6d3fd8">FÉRIAS</td></tr>';
       const d = esc.dias[i] || { tipo: 'F' }, t = d.tipo === 'T' ? textoDia_(d) : null;
-      return t ? '<tr><td class="d">' + nome + '</td><td>Trabalho</td><td>' + h_(t.ent) + '</td><td>' + h_(t.sai) + '</td><td>' + t.int + '</td><td><b>' + t.horas + '</b></td></tr>'
-        : '<tr class="f"><td class="d">' + nome + '</td><td colspan="5">FOLGA</td></tr>';
-    }).join('');
+      return t ? '<tr><td class="d">' + rot + '</td><td>Trabalho</td><td>' + h_(t.ent) + '</td><td>' + h_(t.sai) + '</td><td>' + t.int + '</td><td><b>' + t.horas + '</b></td></tr>'
+        : '<tr class="f"><td class="d">' + rot + '</td><td colspan="5">FOLGA</td></tr>';
+    }).join('') + (sem ? avisosSemana(sem).map(function (a) { return '<tr><td colspan="6" style="color:#9a5800;font-size:10px;text-align:left">⚑ ' + h_(a) + '</td></tr>'; }).join('') : '');
     corpo = '<table class="esc" style="margin-top:12px"><tr><th style="text-align:left">Dia</th><th>Situação</th><th>Entrada</th><th>Saída</th><th>Intervalo</th><th>Horas</th></tr>' + linhas + '</table>' +
       '<p class="tot">Total semanal: <b>' + minParaHm(val.total) + '</b> de ' + minParaHm(val.limite) + ' permitidas &nbsp; <span class="st ' + val.status + '">' +
       ({ OK: 'Dentro das regras', ALERTA: 'Com alerta', ERRO: 'Com erro legal' })[val.status] + '</span></p>' +
       val.msgs.filter(function (m) { return m.nivel !== 'info'; }).map(function (m) { return '<p class="msg">• ' + h_(m.texto) + '</p>'; }).join('');
   }
   return '<div class="pg' + (ultima ? ' ult' : '') + '">' +
-    '<div class="top"><span>Escala 5x2 · EC 141/2026</span><b>' + h_(cfg.EMPRESA) + ' · Escala de trabalho</b></div>' +
+    '<div class="top"><span>' + (ctx && ctx.semana ? 'Semana de ' + dataBr_(ctx.semana) + ' a ' + dataBr_(isoMaisDias(ctx.semana, 6)) : 'Escala 5x2 · EC 141/2026') + '</span><b>' + h_(cfg.EMPRESA) + ' · Escala de trabalho</b></div>' +
     '<table class="inf" style="margin-top:10px">' +
     '<tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
     '<tr><td class="k">Função</td><td>' + h_(c.funcao) + (tele ? ' (teleatendimento)' : '') + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">Setor</td><td>' + h_(c.setor) + '</td></tr>' +
@@ -62,7 +65,7 @@ function ordemVisao_(a, b) {
   const va = visaoColaborador(a), vb = visaoColaborador(b);
   return (a.revenda || '').localeCompare(b.revenda || '') || va.ordem.localeCompare(vb.ordem) || va.fordem.localeCompare(vb.fordem) || a.nome.localeCompare(b.nome);
 }
-function quadroPdf_(cols, esc, cfg) {
+function quadroPdf_(cols, esc, cfg, ctx) {
   const grupos = {}, ordem = [];
   cols.forEach(function (c) {
     const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
@@ -76,17 +79,26 @@ function quadroPdf_(cols, esc, cfg) {
       const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
-        DIAS_CURTO.map(function (_, i) {
-          if (!e) return '<td>—</td>';
-          const d = dias[i] || { tipo: 'F' };
-          return d.tipo === 'T' ? '<td>' + h_(d.ent) + '<br>' + h_(d.sai) + '</td>' : '<td class="f">FOLGA</td>';
-        }).join('') +
+        (function () {
+          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
+          return DIAS_CURTO.map(function (_, i) {
+            if (sem && sem[i].tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8;font-weight:bold">FÉRIAS</td>';
+            if (!e || (sem && sem[i].tipo === 'N')) return '<td>—</td>';
+            const d = dias[i] || { tipo: 'F' }, fer = sem && sem[i].feriado;
+            return d.tipo === 'T' ? '<td' + (fer ? ' style="background:#fde6e3"' : '') + '>' + h_(d.ent) + '<br>' + h_(d.sai) + (fer ? '<br><b>feriado</b>' : '') + '</td>' : '<td class="f">FOLGA</td>';
+          }).join('');
+        })() +
         '<td><b>' + (val ? minParaHm(val.total) : '—') + '</b></td><td>' + (val ? '<span class="st ' + val.status + '">' + val.status + '</span>' : 'SEM') + '</td></tr>';
     });
   });
   return '<div class="pg ult"><div class="top"><span>Gerado em ' + agora_().split(' ')[0].split('-').reverse().join('/') + '</span><b>' + h_(cfg.EMPRESA) + ' · Quadro de escalas 5x2</b></div>' +
     '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Turno / sede-ponto</th>' +
-    DIAS_CURTO.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '<th>Total</th><th>Status</th></tr>' + rows + '</table></div>';
+    DIAS_CURTO.map(function (d, i) {
+      if (!(ctx && ctx.semana)) return '<th>' + d + '</th>';
+      const dt = isoMaisDias(ctx.semana, i), fs = Object.keys(ctx.feriados).filter(function (r) { return ctx.feriados[r].some(function (f) { return f.data === dt; }); });
+      return '<th>' + d + '<br>' + dt.split('-').reverse().slice(0, 2).join('/') + (fs.length ? '<br>feriado' : '') + '</th>';
+    }).join('') + '<th>Total</th><th>Status</th></tr>' + rows + '</table>' +
+    (ctx && ctx.semana ? '<p style="font-size:9px;color:#44526b">Semana de ' + dataBr_(ctx.semana) + ' a ' + dataBr_(isoMaisDias(ctx.semana, 6)) + '. FÉRIAS conforme cadastro; células em vermelho = trabalho em feriado (folga compensatória ou pagamento em dobro).</p>' : '') + '</div>';
 }
 
 /** d = {matriculas:[...], modo:'fichas'|'quadro'} → {nome, base64} */
@@ -100,8 +112,14 @@ function exportPdf_(u, d) {
     .filter(function (c) { return mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N' && podeVer_(u, c); })
     .sort(ordemVisao_);
   if (!cols.length) throw new Error('Nenhum colaborador disponível.');
-  const corpo = d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg)
-    : cols.map(function (c, i) { return fichaPdf_(c, esc[c.matricula], cfg, i === cols.length - 1); }).join('');
+  let ctx = null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || ''))) {
+    ctx = { semana: segundaDaSemana(d.semana), ferias: {}, feriados: {} };
+    ler_('Ferias').forEach(function (f) { (ctx.ferias[f.matricula] = ctx.ferias[f.matricula] || []).push(f); });
+    ler_('Feriados').forEach(function (f) { (ctx.feriados[f.revenda] = ctx.feriados[f.revenda] || []).push(f); });
+  }
+  const corpo = d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg, ctx)
+    : cols.map(function (c, i) { return fichaPdf_(c, esc[c.matricula], cfg, i === cols.length - 1, ctx); }).join('');
   const html = '<html><head><meta charset="utf-8"><style>' + CSS_PDF + '</style></head><body>' + corpo + '</body></html>';
   const pdf = Utilities.newBlob(html, 'text/html', 'escala.html').getAs('application/pdf');
   const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');

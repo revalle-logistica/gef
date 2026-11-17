@@ -192,3 +192,39 @@ function visaoColaborador(c) {
 
 /** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
 function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }
+
+/* ---------------- semana com férias e feriados ---------------- */
+function isoMaisDias(iso, n) {
+  var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+/** Segunda-feira da semana que contém a data (ISO yyyy-mm-dd). */
+function segundaDaSemana(iso) {
+  var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])), dow = (d.getUTCDay() + 6) % 7;
+  return isoMaisDias(iso, -dow);
+}
+/**
+ * Dias reais de uma semana para um colaborador.
+ * esc = escala-padrão {vigencia, dias}; ferias = [{inicio, fim}]; feriados = [{data, descricao}] da revenda.
+ * Retorna 7 itens {data, tipo:'T'|'F'|'FER'|'N', ent, sai, int, feriado} ('N' = sem escala vigente).
+ */
+function semanaEfetiva(esc, segunda, ferias, feriados) {
+  var out = [];
+  for (var i = 0; i < 7; i++) {
+    var data = isoMaisDias(segunda, i), base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[i] || { tipo: 'F' }) : null;
+    var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
+    var emFerias = (ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; });
+    var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '' };
+    if (emFerias) o.tipo = 'FER';
+    else if (!base) o.tipo = 'N';
+    else { o.tipo = base.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = base.int; } }
+    out.push(o);
+  }
+  return out;
+}
+/** Avisos da semana real (feriado trabalhado). */
+function avisosSemana(sem) {
+  return sem.filter(function (d) { return d.tipo === 'T' && d.feriado; }).map(function (d) {
+    return 'Trabalha no feriado de ' + d.data.split('-').reverse().slice(0, 2).join('/') + ' (' + d.feriado + '): garantir folga compensatória na semana ou pagar em dobro (Lei 605/49).';
+  });
+}

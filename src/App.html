@@ -4,7 +4,7 @@
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
   f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
-  imp: null, users: null, ed: null, lote: null, editUser: null, sups: [],
+  imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], semana: '',
   cad: { rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() } };
 const $ = s => document.querySelector(s);
 const root = document.getElementById('root'), modal = document.getElementById('modal');
@@ -111,6 +111,8 @@ async function carregar() {
   const r = await call('carregar');
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || [];
+  S.ferias = r.ferias || []; S.feriados = r.feriados || [];
+  if (!S.semana) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.semana = segundaDaSemana(h > i ? h : i); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
@@ -120,7 +122,10 @@ async function carregar() {
   if (!S.pnl.vis) S.pnl.vis = prim;
   render();
 }
-function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
+const feriasDe = m => S.ferias.filter(f => f.matricula === m);
+const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
+const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
+function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda)); c.avisos = avisosSemana(c.sem); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
 
 /* ================= casca ================= */
 function render() {
@@ -146,10 +151,25 @@ function abrirModal(html, sm) {
 }
 function fecharModal(forcar) {
   if (!forcar && S.ed && S.ed.sujo && !confirm('Sair sem salvar as alterações desta escala?')) return;
+  const eraEd = !!S.ed;
   modal.hidden = true; modal.innerHTML = ''; S.ed = null; S.lote = null;
+  if (eraEd && !forcar && (S.view === 'escalas' || S.view === 'painel')) render();
 }
 modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) fecharModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) fecharModal(); });
+
+/* ================= semana ================= */
+function barraSemana() {
+  const fim = isoMaisDias(S.semana, 6), fs = S.feriados.filter(f => f.data >= S.semana && f.data <= fim);
+  return `<div class="sw2"><button type="button" class="btn sm" data-sem="-7" aria-label="Semana anterior">‹</button>
+    <label class="f" style="flex-direction:row;align-items:center;gap:8px">Semana de<input type="date" data-semdt value="${esc(S.semana)}" style="width:auto"></label>
+    <span class="hint">a ${dataBr(fim)}</span><button type="button" class="btn sm" data-sem="7" aria-label="Próxima semana">›</button>
+    ${fs.length ? `<span class="pill p-ERRO">Feriado: ${fs.map(f => esc(ddmm(f.data) + ' ' + f.descricao + ' (' + f.revenda + ')')).join(' · ')}</span>` : ''}</div>`;
+}
+function ligaSemana(m, redesenha) {
+  m.querySelectorAll('[data-sem]').forEach(b => { b.onclick = () => { S.semana = isoMaisDias(S.semana, +b.dataset.sem); revalida(); redesenha(); }; });
+  const i = m.querySelector('[data-semdt]'); if (i) i.onchange = () => { if (i.value) { S.semana = segundaDaSemana(i.value); revalida(); redesenha(); } };
+}
 
 /* ================= escalas ================= */
 function opts(arr, sel, todos) { return `<option value="">${todos}</option>` + arr.map(v => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join(''); }
@@ -157,7 +177,7 @@ const VIS_TXT = { entrega: 'Entrega · ponto de apoio e função', pux: 'Puxador
 function filtrados(ignSt, ignVis) {
   const f = S.f, q = nrm(f.q);
   return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
-    (!f.tele || c.tele) && (ignSt || !f.st || st(c) === f.st) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
+    (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
 function ordenar(L) { return L.slice().sort((a, b) => (S.f.rev ? 0 : a.revenda.localeCompare(b.revenda, 'pt')) || a.vis.ordem.localeCompare(b.vis.ordem) || a.vis.fordem.localeCompare(b.vis.fordem) || a.nome.localeCompare(b.nome, 'pt')); }
@@ -173,10 +193,11 @@ function agrupar(L, comArea) {
   });
   return G;
 }
-function porDia(arr) { const d = [0, 0, 0, 0, 0, 0, 0]; arr.forEach(c => { if (c.escala) c.escala.dias.forEach((x, i) => { if (x.tipo === 'T') d[i]++; }); }); return d; }
+function porDia(arr) { const d = [0, 0, 0, 0, 0, 0, 0]; arr.forEach(c => { (c.sem || []).forEach((x, i) => { if (x.tipo === 'T') d[i]++; }); }); return d; }
 function faixaDias(arr) {
   const d = porDia(arr), sem = arr.filter(c => !c.escala).length;
-  return `<div class="cd">${d.map((v, i) => `<span title="${DIAS_SEMANA[i]}: ${v} trabalhando"><small>${DIAS_CURTO[i]}</small>${v}</span>`).join('')}</div>${sem ? `<em class="se">${sem} sem escala</em>` : ''}`;
+  const fe = arr.filter(c => c.sem && c.sem.some(x => x.tipo === 'FER')).length;
+  return `<div class="cd">${d.map((v, i) => `<span title="${DIAS_SEMANA[i]}: ${v} trabalhando"><small>${DIAS_CURTO[i]}</small>${v}</span>`).join('')}</div>${sem ? `<em class="se">${sem} sem escala</em>` : ''}${fe ? `<em class="se" style="color:var(--excess,#6d3fd8)">${fe} de férias</em>` : ''}`;
 }
 function vEscalas(m) {
   const f = S.f;
@@ -187,6 +208,7 @@ function vEscalas(m) {
     return;
   }
   m.innerHTML = `<section class="card">
+    ${barraSemana()}
     <div class="vt" id="vt"></div>
     <div class="filt">
       <label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
@@ -196,20 +218,21 @@ function vEscalas(m) {
     <div class="acts" id="acts"></div>
     <div class="ls" id="ls"></div></section>`;
   m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; vEscalas(m); };
+  ligaSemana(m, () => vEscalas(m));
   m.querySelector('input[data-f=q]').oninput = e => { f.q = e.target.value; lista(); };
   m.onclick = e => {
     const t = e.target.closest('button, [data-chip]');
     if (!t) return;
     if (t.dataset.vis) { f.vis = t.dataset.vis; lista(); }
-    else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else f.st = k; lista(); }
+    else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else if (k === 'ferias' || k === 'feriado') f.ext = f.ext === k ? '' : k; else f.st = k; lista(); }
     else if (t.dataset.ed) abrirEditor(t.dataset.ed);
     else if (t.dataset.gsel) { const L = grupoSel[t.dataset.gsel] || []; const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
     else if (t.dataset.ac === 'todos') { const L = filtrados(); const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
     else if (t.dataset.ac === 'limpar') { S.sel.clear(); lista(); }
     else if (t.dataset.ac === 'lote') modalLote();
     else if (t.dataset.ac === 'xls') ocupado(t, () => excelLote(alvo().lista));
-    else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas'));
-    else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro'));
+    else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', S.semana));
+    else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
   };
   m.onchange = e => { const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
   lista();
@@ -224,7 +247,9 @@ function lista() {
   const n = k => base.filter(c => st(c) === k).length;
   $('#chips').innerHTML = [['', 'Todos', base.length], ['SEM', 'Sem escala', n('SEM')], ['ERRO', 'Com erro', n('ERRO')], ['ALERTA', 'Com alerta', n('ALERTA')], ['OK', 'Dentro das regras', n('OK')]]
     .map(([k, t, q]) => `<button type="button" class="chip" data-chip="${k}" aria-pressed="${f.st === k}">${k ? `<span class="dot d-${k}"></span>` : ''}${t} <i>${q}</i></button>`).join('') +
-    `<button type="button" class="chip" data-chip="tele" aria-pressed="${!!f.tele}">Teleatendimento <i>${base.filter(c => c.tele).length}</i></button>`;
+    `<button type="button" class="chip" data-chip="tele" aria-pressed="${!!f.tele}">Teleatendimento <i>${base.filter(c => c.tele).length}</i></button>` +
+    `<button type="button" class="chip" data-chip="ferias" aria-pressed="${f.ext === 'ferias'}">Férias na semana <i>${base.filter(c => c.sem.some(d => d.tipo === 'FER')).length}</i></button>` +
+    `<button type="button" class="chip" data-chip="feriado" aria-pressed="${f.ext === 'feriado'}"><span class="dot d-ERRO"></span>Trabalha em feriado <i>${base.filter(c => c.avisos.length).length}</i></button>`;
   grupoSel = {};
   let h = '', gi = 0;
   agrupar(L, f.vis === 'todos').forEach((F, gk) => {
@@ -233,7 +258,7 @@ function lista() {
     F.forEach((arr, fn) => { h += `<div class="gf"><b>${esc(fn)} <span>(${arr.length})</span></b>${faixaDias(arr)}</div>` + arr.map(linhaHtml).join(''); });
   });
   $('#ls').innerHTML = L.length
-    ? `<div class="ln hd"><span></span><span>Colaborador</span><span>Função · lotação</span><span>Semana</span><span style="text-align:right">Horas</span><span>Status</span><span></span></div>` + h
+    ? `<div class="ln hd"><span></span><span>Colaborador</span><span>Função · lotação</span><span>Semana ${ddmm(S.semana)} a ${ddmm(isoMaisDias(S.semana, 6))}</span><span style="text-align:right">Horas</span><span>Status</span><span></span></div>` + h
     : '<div class="empty">Nenhum colaborador nesta visão com esses filtros.</div>';
   acoes();
 }
@@ -254,12 +279,20 @@ function semana(e) {
     return x.tipo === 'T' ? `<span class="t">${d}<small>${esc(x.ent || '')}</small></span>` : `<span class="f">${d}<small>folga</small></span>`;
   }).join('')}</div>`;
 }
+function semanaReal(c) {
+  return `<div class="wk">${c.sem.map((x, i) => {
+    const h = x.feriado ? ' h' : '', tt = x.feriado ? ` title="Feriado: ${esc(x.feriado)}"` : '';
+    if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[i]}<small>férias</small></span>`;
+    if (x.tipo === 'N') return `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>–</small></span>`;
+    return x.tipo === 'T' ? `<span class="t${h}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
+  }).join('')}</div>`;
+}
 function linhaHtml(c) {
   const s = st(c);
   return `<div class="ln"><input type="checkbox" data-sel="${esc(c.matricula)}" ${S.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
-    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
+    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
-    ${semana(c.escala)}
+    ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
     <div><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span></div>
     <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
@@ -299,6 +332,8 @@ function desenhaEditor() {
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-copiar>${ic('copy')}Repetir o 1º horário nos outros dias</button>
         <button type="button" class="btn sm" data-padrao>Horário padrão (${esc(S.cfg.PADRAO_ENTRADA)}–${esc(S.cfg.PADRAO_SAIDA)})</button></div>
       <div id="ed-val"></div>
+      <div class="fer"><b>Férias</b><div id="ed-fer"></div>
+        <form class="addp" id="ed-ferf"><input type="date" name="inicio" aria-label="Início das férias"><input type="date" name="fim" aria-label="Fim das férias"><input name="obs" placeholder="Obs. (opcional)" maxlength="120"><button class="btn sm" type="submit">Adicionar férias</button></form></div>
       ${c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>'}
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button>
@@ -329,10 +364,24 @@ function desenhaEditor() {
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
     else if (b.hasAttribute('data-pdf')) {
       if (S.ed.sujo) return toast('Salve a escala antes de gerar o PDF.', true);
-      ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas'));
+      ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas', S.semana));
     }
   });
-  atualizaVal();
+  atualizaVal(); listaFerias();
+  box.querySelector('#ed-ferf').onsubmit = ev => {
+    ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
+    if (!fd.inicio || !fd.fim) return toast('Informe início e fim das férias.', true);
+    ocupado(ev.target.querySelector('button'), async () => {
+      const f = await call('salvarFerias', { matricula: S.ed.c.matricula, inicio: fd.inicio, fim: fd.fim, obs: fd.obs });
+      S.ferias.push(f); revalida(); ev.target.reset(); listaFerias(); toast('Férias cadastradas.');
+    });
+  };
+}
+function listaFerias() {
+  const w = $('#ed-fer'); if (!w || !S.ed) return;
+  const L = feriasDe(S.ed.c.matricula).sort((a, b) => a.inicio.localeCompare(b.inicio));
+  w.innerHTML = L.length ? `<div class="ck">${L.map(f => `<label style="cursor:default">${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('')}</div>` : '<p class="hint">Nenhum período de férias cadastrado.</p>';
+  w.querySelectorAll('[data-delf]').forEach(b => { b.onclick = () => { if (!confirm('Remover este período de férias?')) return; ocupado(b, async () => { await call('removerFerias', { id: b.dataset.delf }); S.ferias = S.ferias.filter(f => f.id !== b.dataset.delf); revalida(); listaFerias(); }); }; });
 }
 function redesenhaDias() {
   const w = $('#ed-dias');
@@ -426,9 +475,9 @@ function baixar(b64, nome, mime) {
   const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
 }
-async function pdfServidor(mats, modo) {
+async function pdfServidor(mats, modo, semana) {
   if (!mats.length) throw new Error('Nenhum colaborador na lista.');
-  const r = await call('exportPdf', { matriculas: mats, modo });
+  const r = await call('exportPdf', { matriculas: mats, modo, semana });
   baixar(r.base64, r.nome, 'application/pdf');
   toast(`PDF gerado: <b>${esc(r.nome)}</b>`);
 }
@@ -453,20 +502,20 @@ async function excelLote(list) {
   if (!list.length) throw new Error('Nenhum colaborador na lista.');
   const X = await loadXLSX();
   list = ordenar(list);
-  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Sede / ponto', 'Turno', 'Rota / puxador', 'Supervisor', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA, 'Total semanal', 'Status', 'Pendências'];
+  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Sede / ponto', 'Turno', 'Rota / puxador', 'Supervisor', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA.map((d, i) => d + ' ' + ddmm(isoMaisDias(S.semana, i)) + (S.feriados.some(f => f.data === isoMaisDias(S.semana, i)) ? ' (feriado)' : '')), 'Total semanal', 'Status', 'Pendências'];
   const D0 = H.indexOf('Segunda');
   const R = list.map(c => {
     const e = c.escala, v = c.val;
     return [codigoMatricula(c.matricula), c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo, c.setor, c.lotacao, c.turno, c.tipoMot, nomeSup(c.supervisor), c.tele ? 'Sim' : 'Não', e ? dataBr(e.vigencia) : '',
-      ...DIAS_SEMANA.map((_, i) => { if (!e) return ''; const d = e.dias[i] || {}; return d.tipo === 'T' ? `${d.ent}–${d.sai} (${minParaHm(+d.int || 0)})` : 'FOLGA'; }),
-      v ? minParaHm(v.total) : '', ROT[st(c)], v ? v.msgs.filter(x => x.nivel !== 'info').map(x => x.texto).join(' | ') : ''];
+      ...c.sem.map(d => d.tipo === 'FER' ? 'FÉRIAS' : d.tipo === 'N' ? '' : d.tipo === 'T' ? `${d.ent}–${d.sai} (${minParaHm(+d.int || 0)})${d.feriado ? ' FERIADO' : ''}` : 'FOLGA'),
+      v ? minParaHm(v.total) : '', ROT[st(c)], (v ? v.msgs.filter(x => x.nivel !== 'info').map(x => x.texto) : []).concat(c.avisos).join(' | ')];
   });
   const ws1 = X.utils.aoa_to_sheet([H, ...R]);
   ws1['!cols'] = H.map((h, i) => ({ wch: i === 1 ? 32 : i >= D0 && i < D0 + 7 ? 19 : i === H.length - 1 ? 60 : 15 }));
   ws1['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: R.length, c: H.length - 1 } }) };
   const D = [['Matrícula', 'Nome', 'Revenda', 'Visão', 'Grupo', 'Função', 'Dia', 'Situação', 'Entrada', 'Saída', 'Intervalo (min)', 'Horas']];
   list.forEach(c => { if (c.escala) linhasDia(c.escala).forEach(l => D.push([codigoMatricula(c.matricula), c.nome, c.revenda, c.vis.areaNome, c.vis.grupo, c.funcao, ...l])); });
-  const C = [['Pessoas trabalhando por dia (só quem tem escala)'], ['Revenda', 'Visão', 'Grupo (ponto / turno)', 'Função', 'Pessoas', 'Sem escala', ...DIAS_SEMANA]];
+  const C = [['Pessoas trabalhando por dia na semana de ' + dataBr(S.semana) + ' (sem quem está de férias)'], ['Revenda', 'Visão', 'Grupo (ponto / turno)', 'Função', 'Pessoas', 'Sem escala', ...DIAS_SEMANA.map((d, i) => d + ' ' + ddmm(isoMaisDias(S.semana, i)))]];
   const m = new Map();
   list.forEach(c => { const k = [c.revenda, c.vis.areaNome, c.vis.grupo, c.vis.funcao].join('|'); if (!m.has(k)) m.set(k, []); m.get(k).push(c); });
   m.forEach((arr, k) => C.push([...k.split('|'), arr.length, arr.filter(c => !c.escala).length, ...porDia(arr)]));
@@ -474,7 +523,7 @@ async function excelLote(list) {
   X.utils.book_append_sheet(wb, ws1, 'Escalas');
   X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(C), 'Cobertura por visão');
   X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(D), 'Detalhe por dia');
-  X.writeFile(wb, `Escalas_5x2_${list.length}_colab_${hoje()}.xlsx`);
+  X.writeFile(wb, `Escalas_5x2_semana_${S.semana}_${list.length}_colab.xlsx`);
 }
 
 /* ================= painel ================= */
@@ -499,7 +548,7 @@ function vPainel(m) {
     });
   });
   const pend = L.filter(c => ['ERRO', 'SEM'].includes(st(c))).sort((a, b) => (st(a) === 'ERRO' ? 0 : 1) - (st(b) === 'ERRO' ? 0 : 1) || a.vis.ordem.localeCompare(b.vis.ordem)).slice(0, 40);
-  m.innerHTML = `<section class="card"><div class="filt">
+  m.innerHTML = `<section class="card">${barraSemana()}<div class="filt">
       <label class="f">Revenda<select data-p="rev">${opts(revs, P.rev, 'Todas')}</select></label></div></section>
     <div class="kpis">
       <div class="kpi"><span>Colaboradores</span><b>${tot}</b><small>${pc(k.OK + k.ALERTA)}% com escala válida</small></div>
@@ -509,12 +558,13 @@ function vPainel(m) {
       <div class="kpi SEM"><span>Sem escala</span><b>${k.SEM}</b><small>${pc(k.SEM)}%</small></div></div>
     <section class="card"><div class="card-h"><h3>Andamento por ${P.rev ? 'visão' : 'revenda'}</h3><div class="leg"><span><span class="dot d-OK"></span> OK</span><span><span class="dot d-ALERTA"></span> Alerta</span><span><span class="dot d-ERRO"></span> Erro</span><span><span class="dot d-SEM"></span> Sem escala</span></div></div>
       <div class="card-b prg">${and.map(x => { const c = cnt(x.a), n = x.a.length; return `<div class="pr"><b title="${esc(x.g)}">${esc(x.g)}</b><div class="stk">${['OK', 'ALERTA', 'ERRO', 'SEM'].map(s => c[s] ? `<i class="${s}" style="width:${c[s] / n * 100}%" title="${ROT[s]}: ${c[s]}"></i>` : '').join('')}</div><span class="pc">${Math.round((c.OK + c.ALERTA) / n * 100)}%</span></div>`; }).join('') || '<p class="hint">Sem dados.</p>'}</div></section>
-    <section class="card"><div class="card-h"><h3>Pessoas trabalhando por dia</h3><span class="hint">só quem já tem escala · a última coluna mostra quem está sem escala</span></div>
+    <section class="card"><div class="card-h"><h3>Pessoas trabalhando por dia</h3><span class="hint">semana de ${dataBr(S.semana)} · sem quem está de férias · a última coluna mostra quem está sem escala</span></div>
       <div class="vt">${VISOES.concat([['todos', 'Todos']]).map(([v]) => { const n = v === 'todos' ? L.length : L.filter(c => c.vis.area === v).length; return `<button type="button" data-pv="${v}" aria-pressed="${P.vis === v}" ${n || v === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[v]}<i>${n}</i></button>`; }).join('')}</div>
-      <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map(d => `<th>${d}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
+      <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map((d, i) => `<th>${d}<br>${ddmm(isoMaisDias(S.semana, i))}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pendências</h3><span class="hint">erros primeiro · toque para abrir</span></div>
       <div class="pend">${pend.map(c => `<button type="button" data-ed="${esc(c.matricula)}"><span class="pill p-${st(c)}">${ROT[st(c)]}</span><b>${esc(c.nome)}</b><small>${esc(c.funcao)} · ${esc(c.vis.areaNome)}${c.vis.area === 'adm' ? '' : ' · ' + esc(c.vis.grupo)} · ${esc(c.revenda)}${c.val ? '<br>' + esc((c.val.msgs.find(x => x.nivel === 'erro') || {}).texto || '') : ''}</small></button>`).join('') || '<p class="empty">Nada pendente. Todas as escalas estão válidas.</p>'}</div></section>`;
   m.querySelector('[data-p=rev]').onchange = e => { P.rev = e.target.value; vPainel(m); };
+  ligaSemana(m, () => vPainel(m));
   m.onclick = e => {
     const v = e.target.closest('[data-pv]'); if (v) { P.vis = v.dataset.pv; return vPainel(m); }
     const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
@@ -579,7 +629,7 @@ async function lerArquivo(file) {
 function vImportar(m) {
   const I = S.imp, des = r => /demit|deslig|rescis/i.test(r.situacao);
   m.innerHTML = `<section class="hero"><h2>Importar o relatório do DP</h2>
-      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram só os departamentos de <b>Armazém</b> e <b>Entrega</b>. Quem sair do relatório fica inativo. Turno, sede/ponto, rota/puxador, supervisor e escala de quem continua são mantidos. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
+      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram só os departamentos de <b>Armazém</b> e <b>Entrega</b>. Só entram <b>colaboradores novos</b>: quem já foi importado não é alterado. Para tirar alguém, use <b>Remover</b> na aba Cadastro. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
     <section class="card"><div class="card-b" style="display:grid;gap:12px">
       <label class="drop" for="imp-file"><b>Escolher arquivos (.xls ou .xlsx)</b><span class="hint">Pode enviar os relatórios de várias revendas de uma vez</span></label>
       <input type="file" id="imp-file" accept=".xls,.xlsx,.xlsb,.csv" multiple hidden>
@@ -592,17 +642,18 @@ function vImportar(m) {
   };
   if (!I) return;
   const ok = I.arqs.filter(a => !a.erro);
-  const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r)).length, 0);
+  const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length, 0);
   $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}</div>` : `
     <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
     <div class="card-b" style="display:grid;gap:8px">
       <div class="ck">${Object.entries(a.deps).map(([d, n]) => `<label style="cursor:default">✓ ${esc(d)} <b>${n}</b></label>`).join('')}</div>
       ${Object.keys(a.ign).length ? `<p class="hint">Fora do foco (não entram): ${Object.entries(a.ign).map(([d, n]) => esc(d) + ' (' + n + ')').join(' · ')}</p>` : ''}
-      ${a.rows.filter(des).length ? `<p class="hint">${a.rows.filter(des).length} demitido(s) no relatório ficam inativos.</p>` : ''}
+      ${a.rows.filter(des).length ? `<p class="hint">${a.rows.filter(des).length} demitido(s) no relatório não entram.</p>` : ''}
+      <p class="hint"><b>${a.rows.filter(r => !des(r) && !S.cols.some(c => c.matricula === r.matricula)).length}</b> novos · ${a.rows.filter(r => !des(r) && S.cols.some(c => c.matricula === r.matricula)).length} já cadastrados (não mudam)</p>
       <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Cargo</th><th>Setor</th><th>Situação</th></tr>
         ${a.rows.slice(0, 5).map(r => `<tr><td>${esc(codigoMatricula(r.matricula))}</td><td>${esc(r.nome)}</td><td>${esc(r.funcao)}</td><td>${esc(r.setor)}</td><td>${esc(r.situacao)}</td></tr>`).join('')}</table></div>
     </div></div>`).join('') +
-    (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp>${ic('up')}Importar ${total} colaboradores</button></div>` : '');
+    (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp ${total ? '' : 'disabled'}>${ic('up')}${total ? 'Incluir ' + total + ' novos' : 'Nenhum colaborador novo'}</button></div>` : '');
   const cx = m.querySelector('[data-cancel]'); if (cx) cx.onclick = () => { S.imp = null; vImportar(m); };
   const bt = m.querySelector('[data-imp]');
   if (bt) bt.onclick = () => ocupado(bt, async () => {
@@ -610,7 +661,7 @@ function vImportar(m) {
     if (rows.some(r => !r.revenda)) throw new Error('Há linhas sem revenda identificada. Confira o nome do departamento no relatório.');
     const r = await call('importar', { rows });
     S.imp = null;
-    toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos, <b>${r.atualizados}</b> atualizados, <b>${r.inativados}</b> inativados. Agora complete o <b>Cadastro</b>.`);
+    toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos incluídos · ${r.jaExistiam} já estavam cadastrados. Agora complete o <b>Cadastro</b>.`);
     S.view = 'cadastro'; await carregar();
   });
 }
@@ -667,12 +718,14 @@ function vCadastro(m) {
       <label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label></div>
     <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega']].map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
+    <div class="pts"><b>Feriados de ${esc(C.rev)}</b><div class="ck">${feriadosDe(C.rev).filter(f => f.data >= isoMaisDias(hoje(), -30)).sort((a, b) => a.data.localeCompare(b.data)).map(f => `<label style="cursor:default">${dataBr(f.data)} · ${esc(f.descricao)} <button type="button" class="xp" data-delh="${esc(f.id)}" aria-label="Remover feriado">×</button></label>`).join('') || '<span class="hint">Nenhum feriado cadastrado.</span>'}</div>
+      <form class="addp" data-addh><input type="date" name="data" aria-label="Data do feriado" style="width:auto"><input name="descricao" placeholder="Nome do feriado (ex.: Padroeira)" maxlength="60"><button class="btn sm" type="submit">Adicionar</button></form></div>
     ${C.area === 'ent' ? `<div class="pts"><b>Pontos de apoio de ${esc(C.rev)}</b><div class="ck">${pontosRev(C.rev).map(p => `<label style="cursor:default">${esc(p)} <button type="button" class="xp" data-delp="${esc(p)}" aria-label="Remover ${esc(p)}">×</button></label>`).join('') || '<span class="hint">Nenhum ponto cadastrado: todos ficam na Sede.</span>'}</div>
       <form class="addp" data-addp><input placeholder="Novo ponto de apoio (ex.: Irará)" maxlength="40"><button class="btn sm" type="submit">Adicionar</button></form></div>` : ''}
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
         ${C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
         <select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>
-        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button>`
+        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span><button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>`
       : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
     <div class="ls">${L.map(linha).join('') || `<div class="empty">${C.f === 'pend' ? 'Tudo preenchido nesta revenda e setor. 🎉' : 'Ninguém aqui.'}</div>`}</div></section>`;
   m.querySelector('[data-c=rev]').onchange = e => { C.rev = e.target.value; C.sel.clear(); vCadastro(m); };
@@ -683,6 +736,11 @@ function vCadastro(m) {
     else if (b.dataset.cf) { C.f = b.dataset.cf; vCadastro(m); }
     else if (b.hasAttribute('data-btodos')) { L.forEach(c => C.sel.add(c.matricula)); vCadastro(m); }
     else if (b.hasAttribute('data-blimpa')) { C.sel.clear(); vCadastro(m); }
+    else if (b.hasAttribute('data-brem')) {
+      if (!confirm(`Remover ${C.sel.size} colaborador(es) do sistema? Eles somem das escalas e não voltam em importações futuras.`)) return;
+      ocupado(b, async () => { const mats = [...C.sel]; await call('removerColaboradores', { matriculas: mats }); S.cols = S.cols.filter(c => !mats.includes(c.matricula)); C.sel.clear(); revalida(); toast(`${mats.length} removido(s).`); vCadastro(m); });
+    }
+    else if (b.dataset.delh) { if (confirm('Remover este feriado?')) ocupado(b, async () => { await call('removerFeriado', { id: b.dataset.delh }); S.feriados = S.feriados.filter(f => f.id !== b.dataset.delh); revalida(); vCadastro(m); }); }
     else if (b.dataset.delp) { if (confirm('Remover o ponto de apoio "' + b.dataset.delp + '"? Quem estiver nele continua com o nome gravado.')) salvaPontos(C.rev, pontosRev(C.rev).filter(p => p !== b.dataset.delp), m); }
     else if (b.hasAttribute('data-bapl')) {
       const campos = {}; m.querySelectorAll('[data-b]').forEach(s => { if (s.value) campos[s.dataset.b] = s.value; });
@@ -697,6 +755,12 @@ function vCadastro(m) {
       const mt = s.closest('[data-m]').dataset.m; s.disabled = true;
       classificar([mt], { [s.dataset.k]: s.value }).then(() => { toast('Salvo.'); vCadastro(m); }).catch(err => { toast(esc(err.message), true); s.disabled = false; });
     }
+  };
+  const fh = m.querySelector('[data-addh]');
+  fh.onsubmit = e => {
+    e.preventDefault(); const fd = Object.fromEntries(new FormData(fh));
+    if (!fd.data || !fd.descricao.trim()) return toast('Informe a data e o nome do feriado.', true);
+    ocupado(fh.querySelector('button'), async () => { const f = await call('salvarFeriado', { revenda: C.rev, data: fd.data, descricao: fd.descricao }); S.feriados.push(f); revalida(); toast('Feriado cadastrado.'); vCadastro(m); });
   };
   const fa = m.querySelector('[data-addp]');
   if (fa) fa.onsubmit = e => { e.preventDefault(); const v = fa.querySelector('input').value.trim(); if (!v) return; if (pontosRev(C.rev).some(p => nrm(p) === nrm(v)) || nrm(v) === 'sede') return toast('Esse ponto já existe.', true); salvaPontos(C.rev, pontosRev(C.rev).concat(v), m); };

@@ -82,3 +82,13 @@ test('visões pelos campos de cadastro', () => {
   assert.strictEqual(v({ setor: 'Entrega', funcao: 'SUPERVISOR DE DISTRIBUIÇÃO JR I' }).area, 'adm');
   assert.deepStrictEqual([...p({ setor: 'Entrega', funcao: 'MOTORISTA' })], ['sede/ponto', 'rota/puxador', 'supervisor']);
 });
+
+test('semana real: férias e feriado', () => {
+  const { semanaEfetiva: se, avisosSemana: av, segundaDaSemana: sg } = ctxVm;
+  assert.strictEqual(sg('2026-12-25'), '2026-12-21');
+  const esc = { vigencia: '2026-12-15', dias: semanaModelo(5, '07:00', '16:24', 60) };
+  const s = se(esc, '2026-12-21', [{ inicio: '2026-12-21', fim: '2026-12-22' }], [{ data: '2026-12-25', descricao: 'Natal' }]);
+  assert.strictEqual(s.map(d => d.tipo).join(','), 'FER,FER,T,T,T,F,F');
+  assert.strictEqual(av(s).length, 1);
+  assert.strictEqual(se(esc, '2026-12-07', [], []).every(d => d.tipo === 'N'), true);
+});

@@ -85,9 +85,14 @@ tests/regras.test.js
 - Planilhas de empregados (`*.xlsx`) estão no `.gitignore`, para não ir dado pessoal para o GitHub.
 
 ## Cadastro e vínculo com supervisor
-1. **Importar DP:** envie o relatório "Relação de Empregados" de cada revenda. Só entram os departamentos de Armazém e Entrega. A chave de cada pessoa é empresa + código (por exemplo, AGRESTE-288), porque as empresas do grupo repetem códigos. Quando o navegador não consegue abrir o `.xls`, o arquivo é convertido pelo Google Drive (serviço avançado **Drive API v3** ativado no projeto).
+1. **Importar DP:** envie o relatório "Relação de Empregados" de cada revenda. Só entram os departamentos de Armazém e Entrega, e só os colaboradores **novos**: quem já foi importado não muda. A exclusão é manual, pelo botão **Remover** na tela Cadastro. A chave de cada pessoa é empresa + código (por exemplo, AGRESTE-288), porque as empresas do grupo repetem códigos. Quando o navegador não consegue abrir o `.xls`, o arquivo é convertido pelo Google Drive (serviço avançado **Drive API v3** ativado no projeto).
 2. **Cadastro:** para cada revenda, preencha:
    - **Armazém:** turno (lista no parâmetro `TURNOS_ARMAZEM`) e supervisor.
    - **Entrega:** sede ou ponto de apoio (cada revenda tem a sua lista de pontos, editada na própria tela) e supervisor. Para motorista, também rota ou puxador (`TIPOS_MOTORISTA`). Quem não é motorista nem ajudante fica como Administrativo.
    - Dá para preencher em lote, selecionando vários colaboradores. Os campos são mantidos quando um relatório novo é importado.
 3. **Supervisor:** vê só os colaboradores vinculados a ele.
+
+## Férias e feriados
+- **Férias:** cadastradas por colaborador, no editor da escala, com início e fim. Quem está de férias aparece como FÉRIAS na semana e não conta na cobertura do dia.
+- **Feriados:** cadastrados por unidade (revenda), na tela Cadastro. Quem tem trabalho num feriado recebe o alerta "folga compensatória na semana ou pagamento em dobro" (Lei 605/49).
+- A lista de escalas, o painel, o Excel e os PDFs mostram a **semana escolhida**, com as datas.
