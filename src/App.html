@@ -297,7 +297,7 @@ function semanaReal(c) {
   return `<div class="wk">${c.sem.map((x, i) => {
     const h = x.feriado ? ' h' : '', tt = x.feriado ? ` title="Feriado: ${esc(x.feriado)}"` : '';
     if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[i]}<small>férias</small></span>`;
-    if (x.tipo === 'N') return `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>–</small></span>`;
+    if (x.tipo === 'N') return x.antes ? `<span class="n an${h}" title="A escala começa em ${dataBr(x.antes)}${x.feriado ? ' · feriado: ' + esc(x.feriado) : ''}">${DIAS_CURTO[i]}<small>início ${dataBr(x.antes).slice(0, 5)}</small></span>` : `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>sem escala</small></span>`;
     const a = x.ajuste ? ' aj' : '';
     return x.tipo === 'T' ? `<span class="t${h}${a}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}${a}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
   }).join('')}</div>`;
@@ -557,8 +557,8 @@ function vMes(m) {
       corpo += `<tr><td class="mn"><button type="button" class="lk" data-ed="${esc(c.matricula)}" title="Abrir o padrão semanal">${esc(c.nome)}</button><small>${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)}</small></td>` +
         M.dias.map(d => {
           const cl = d.tipo === 'T' ? 't' : d.tipo === 'F' ? 'f' : d.tipo === 'FER' ? 'v' : 'n', h = d.feriado ? ' h' : '', a = d.ajuste ? ' aj' : '';
-          const tx = d.tipo === 'T' ? esc(String(d.ent || '').slice(0, 2) + (String(d.ent || '').slice(3, 5) !== '00' ? ':' + String(d.ent || '').slice(3, 5) : 'h')) : d.tipo === 'F' ? 'F' : d.tipo === 'FER' ? 'V' : '·';
-          const tt = `${DIAS_SEMANA[diaSemanaIso(d.data)]} ${dataBr(d.data)}: ${d.tipo === 'T' ? d.ent + '–' + d.sai : d.tipo === 'F' ? 'folga' : d.tipo === 'FER' ? 'férias' : 'sem escala'}${d.feriado ? ' · feriado: ' + d.feriado : ''}${d.ajuste ? ' · alterado' : ''}`;
+          const tx = d.tipo === 'T' ? esc(String(d.ent || '').slice(0, 2) + (String(d.ent || '').slice(3, 5) !== '00' ? ':' + String(d.ent || '').slice(3, 5) : 'h')) : d.tipo === 'F' ? 'F' : d.tipo === 'FER' ? 'V' : d.antes ? '' : '·';
+          const tt = `${DIAS_SEMANA[diaSemanaIso(d.data)]} ${dataBr(d.data)}: ${d.tipo === 'T' ? d.ent + '–' + d.sai : d.tipo === 'F' ? 'folga' : d.tipo === 'FER' ? 'férias' : d.antes ? 'antes do início da escala (' + dataBr(d.antes) + ')' : 'sem escala'}${d.feriado ? ' · feriado: ' + d.feriado : ''}${d.ajuste ? ' · alterado' : ''}`;
           return `<td class="md"><button type="button" class="mc ${cl}${h}${a}" data-dm="${esc(c.matricula)}" data-dd="${d.data}" title="${esc(tt)}">${tx}</button></td>`;
         }).join('') +
         `<td class="mh">${minParaHm(M.horas)}</td><td class="ms">${M.semanas.map((s, i) => `<button type="button" class="dot2 d-${s.val ? s.val.status : 'SEM'}" data-sv="${esc(c.matricula)}" data-si="${i}" title="Semana de ${ddmm(s.ini)}: ${s.val ? ROT[s.val.status] : 'férias ou sem escala'}"></button>`).join('')}</td></tr>`;
@@ -1348,7 +1348,7 @@ async function telaMinha(tk) {
   const fh = m => { const h = Math.floor(m / 60), r = m % 60; return h + 'h' + (r ? String(r).padStart(2, '0') : ''); };
   const linha = (data, dd) => {
     const ds = DIAS_SEMANA[diaSemanaIso(data)], cls = dd.tipo === 'T' ? 't' : dd.tipo === 'FER' ? 'v' : dd.tipo === 'F' ? 'f' : 'n';
-    const txt = dd.tipo === 'T' ? `<b>${esc(dd.ent)} às ${esc(dd.sai)}</b><small>Trabalho${dd.int ? ' · intervalo de ' + fh(dd.int) : ''}</small>` : dd.tipo === 'FER' ? '<b>Férias</b>' : dd.tipo === 'F' ? `<b>Folga</b>${diaSemanaIso(data) === 6 ? '<small>Descanso semanal</small>' : ''}` : '<b>—</b><small>Escala ainda não definida</small>';
+    const txt = dd.tipo === 'T' ? `<b>${esc(dd.ent)} às ${esc(dd.sai)}</b><small>Trabalho${dd.int ? ' · intervalo de ' + fh(dd.int) : ''}</small>` : dd.tipo === 'FER' ? '<b>Férias</b>' : dd.tipo === 'F' ? `<b>Folga</b>${diaSemanaIso(data) === 6 ? '<small>Descanso semanal</small>' : ''}` : dd.antes ? `<b>—</b><small>Antes do início da escala (${dataBr(dd.antes)})</small>` : '<b>—</b><small>Escala ainda não definida</small>';
     return `<div class="mn-d ${cls}${data === hj ? ' hj' : ''}"><div class="mn-dt"><b>${data.slice(8)}</b><small>${ds.slice(0, 3)}</small></div><div class="mn-tx">${txt}${dd.feriado ? `<span class="tg">🎉 ${esc(dd.feriado)}</span>` : ''}${dd.ajuste ? '<span class="tg">alterado</span>' : ''}</div>${data === hj ? '<em>hoje</em>' : ''}</div>`;
   };
   // dias seguidos de férias viram um bloco só, com o retorno
@@ -1376,7 +1376,7 @@ async function telaMinha(tk) {
     const n = k => DD.filter(x => x[1].tipo === k).length, hoj = diaEfetivo(D.escala, hj, D.ferias, D.feriados, aj);
     const pv = ym > hj.slice(0, 7) ? isoMaisDias(ym + '-01', -1).slice(0, 7) : '', nx = isoMaisDias(dias[dias.length - 1], 1).slice(0, 7), podeNx = nx <= isoMaisDias(hj, 120).slice(0, 7);
     root.innerHTML = `<div class="mn"><header class="mn-h"><span class="logo">R</span><div><small>Minha escala · ${esc(D.empresa || 'Revalle')}</small><b>${esc(D.nome)}</b><small>${esc(D.funcao)} · ${esc(D.revenda)}</small></div></header>
-      <div class="mn-c"><div class="mn-hoje ${hoj.tipo === 'T' ? 't' : hoj.tipo === 'FER' ? 'v' : hoj.tipo === 'F' ? 'f' : 'n'}"><small>Hoje, ${dataBr(hj).slice(0, 5)}</small><b>${hoj.tipo === 'T' ? esc(hoj.ent) + ' às ' + esc(hoj.sai) : hoj.tipo === 'FER' ? 'Férias' : hoj.tipo === 'F' ? 'Folga' : 'Sem escala definida'}</b>${hoj.feriado ? `<small>Feriado: ${esc(hoj.feriado)}</small>` : ''}</div>
+      <div class="mn-c"><div class="mn-hoje ${hoj.tipo === 'T' ? 't' : hoj.tipo === 'FER' ? 'v' : hoj.tipo === 'F' ? 'f' : 'n'}"><small>Hoje, ${dataBr(hj).slice(0, 5)}</small><b>${hoj.tipo === 'T' ? esc(hoj.ent) + ' às ' + esc(hoj.sai) : hoj.tipo === 'FER' ? 'Férias' : hoj.tipo === 'F' ? 'Folga' : hoj.antes ? 'Escala começa em ' + dataBr(hoj.antes).slice(0, 5) : 'Sem escala definida'}</b>${hoj.feriado ? `<small>Feriado: ${esc(hoj.feriado)}</small>` : ''}</div>
         <div class="mn-nav"><button type="button" class="btn sm" data-m="${pv}" ${pv ? '' : 'disabled'} aria-label="Mês anterior">‹</button><b>${nomeMes(ym)}</b><button type="button" class="btn sm" data-m="${nx}" ${podeNx ? '' : 'disabled'} aria-label="Próximo mês">›</button></div>
         <div class="mn-res"><span><b>${n('T')}</b> ${n('T') === 1 ? 'dia' : 'dias'} de trabalho</span><span><b>${n('F')}</b> ${n('F') === 1 ? 'folga' : 'folgas'}</span>${n('FER') ? `<span><b>${n('FER')}</b> ${n('FER') === 1 ? 'dia' : 'dias'} de férias</span>` : ''}</div>
         <div class="mn-l">${linhas(DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)))}</div>

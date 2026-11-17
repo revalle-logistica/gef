@@ -234,7 +234,7 @@ function diaEfetivo(esc, data, ferias, feriados, ajustes) {
   var aj = ajustes && ajustes[data];
   if (aj) { o.ajuste = true; o.tipo = aj.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = aj.ent; o.sai = aj.sai; o.int = +aj.int || 0; } return o; }
   var base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[diaSemanaIso(data)] || { tipo: 'F' }) : null;
-  if (!base) { o.tipo = 'N'; return o; }
+  if (!base) { o.tipo = 'N'; if (esc && esc.vigencia && data < esc.vigencia) o.antes = esc.vigencia; return o; }
   o.tipo = base.tipo === 'T' ? 'T' : 'F';
   if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = +base.int || 0; }
   return o;
