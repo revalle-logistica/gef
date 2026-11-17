@@ -1,0 +1,194 @@
+
+/* ================= QLP: necessidade x escala ================= */
+const QLP_GL = { entrega: 'Ponto de apoio', pux: 'Grupo', arm: 'Turno' };
+const QLP_TODOS = { entrega: 'Todos os pontos', pux: 'Todos os grupos', arm: 'Todos os turnos', adm: 'Todos' };
+const qlpGrpTxt = (area, g) => g === '*' ? QLP_TODOS[area] || 'Todos' : g;
+const qlpFnTxt = f => f === '*' ? 'Todas as funções' : f;
+function qlpPessoas(r) {
+  return S.cols.filter(c => c.revenda === r.revenda && c.vis.area === r.area && (r.grupo === '*' || c.vis.grupo === r.grupo) && (r.funcao === '*' || c.vis.funcao === r.funcao));
+}
+/** Janelas de trabalho da pessoa em minutos a partir de segunda 00:00 (inclui o domingo anterior, que pode virar a noite). */
+function qlpJanelas(c) {
+  if (c._tl && c._tl.sem === S.semana && c._tl.n === S.ajustes.length + S.ferias.length) return c._tl.j;
+  const j = [], fe = feriasDe(c.matricula), fd = feriadosDe(c.revenda);
+  for (let k = -1; k < 8; k++) {
+    const d = diaEfetivo(c.escala, isoMaisDias(S.semana, k), fe, fd, c.aj || {});
+    if (d.tipo !== 'T') continue;
+    const s = hmParaMin(d.ent); let e = hmParaMin(d.sai);
+    if (s == null || e == null) continue;
+    if (e <= s) e += 1440;
+    j.push([k * 1440 + s, k * 1440 + e]);
+  }
+  c._tl = { sem: S.semana, n: S.ajustes.length + S.ferias.length, j };
+  return j;
+}
+function qlpFaixaAbs(f, i) { const de = hmParaMin(f.de); let ate = hmParaMin(f.ate); if (ate <= de) ate += 1440; return [i * 1440 + de, i * 1440 + ate]; }
+/** Cobertura de uma faixa num dia: o menor número de pessoas trabalhando em qualquer momento da faixa. */
+function qlpCobre(P, f, i) {
+  const [a, b] = qlpFaixaAbs(f, i), J = P.map(c => [c, qlpJanelas(c)]);
+  let min = Infinity;
+  for (let t = a; t < b; t += 15) { const n = J.filter(([, j]) => j.some(([s, e]) => s <= t && t < e)).length; if (n < min) min = n; }
+  const todo = [], parte = [];
+  J.forEach(([c, j]) => { if (j.some(([s, e]) => s <= a && b <= e)) todo.push(c); else if (j.some(([s, e]) => s < b && a < e)) parte.push(c); });
+  return { n: min === Infinity ? 0 : min, todo, parte };
+}
+function qlpNec(r, fi, i) {
+  const data = isoMaisDias(S.semana, i), x = (r.excecoes || []).find(e => e.data === data);
+  return x ? { q: +(x.q || [])[fi] || 0, exc: x } : { q: +(r.faixas[fi].q || [])[i] || 0 };
+}
+function qlpCalc(r) {
+  const P = qlpPessoas(r);
+  let falta = 0, sobra = 0, ok = 0, tot = 0;
+  const cel = r.faixas.map((f, fi) => [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const nc = qlpNec(r, fi, i), cv = qlpCobre(P, f, i), d = cv.n - nc.q;
+    if (nc.q || cv.n) { tot++; if (d < 0) falta -= d; else { ok++; sobra += d; } }
+    return { nec: nc.q, exc: nc.exc, ...cv, d };
+  }));
+  return { P, cel, falta, sobra, ok, tot };
+}
+const qlpNm = c => { const p = String(c.nome).split(' '); return p[0] + (p.length > 1 ? ' ' + p[p.length - 1] : ''); };
+
+function vQlp(m) {
+  const Q = S.q || (S.q = { rev: '', vis: '', grp: '' });
+  const revs = uniq(S.cols.map(c => c.revenda).concat(S.qlp.map(r => r.revenda)));
+  if (!revs.includes(Q.rev)) Q.rev = revs[0] || '';
+  const doRev = S.cols.filter(c => c.revenda === Q.rev);
+  if (!Q.vis) Q.vis = S.f.vis && S.f.vis !== 'todos' ? S.f.vis : 'entrega';
+  const R = S.qlp.filter(r => r.revenda === Q.rev && r.area === Q.vis);
+  const grs = uniq(doRev.filter(c => c.vis.area === Q.vis).map(c => c.vis.grupo).concat(R.map(r => r.grupo).filter(g => g !== '*')));
+  if (Q.grp && !grs.includes(Q.grp)) Q.grp = '';
+  const RV = R.filter(r => !Q.grp || r.grupo === Q.grp || r.grupo === '*')
+    .sort((a, b) => (a.grupo + a.funcao).localeCompare(b.grupo + b.funcao, 'pt'));
+  const calc = RV.map(r => [r, qlpCalc(r)]);
+  const falta = calc.reduce((s, [, k]) => s + k.falta, 0), sobra = calc.reduce((s, [, k]) => s + k.sobra, 0);
+  const tot = calc.reduce((s, [, k]) => s + k.tot, 0), ok = calc.reduce((s, [, k]) => s + k.ok, 0);
+  // quem está na área e não tem necessidade cadastrada
+  const semNec = new Map();
+  doRev.filter(c => c.vis.area === Q.vis && (!Q.grp || c.vis.grupo === Q.grp)).forEach(c => {
+    if (R.some(r => (r.grupo === '*' || r.grupo === c.vis.grupo) && (r.funcao === '*' || r.funcao === c.vis.funcao))) return;
+    const k = c.vis.grupo + '|' + c.vis.funcao; semNec.set(k, (semNec.get(k) || 0) + 1);
+  });
+  const nArea = k => S.qlp.filter(r => r.revenda === Q.rev && r.area === k).length;
+  const gl = QLP_GL[Q.vis];
+  m.innerHTML = `<section class="card">
+    <div class="esc-top">${barraSemana()}<button type="button" class="btn sm dk" data-q="novo" style="margin:8px 0">+ Nova necessidade</button></div>
+    <div class="vt vt2">${VISOES.map(([k]) => `<button type="button" data-qv="${k}" aria-pressed="${Q.vis === k}">${VIS_CURTO[k]}<i>${nArea(k)}</i></button>`).join('')}</div>
+    <div class="fbar">${revs.length > 1 ? `<select data-qf="rev" aria-label="Revenda">${revs.map(v => `<option ${v === Q.rev ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
+      ${gl ? `<select data-qf="grp" class="${Q.grp ? 'on' : ''}" aria-label="${gl}">${opts(grs, Q.grp, QLP_TODOS[Q.vis])}</select>` : ''}
+      <span class="cnt">${RV.length} necessidade${RV.length === 1 ? '' : 's'} cadastrada${RV.length === 1 ? '' : 's'}</span></div>
+    ${RV.length ? `<div class="qk">
+      <div class="${falta ? 'qk-r' : 'qk-g'}"><b>${falta}</b><span>${falta === 1 ? 'pessoa faltando' : 'pessoas faltando'}<small>soma das faixas descobertas</small></span></div>
+      <div class="qk-g"><b>${ok}<small>/${tot}</small></b><span>faixas cobertas<small>na semana</small></span></div>
+      <div class="qk-b"><b>${sobra}</b><span>${sobra === 1 ? 'pessoa sobrando' : 'pessoas sobrando'}<small>soma das faixas acima</small></span></div></div>` : ''}
+    <div class="qls">${calc.map(([r, k]) => qlpCard(r, k)).join('') || `<div class="empty">Nenhuma necessidade cadastrada para ${esc(VIS_CURTO[Q.vis])} em ${esc(Q.rev)}.<br>Clique em <b>+ Nova necessidade</b> para informar quantas pessoas precisam trabalhar em cada faixa de horário.</div>`}
+    ${semNec.size ? `<div class="qsem"><b>Sem necessidade cadastrada:</b> ${[...semNec].map(([k, n]) => { const [g, f] = k.split('|'); return `<button type="button" class="chip" data-qn="${esc(k)}">+ ${esc(f)}${gl ? ' · ' + esc(g) : ''} <i>${n}</i></button>`; }).join('')}</div>` : ''}
+    <p class="hint" style="margin:14px 2px 0">Confronto com a escala real da semana: folgas, férias, ajustes do dia e virada da noite. Em cada faixa vale o <b>menor</b> número de pessoas trabalhando ao mesmo tempo. O intervalo de refeição não entra porque a escala não registra o horário dele.${S.user.perfil === 'ADMIN' ? '' : ' Contam só os colaboradores vinculados a você.'}</p></div></section>`;
+  ligaSemana(m, () => vQlp(m));
+  m.querySelectorAll('[data-qv]').forEach(b => { b.onclick = () => { Q.vis = b.dataset.qv; Q.grp = ''; vQlp(m); }; });
+  m.querySelectorAll('[data-qf]').forEach(s => { s.onchange = () => { Q[s.dataset.qf] = s.value; if (s.dataset.qf === 'rev') Q.grp = ''; vQlp(m); }; });
+  m.querySelector('[data-q=novo]').onclick = () => qlpEditor(null, { revenda: Q.rev, area: Q.vis, grupo: Q.grp || '*' });
+  m.querySelectorAll('[data-qn]').forEach(b => { b.onclick = () => { const [g, f] = b.dataset.qn.split('|'); qlpEditor(null, { revenda: Q.rev, area: Q.vis, grupo: gl ? g : '*', funcao: f }); }; });
+  m.querySelectorAll('[data-qe]').forEach(b => { b.onclick = () => qlpEditor(S.qlp.find(r => r.id === b.dataset.qe)); });
+  m.querySelectorAll('[data-qc]').forEach(b => { b.onclick = () => qlpEditor(null, Object.assign({}, S.qlp.find(r => r.id === b.dataset.qc), { id: '', funcao: '' })); });
+  m.querySelectorAll('[data-qr]').forEach(b => {
+    b.onclick = () => {
+      const r = S.qlp.find(x => x.id === b.dataset.qr); if (!r || !confirm(`Remover a necessidade de ${qlpFnTxt(r.funcao)} · ${qlpGrpTxt(r.area, r.grupo)}?`)) return;
+      ocupado(b, async () => { await call('removerQlp', { id: r.id }); S.qlp = S.qlp.filter(x => x.id !== r.id); toast('Necessidade removida.'); vQlp(m); });
+    };
+  });
+}
+function qlpCard(r, k) {
+  const fd = feriadosDe(r.revenda);
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = isoMaisDias(S.semana, i), f = fd.find(x => x.data === d); return `<th class="${f ? 'fer' : ''}" ${f ? `title="${esc(f.descricao)}"` : ''}>${DIAS_CURTO[i]}<small>${ddmm(d)}${f ? ' ★' : ''}</small></th>`; }).join('');
+  const linhas = r.faixas.map((f, fi) => `<tr><th class="fx">${esc(f.de)}–${esc(f.ate)}</th>${k.cel[fi].map((x, i) => {
+    const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
+    const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
+      (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.parte.length ? `\nSó parte: ${x.parte.map(qlpNm).join(', ')}` : '');
+    return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
+  }).join('')}</tr>`).join('');
+  const cnt = t => [0, 1, 2, 3, 4, 5, 6].map(i => k.P.filter(c => c.sem[i] && c.sem[i].tipo === t).length);
+  const trab = cnt('T'), ns = cnt('N'), fer = cnt('FER');
+  const rodape = `<tr class="qt"><th>Trabalham no dia</th>${trab.map(n => `<td>${n}</td>`).join('')}</tr>` +
+    (fer.some(Boolean) ? `<tr class="qt"><th>De férias</th>${fer.map(n => `<td>${n || ''}</td>`).join('')}</tr>` : '') +
+    (ns.some(Boolean) ? `<tr class="qt qn"><th>Sem escala</th>${ns.map(n => `<td>${n || ''}</td>`).join('')}</tr>` : '');
+  const st = k.falta ? `<span class="pill p-ERRO">${k.falta} faltando</span>` : k.tot ? '<span class="pill p-OK">Coberto</span>' : '';
+  return `<div class="qc"><div class="qc-h"><div><b>${esc(qlpFnTxt(r.funcao))}</b><span>${QLP_GL[r.area] ? esc(qlpGrpTxt(r.area, r.grupo)) + ' · ' : ''}${k.P.length} ${k.P.length === 1 ? 'pessoa' : 'pessoas'}${(r.excecoes || []).length ? ` · ${r.excecoes.length} exceç${r.excecoes.length === 1 ? 'ão' : 'ões'}` : ''}</span></div>
+    ${st}<span class="sp"></span><button type="button" class="btn sm" data-qe="${esc(r.id)}">Editar</button><button type="button" class="btn sm" data-qc="${esc(r.id)}" title="Criar outra necessidade com as mesmas faixas">Duplicar</button><button type="button" class="xp" data-qr="${esc(r.id)}" aria-label="Remover">×</button></div>
+    <div class="qtw"><table class="qtb"><thead><tr><th></th>${dias}</tr></thead><tbody>${linhas}${rodape}</tbody></table></div></div>`;
+}
+
+/* ---------- editor ---------- */
+function qlpEditor(r, base) {
+  const ed = JSON.parse(JSON.stringify(r || Object.assign({ id: '', revenda: '', area: 'entrega', grupo: '*', funcao: '', faixas: [{ de: '06:00', ate: '08:00', q: [0, 0, 0, 0, 0, 0, 0] }], excecoes: [], obs: '' }, base || {})));
+  if (!ed.faixas || !ed.faixas.length) ed.faixas = [{ de: '06:00', ate: '08:00', q: [0, 0, 0, 0, 0, 0, 0] }];
+  ed.excecoes = ed.excecoes || [];
+  const revs = uniq(S.cols.map(c => c.revenda));
+  if (!ed.revenda) ed.revenda = revs[0] || '';
+  abrirModal(`<div class="mdl-h"><div><h2>${r ? 'Editar' : 'Nova'} necessidade de QLP</h2><small>Quantas pessoas precisam estar trabalhando em cada faixa de horário</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b" id="qed"></div>
+    <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn dk" data-qsalva>Salvar</button></div>`);
+  const w = modal.querySelector('#qed');
+  const le = () => {
+    w.querySelectorAll('[data-k]').forEach(i => { ed[i.dataset.k] = i.value; });
+    w.querySelectorAll('[data-fx]').forEach(tr => {
+      const f = ed.faixas[+tr.dataset.fx]; if (!f) return;
+      f.de = tr.querySelector('[data-de]').value; f.ate = tr.querySelector('[data-ate]').value;
+      f.q = [...tr.querySelectorAll('[data-qd]')].map(i => +i.value || 0);
+    });
+    w.querySelectorAll('[data-ex]').forEach(tr => {
+      const x = ed.excecoes[+tr.dataset.ex]; if (!x) return;
+      x.data = tr.querySelector('[data-exd]').value; x.obs = tr.querySelector('[data-exo]').value;
+      x.q = [...tr.querySelectorAll('[data-exq]')].map(i => +i.value || 0);
+    });
+  };
+  const desenha = () => {
+    const pool = S.cols.filter(c => c.revenda === ed.revenda && c.vis.area === ed.area), gl = QLP_GL[ed.area];
+    if (!gl) ed.grupo = '*';
+    const grs = uniq(pool.map(c => c.vis.grupo).concat(ed.grupo !== '*' ? [ed.grupo] : []));
+    const fns = uniq(pool.filter(c => ed.grupo === '*' || c.vis.grupo === ed.grupo).map(c => c.vis.funcao).concat(ed.funcao && ed.funcao !== '*' ? [ed.funcao] : []));
+    const n = pool.filter(c => (ed.grupo === '*' || c.vis.grupo === ed.grupo) && (!ed.funcao || ed.funcao === '*' || c.vis.funcao === ed.funcao)).length;
+    const num = (v, a) => `<input type="number" min="0" max="999" inputmode="numeric" value="${+v || 0}" ${a}>`;
+    w.innerHTML = `<div class="qe-g">
+      <label class="f">Revenda<select data-k="revenda" data-re>${revs.map(v => `<option ${v === ed.revenda ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+      <label class="f">Departamento<select data-k="area" data-re>${VISOES.map(([k]) => `<option value="${k}" ${k === ed.area ? 'selected' : ''}>${VIS_CURTO[k]}</option>`).join('')}</select></label>
+      ${gl ? `<label class="f">${gl}<select data-k="grupo" data-re><option value="*" ${ed.grupo === '*' ? 'selected' : ''}>${QLP_TODOS[ed.area]}</option>${grs.map(v => `<option ${v === ed.grupo ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
+      <label class="f">Função<select data-k="funcao" data-re><option value="">Escolha…</option><option value="*" ${ed.funcao === '*' ? 'selected' : ''}>Todas as funções</option>${fns.map(v => `<option ${v === ed.funcao ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label></div>
+      <p class="hint" style="margin:6px 0 14px">${ed.funcao ? `${n} ${n === 1 ? 'pessoa' : 'pessoas'} nessa combinação.` : 'Escolha a função.'}</p>
+      <div class="qe-t"><b>Faixas de horário × dia da semana</b><span class="sp"></span><button type="button" class="btn sm" data-qcp title="Copia os números de segunda para terça a sexta">Repetir segunda até sexta</button></div>
+      <div class="qtw"><table class="qtb qe"><thead><tr><th>De</th><th>Até</th>${DIAS_CURTO.map(d => `<th>${d}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${ed.faixas.map((f, i) => `<tr data-fx="${i}"><td><input type="time" step="300" data-de value="${esc(f.de)}"></td><td><input type="time" step="300" data-ate value="${esc(f.ate)}"></td>${[0, 1, 2, 3, 4, 5, 6].map(d => `<td>${num(f.q[d], 'data-qd')}</td>`).join('')}<td><button type="button" class="xp" data-fdel="${i}" aria-label="Remover faixa" ${ed.faixas.length < 2 ? 'disabled' : ''}>×</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <button type="button" class="btn sm" data-fadd style="margin-top:8px">+ Faixa de horário</button>
+      <div class="qe-t" style="margin-top:20px"><b>Exceções por data</b><span class="hint">feriado, inventário, data sazonal…</span><span class="sp"></span>${feriadosDe(ed.revenda).some(f => f.data >= hoje()) ? '<button type="button" class="btn sm" data-qfer>+ Próximos feriados</button>' : ''}<button type="button" class="btn sm" data-exadd>+ Exceção</button></div>
+      ${ed.excecoes.length ? `<div class="qtw"><table class="qtb qe"><thead><tr><th>Data</th><th>Motivo</th>${ed.faixas.map(f => `<th>${esc(f.de)}–${esc(f.ate)}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${ed.excecoes.map((x, i) => `<tr data-ex="${i}"><td><input type="date" data-exd value="${esc(x.data)}"></td><td><input data-exo value="${esc(x.obs || '')}" placeholder="Ex.: Natal" style="min-width:110px"></td>${ed.faixas.map((f, fi) => `<td>${num((x.q || [])[fi], 'data-exq')}</td>`).join('')}<td><button type="button" class="xp" data-exdel="${i}" aria-label="Remover exceção">×</button></td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="hint">Sem exceções: vale o padrão da semana em todas as datas.</p>'}`;
+  };
+  desenha();
+  w.addEventListener('change', e => { if (e.target.matches('[data-re]')) { le(); if (e.target.dataset.k !== 'funcao') { if (e.target.dataset.k !== 'grupo') ed.grupo = '*'; ed.funcao = ''; } desenha(); } });
+  w.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return; le();
+    if (b.hasAttribute('data-fadd')) { const u = ed.faixas[ed.faixas.length - 1]; ed.faixas.push({ de: u ? u.ate : '06:00', ate: '', q: u ? u.q.slice() : [0, 0, 0, 0, 0, 0, 0] }); ed.excecoes.forEach(x => (x.q = x.q || []).push(0)); }
+    else if (b.dataset.fdel) { const i = +b.dataset.fdel; ed.faixas.splice(i, 1); ed.excecoes.forEach(x => (x.q || []).splice(i, 1)); }
+    else if (b.hasAttribute('data-qcp')) ed.faixas.forEach(f => { for (let d = 1; d < 5; d++) f.q[d] = f.q[0]; });
+    else if (b.hasAttribute('data-exadd')) ed.excecoes.push({ data: '', obs: '', q: ed.faixas.map(() => 0) });
+    else if (b.dataset.exdel) ed.excecoes.splice(+b.dataset.exdel, 1);
+    else if (b.hasAttribute('data-qfer')) feriadosDe(ed.revenda).filter(f => f.data >= hoje() && !ed.excecoes.some(x => x.data === f.data)).slice(0, 12)
+      .forEach(f => ed.excecoes.push({ data: f.data, obs: String(f.descricao || 'Feriado').slice(0, 80), q: ed.faixas.map(() => 0) }));
+    else return;
+    desenha();
+  });
+  modal.querySelector('[data-qsalva]').onclick = e => {
+    le();
+    if (!ed.funcao) { toast('Escolha a função (ou “Todas as funções”).', true); return; }
+    if (ed.faixas.some(f => !f.de || !f.ate)) { toast('Preencha o início e o fim de cada faixa de horário.', true); return; }
+    if (ed.excecoes.some(x => !x.data)) { toast('Informe a data de cada exceção (ou remova a linha).', true); return; }
+    ocupado(e.currentTarget, async () => {
+      const salvo = await call('salvarQlp', ed);
+      S.qlp = S.qlp.filter(x => x.id !== salvo.id).concat([salvo]);
+      const Q = S.q || (S.q = {}); Q.rev = salvo.revenda; Q.vis = salvo.area;
+      fecharModal(true); toast('Necessidade salva.');
+      if (S.view === 'qlp') vQlp($('#main'));
+    });
+  };
+}

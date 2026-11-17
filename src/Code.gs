@@ -24,6 +24,7 @@ const ABAS = {
   FeriasPeriodos: ['id', 'revenda', 'sig', 'codigo', 'nome', 'depto', 'setorF', 'grupo', 'cargo', 'admissao', 'ativoDP', 'situacao', 'local', 'turno',
     'iniAq', 'fimAq', 'prazo', 'direito', 'abono', 'gozados', 'saldo', 'origem', 'ano', 'sugestao', 'plano', 'conf', 'por', 'em',
     'acomp', 'acompPor', 'acompEm', 'fonte', 'editadoGestao'],
+  QLP: ['id', 'revenda', 'area', 'grupo', 'funcao', 'faixas', 'excecoes', 'obs', 'por', 'em'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -114,6 +115,8 @@ function rotas_() {
   feriasImportarDP: { f: feriasImportarDP_, admin: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
+  salvarQlp: { f: salvarQlp_ },
+  removerQlp: { f: removerQlp_ },
   removerColaboradores: { f: removerColaboradores_, admin: true },
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
@@ -262,7 +265,9 @@ function carregar_(u) {
   const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
   const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
-  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes };
+  const revsU = uniq_(cols.map(function (c) { return c.revenda; }));
+  const qlp = ler_('QLP').filter(function (q) { return u.perfil === 'ADMIN' || revsU.indexOf(q.revenda) >= 0; }).map(qlpPublico_);
+  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes, qlp: qlp };
   if (u.perfil === 'ADMIN') {
     r.sincFerias = parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_SINC'), null);
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;

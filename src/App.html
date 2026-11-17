@@ -113,7 +113,7 @@ async function carregar() {
   const r = await call('carregar');
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.sincFerias = r.sincFerias || null;
-  S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
+  S.qlp = r.qlp || []; S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
   if (!S.semana) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.semana = segundaDaSemana(h > i ? h : i); }
   if (!S.mes) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.mes = (h > i ? h : i).slice(0, 7); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
@@ -135,7 +135,7 @@ function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { c.vis = vi
 /* ================= casca ================= */
 function render() {
   const adm = S.user.perfil === 'ADMIN';
-  const tabs = [['escalas', 'cal', 'Escalas'], ['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel']]
+  const tabs = [['escalas', 'cal', 'Escalas'], ['qlp', 'users', 'QLP'], ['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel']]
     .concat([['cadastro', 'users', 'Cadastro']])
     .concat(adm ? [['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
@@ -149,7 +149,7 @@ function render() {
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, mes: vMes, ferias: vFeriasSis, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
