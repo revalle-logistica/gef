@@ -742,13 +742,42 @@ function lerRelacaoDP(A, nomeArq) {
 function paraBase64(file) {
   return new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = () => ko(new Error('Não consegui ler o arquivo.')); fr.readAsDataURL(file); });
 }
+/**
+ * O .xls gerado pelo sistema de folha vem com o índice da aba (registro BOUNDSHEET) apontando para a
+ * posição errada dentro do arquivo; por isso alguns leitores (e o Google) encontram a aba vazia.
+ * Aqui os registros são percorridos em sequência, o índice é corrigido e o arquivo é lido de novo.
+ */
+function repararXls(X, bytes) {
+  try {
+    const cfb = X.CFB.read(bytes, { type: 'array' });
+    const e = X.CFB.find(cfb, 'Workbook') || X.CFB.find(cfb, 'Book');
+    if (!e || !e.content) return null;
+    const d = e.content, bofs = [], bs = [];
+    for (let pos = 0; pos + 4 <= d.length;) {
+      const rt = d[pos] | d[pos + 1] << 8, ln = d[pos + 2] | d[pos + 3] << 8;
+      if (rt === 0x0809) bofs.push(pos);
+      if (rt === 0x0085) bs.push(pos + 4);
+      pos += 4 + ln;
+    }
+    const abas = bofs.slice(1);
+    let mud = 0;
+    bs.forEach((p, i) => {
+      const v = abas[i]; if (v == null) return;
+      const cur = (d[p] | d[p + 1] << 8 | d[p + 2] << 16 | d[p + 3] << 24) >>> 0;
+      if (cur !== v) { d[p] = v & 255; d[p + 1] = v >> 8 & 255; d[p + 2] = v >> 16 & 255; d[p + 3] = v >>> 24 & 255; mud++; }
+    });
+    return mud ? new Uint8Array(X.CFB.write(cfb, { type: 'array' })) : null;
+  } catch (err) { return null; }
+}
 async function lerArquivo(file) {
-  const X = await loadXLSX();
+  const X = await loadXLSX(), bytes = new Uint8Array(await file.arrayBuffer());
   let abas = [], via = '';
-  try { const wb = X.read(await file.arrayBuffer(), { type: 'array' }); abas = wb.SheetNames.map(n => ({ nome: n, valores: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false }) })); } catch (e) { abas = []; }
+  const abre = b => { try { const wb = X.read(b, { type: 'array' }); return wb.SheetNames.map(n => ({ nome: n, valores: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false }) })); } catch (e) { return []; } };
+  abas = abre(bytes.slice());
   const tenta = () => { for (const a of abas) { const r = lerRelacaoDP(a.valores, file.name); if (r && r.rows.length) return Object.assign({ nome: file.name, aba: a.nome, via }, r); } return null; };
   let r = tenta();
-  if (!r) { // o .xls do sistema de folha às vezes não abre no navegador: converte pelo Google
+  if (!r) { const fix = repararXls(X, bytes.slice()); if (fix) { via = 'arquivo do sistema de folha corrigido'; abas = abre(fix); r = tenta(); } }
+  if (!r) { // última tentativa: converter pelo Google
     via = 'convertido pelo Google';
     abas = await call('converterPlanilha', { nome: file.name, tipo: file.type, base64: await paraBase64(file) });
     r = tenta();
