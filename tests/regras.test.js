@@ -104,3 +104,17 @@ test('ajuste de um dia vale só naquele dia e entra na conferência', () => {
   assert.strictEqual(vs(se(esc, '2027-01-04', [], [], aj), { cfg }).status, 'OK');
   assert.strictEqual(se(esc, '2027-01-11', [], [], aj)[5].tipo, 'F');
 });
+
+test('máximo diário: 10h24 em geral e 12h24 para motorista/ajudante de entrega', () => {
+  const cf = Object.assign({}, cfg, { DIARIO_MAX_TRANSICAO: '10:24', DIARIO_MAX_ENTREGA: '12:24', LIMITE_SEMANAL_TRANSICAO: 60 });
+  const dia = (ent, sai) => ({ tipo: 'T', ent, sai, int: 60 });
+  const esc = s => ({ vigencia: '2026-12-21', dias: [dia('06:00', s), dia('07:00', '16:24'), dia('07:00', '16:24'), dia('07:00', '16:24'), dia('07:00', '16:24'), { tipo: 'F' }, { tipo: 'F' }] });
+  const errDia = v => v.msgs.filter(m => m.nivel === 'erro' && /máximo diário/.test(m.texto)).length;
+  assert.strictEqual(errDia(ctxVm.validarEscala(esc('17:24'), { cfg: cf })), 0);            // 10h24 ok
+  assert.strictEqual(errDia(ctxVm.validarEscala(esc('17:30'), { cfg: cf })), 1);            // 10h30 passa
+  assert.strictEqual(errDia(ctxVm.validarEscala(esc('19:24'), { cfg: cf, entrega: true })), 0); // 12h24 ok entrega
+  assert.strictEqual(errDia(ctxVm.validarEscala(esc('19:30'), { cfg: cf, entrega: true })), 1);
+  assert.strictEqual(ctxVm.minutosCfg('10'), 600); assert.strictEqual(ctxVm.minutosCfg('10h24'), 624);
+  assert.ok(ctxVm.ehEntregaCampo({ setor: 'ENTREGA', funcao: 'AJUDANTE DE ENTREGA' }));
+  assert.ok(!ctxVm.ehEntregaCampo({ setor: 'ENTREGA', funcao: 'ASSISTENTE ADMINISTRATIVO' }));
+});

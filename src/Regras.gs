@@ -43,11 +43,23 @@ function calcDia(d) {
   return { inicio: e, bruto: bruto, intervalo: it, liquido: bruto - it };
 }
 
-function parametrosRegra(cfg, vigencia) {
+/** Horas de um parâmetro em minutos: aceita "10:24", "10h24" ou "10" / "10,4". */
+function minutosCfg(v) {
+  var s = String(v == null ? '' : v).trim().toLowerCase(), m = s.match(/^(\d{1,2})\s*[:h]\s*(\d{1,2})?$/);
+  if (m) return +m[1] * 60 + (+m[2] || 0);
+  var n = parseFloat(s.replace(',', '.'));
+  return isNaN(n) ? 0 : Math.round(n * 60);
+}
+/** Motorista ou ajudante de entrega (setor Entrega): podem ter jornada diária maior (parâmetro DIARIO_MAX_ENTREGA). */
+function ehEntregaCampo(c) { return !!c && areaSetor(c.setor) === 'ent' && papelEntrega(c.funcao) !== 'adm'; }
+
+function parametrosRegra(cfg, vigencia, entrega) {
   var final = !!(vigencia && cfg.DATA_40H && String(vigencia) >= String(cfg.DATA_40H));
+  var normal = minutosCfg(final ? cfg.DIARIO_MAX_FINAL : cfg.DIARIO_MAX_TRANSICAO), ent = minutosCfg(cfg.DIARIO_MAX_ENTREGA);
   return {
     semanal: (final ? +cfg.LIMITE_SEMANAL_FINAL : +cfg.LIMITE_SEMANAL_TRANSICAO) * 60,
-    diario: (final ? +cfg.DIARIO_MAX_FINAL : +cfg.DIARIO_MAX_TRANSICAO) * 60,
+    diario: entrega && ent > normal ? ent : normal,
+    entrega: !!(entrega && ent > normal),
     fase: final ? 'fase de 40h' : 'transição de 42h'
   };
 }
@@ -62,7 +74,7 @@ function validarEscala(esc, ctx) {
   var add = function (n, t) { msgs.push({ nivel: n, texto: t }); };
   esc = esc || {};
   var dias = esc.dias || [];
-  var P = parametrosRegra(cfg, esc.vigencia);
+  var P = parametrosRegra(cfg, esc.vigencia, ctx.entrega);
   var trab = 0, folgas = 0, total = 0, blocos = [], noturno = false;
 
   if (!esc.vigencia) add('erro', 'Informe a data de início da escala (vigência).');
@@ -88,7 +100,7 @@ function validarEscala(esc, ctx) {
       if (c.liquido > (+cfg.TELE_DIARIO || 6) * 60)
         add('erro', nome + ': teleatendimento tem limite de ' + (cfg.TELE_DIARIO || 6) + 'h por dia (NR-17, Anexo II).');
     } else if (c.liquido > P.diario) {
-      add('erro', nome + ': ' + minParaHm(c.liquido) + ' passa do máximo diário de ' + minParaHm(P.diario) + ' (' + P.fase + ').');
+      add('erro', nome + ': ' + minParaHm(c.liquido) + ' passa do máximo diário de ' + minParaHm(P.diario) + (P.entrega ? ' (motorista/ajudante de entrega).' : ' (' + P.fase + ').'));
     }
     if (c.inicio < 300 || c.inicio + c.bruto > 1320) noturno = true;
   }
@@ -245,7 +257,7 @@ function avisosSemana(sem) {
 function validarSemanaReal(sem, ctx) {
   if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
   var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
-  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg });
+  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg, entrega: ctx.entrega });
   v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
     .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));
   var e = v.msgs.some(function (m) { return m.nivel === 'erro'; }), a = v.msgs.some(function (m) { return m.nivel === 'alerta'; });

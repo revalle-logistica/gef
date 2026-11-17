@@ -24,7 +24,7 @@ function vigenciaOk_(v) {
 
 /** Grava (ou recusa) uma escala já validada. Retorna o resultado da validação. */
 function gravaEscala_(u, c, esc, cfg, mapa) {
-  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg });
+  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
   if (val.status === 'ERRO' && String(cfg.BLOQUEAR_ERRO).toUpperCase() === 'S') return { gravou: false, val: val };
   const atual = mapa[c.matricula] || {};
   const o = {
@@ -299,4 +299,42 @@ function salvarConfig_(u, d) {
     log_(u, '', 'alterou regras', JSON.stringify(d));
     return cfg_();
   });
+}
+
+/* ---------------- link individual do colaborador (só leitura) ---------------- */
+/** Supervisor do colaborador ou admin: devolve o link ativo (ou cria). novo=true cancela o anterior e gera outro. */
+function gerarLink_(u, d) {
+  const c = achaColab_(u, d.matricula), cfg = cfg_();
+  return comLock_(function () {
+    const lst = ler_('Links'), quando = agora_();
+    let at = lst.filter(function (l) { return l.matricula === c.matricula && l.ativo === 'S'; });
+    if (d.novo) { at.forEach(function (l) { l.ativo = 'N'; gravarLinha_('Links', l); }); at = []; log_(u, c.matricula, 'cancelou link do colaborador', ''); }
+    let l = at[0];
+    if (!l) {
+      l = { token: (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, ''), matricula: c.matricula, ativo: 'S', criadoPor: u.nome, criadoEm: quando, acessos: '0', ultimoAcesso: '' };
+      gravarLinha_('Links', l);
+      log_(u, c.matricula, 'gerou link do colaborador', '');
+    }
+    const base = String(cfg.LINK_SISTEMA || '').replace(/[?#].*$/, '');
+    return { link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso };
+  });
+}
+/** Público: a escala de um colaborador a partir do link (sem login, só leitura). */
+function minhaEscala_(d) {
+  const tk = String(d.token || '');
+  if (!/^[0-9a-f]{64}$/.test(tk)) throw new Error('Link inválido.');
+  const l = ler_('Links').filter(function (x) { return x.token === tk; })[0];
+  if (!l || l.ativo !== 'S') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
+  const c = ler_('Colaboradores').filter(function (x) { return x.matricula === l.matricula; })[0];
+  if (!c || c.ativo === 'N') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
+  try { l.acessos = String((+l.acessos || 0) + 1); l.ultimoAcesso = agora_(); gravarLinha_('Links', l); } catch (e) { /* contador é só informativo */ }
+  const e = ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; })[0];
+  const desde = Utilities.formatDate(new Date(Date.now() - 70 * 864e5), TZ, 'yyyy-MM-dd');
+  return {
+    nome: c.nome, funcao: c.funcao, revenda: c.revenda, empresa: cfg_().EMPRESA,
+    escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), em: e.atualizadoEm } : null,
+    ferias: ler_('Ferias').filter(function (f) { return f.matricula === c.matricula; }).map(function (f) { return { inicio: f.inicio, fim: f.fim }; }),
+    feriados: ler_('Feriados').filter(function (f) { return f.revenda === c.revenda; }).map(function (f) { return { data: f.data, descricao: f.descricao, tipo: f.tipo, contaAlerta: f.contaAlerta }; }),
+    ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })
+  };
 }

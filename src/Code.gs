@@ -14,6 +14,7 @@ const ABAS = {
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
   Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
   Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
+  Links: ['token', 'matricula', 'ativo', 'criadoPor', 'criadoEm', 'acessos', 'ultimoAcesso'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -25,7 +26,8 @@ const CFG_PADRAO = [
   ['PONTOS_APOIO', '{}', 'Pontos de apoio por revenda (editados na tela Cadastro)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
-  ['DIARIO_MAX_TRANSICAO', '10', 'Horas diárias máximas na transição (8h + até 2h distribuídas na semana)'],
+  ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
+  ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
   ['DATA_40H', '2027-12-15', 'A partir desta data valem 40h semanais e 8h diárias (confirmar com DP/jurídico)'],
   ['LIMITE_SEMANAL_FINAL', '40', 'Horas semanais máximas após a transição'],
   ['DIARIO_MAX_FINAL', '8', 'Horas diárias máximas após a transição'],
@@ -64,7 +66,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -73,7 +75,8 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_ }, PRIVADAS: {
+  gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
   trocarSenha: { f: trocarSenha_ },
@@ -157,6 +160,13 @@ function prepararBase_(s) {
   const tem = c.getLastRow() > 1 ? c.getRange(2, 1, c.getLastRow() - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
   const faltam = CFG_PADRAO.filter(function (x) { return tem.indexOf(x[0]) < 0; });
   if (faltam.length) c.getRange(c.getLastRow() + 1, 1, faltam.length, 3).setNumberFormat('@').setValues(faltam);
+  // uma vez: máximo diário da transição passou de 10h para 10h24
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('MIG_1024')) {
+    const lin = c.getRange(2, 1, Math.max(1, c.getLastRow() - 1), 2).getDisplayValues();
+    lin.forEach(function (r, i) { if (r[0] === 'DIARIO_MAX_TRANSICAO' && String(r[1]).trim() === '10') c.getRange(i + 2, 2).setNumberFormat('@').setValue('10:24'); });
+    props.setProperty('MIG_1024', '1');
+  }
 }
 function aba_(n) { return ss_().getSheetByName(n); }
 function ler_(n) {

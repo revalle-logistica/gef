@@ -17,6 +17,7 @@ const ABAS = {
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
   Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
   Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
+  Links: ['token', 'matricula', 'ativo', 'criadoPor', 'criadoEm', 'acessos', 'ultimoAcesso'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -28,7 +29,8 @@ const CFG_PADRAO = [
   ['PONTOS_APOIO', '{}', 'Pontos de apoio por revenda (editados na tela Cadastro)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
-  ['DIARIO_MAX_TRANSICAO', '10', 'Horas diárias máximas na transição (8h + até 2h distribuídas na semana)'],
+  ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
+  ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
   ['DATA_40H', '2027-12-15', 'A partir desta data valem 40h semanais e 8h diárias (confirmar com DP/jurídico)'],
   ['LIMITE_SEMANAL_FINAL', '40', 'Horas semanais máximas após a transição'],
   ['DIARIO_MAX_FINAL', '8', 'Horas diárias máximas após a transição'],
@@ -67,7 +69,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -76,7 +78,8 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_ }, PRIVADAS: {
+  gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
   trocarSenha: { f: trocarSenha_ },
@@ -160,6 +163,13 @@ function prepararBase_(s) {
   const tem = c.getLastRow() > 1 ? c.getRange(2, 1, c.getLastRow() - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
   const faltam = CFG_PADRAO.filter(function (x) { return tem.indexOf(x[0]) < 0; });
   if (faltam.length) c.getRange(c.getLastRow() + 1, 1, faltam.length, 3).setNumberFormat('@').setValues(faltam);
+  // uma vez: máximo diário da transição passou de 10h para 10h24
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('MIG_1024')) {
+    const lin = c.getRange(2, 1, Math.max(1, c.getLastRow() - 1), 2).getDisplayValues();
+    lin.forEach(function (r, i) { if (r[0] === 'DIARIO_MAX_TRANSICAO' && String(r[1]).trim() === '10') c.getRange(i + 2, 2).setNumberFormat('@').setValue('10:24'); });
+    props.setProperty('MIG_1024', '1');
+  }
 }
 function aba_(n) { return ss_().getSheetByName(n); }
 function ler_(n) {
@@ -430,7 +440,7 @@ function vigenciaOk_(v) {
 
 /** Grava (ou recusa) uma escala já validada. Retorna o resultado da validação. */
 function gravaEscala_(u, c, esc, cfg, mapa) {
-  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg });
+  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
   if (val.status === 'ERRO' && String(cfg.BLOQUEAR_ERRO).toUpperCase() === 'S') return { gravou: false, val: val };
   const atual = mapa[c.matricula] || {};
   const o = {
@@ -707,6 +717,44 @@ function salvarConfig_(u, d) {
   });
 }
 
+/* ---------------- link individual do colaborador (só leitura) ---------------- */
+/** Supervisor do colaborador ou admin: devolve o link ativo (ou cria). novo=true cancela o anterior e gera outro. */
+function gerarLink_(u, d) {
+  const c = achaColab_(u, d.matricula), cfg = cfg_();
+  return comLock_(function () {
+    const lst = ler_('Links'), quando = agora_();
+    let at = lst.filter(function (l) { return l.matricula === c.matricula && l.ativo === 'S'; });
+    if (d.novo) { at.forEach(function (l) { l.ativo = 'N'; gravarLinha_('Links', l); }); at = []; log_(u, c.matricula, 'cancelou link do colaborador', ''); }
+    let l = at[0];
+    if (!l) {
+      l = { token: (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, ''), matricula: c.matricula, ativo: 'S', criadoPor: u.nome, criadoEm: quando, acessos: '0', ultimoAcesso: '' };
+      gravarLinha_('Links', l);
+      log_(u, c.matricula, 'gerou link do colaborador', '');
+    }
+    const base = String(cfg.LINK_SISTEMA || '').replace(/[?#].*$/, '');
+    return { link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso };
+  });
+}
+/** Público: a escala de um colaborador a partir do link (sem login, só leitura). */
+function minhaEscala_(d) {
+  const tk = String(d.token || '');
+  if (!/^[0-9a-f]{64}$/.test(tk)) throw new Error('Link inválido.');
+  const l = ler_('Links').filter(function (x) { return x.token === tk; })[0];
+  if (!l || l.ativo !== 'S') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
+  const c = ler_('Colaboradores').filter(function (x) { return x.matricula === l.matricula; })[0];
+  if (!c || c.ativo === 'N') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
+  try { l.acessos = String((+l.acessos || 0) + 1); l.ultimoAcesso = agora_(); gravarLinha_('Links', l); } catch (e) { /* contador é só informativo */ }
+  const e = ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; })[0];
+  const desde = Utilities.formatDate(new Date(Date.now() - 70 * 864e5), TZ, 'yyyy-MM-dd');
+  return {
+    nome: c.nome, funcao: c.funcao, revenda: c.revenda, empresa: cfg_().EMPRESA,
+    escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), em: e.atualizadoEm } : null,
+    ferias: ler_('Ferias').filter(function (f) { return f.matricula === c.matricula; }).map(function (f) { return { inicio: f.inicio, fim: f.fim }; }),
+    feriados: ler_('Feriados').filter(function (f) { return f.revenda === c.revenda; }).map(function (f) { return { data: f.data, descricao: f.descricao, tipo: f.tipo, contaAlerta: f.contaAlerta }; }),
+    ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })
+  };
+}
+
 
 // ===================== Export.gs =====================
 /**
@@ -745,7 +793,7 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
     corpo = '<p style="margin:30px 0;font-size:14px;color:#b42318"><b>Escala ainda não cadastrada.</b></p>';
   } else {
     const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
-    const val = validarEscala(esc, { tele: tele, cfg: cfg });
+    const val = validarEscala(esc, { tele: tele, cfg: cfg, entrega: ehEntregaCampo(c) });
     const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
       const sd = sem ? sem[i] : null, rot = nome + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
@@ -788,7 +836,7 @@ function quadroPdf_(cols, esc, cfg, ctx) {
     rows += '<tr class="g"><td colspan="12">' + h_(g) + ' (' + grupos[g].length + ')</td></tr>';
     grupos[g].forEach(function (c) {
       const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
-      const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
+      const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         (function () {
           const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
@@ -957,11 +1005,23 @@ function calcDia(d) {
   return { inicio: e, bruto: bruto, intervalo: it, liquido: bruto - it };
 }
 
-function parametrosRegra(cfg, vigencia) {
+/** Horas de um parâmetro em minutos: aceita "10:24", "10h24" ou "10" / "10,4". */
+function minutosCfg(v) {
+  var s = String(v == null ? '' : v).trim().toLowerCase(), m = s.match(/^(\d{1,2})\s*[:h]\s*(\d{1,2})?$/);
+  if (m) return +m[1] * 60 + (+m[2] || 0);
+  var n = parseFloat(s.replace(',', '.'));
+  return isNaN(n) ? 0 : Math.round(n * 60);
+}
+/** Motorista ou ajudante de entrega (setor Entrega): podem ter jornada diária maior (parâmetro DIARIO_MAX_ENTREGA). */
+function ehEntregaCampo(c) { return !!c && areaSetor(c.setor) === 'ent' && papelEntrega(c.funcao) !== 'adm'; }
+
+function parametrosRegra(cfg, vigencia, entrega) {
   var final = !!(vigencia && cfg.DATA_40H && String(vigencia) >= String(cfg.DATA_40H));
+  var normal = minutosCfg(final ? cfg.DIARIO_MAX_FINAL : cfg.DIARIO_MAX_TRANSICAO), ent = minutosCfg(cfg.DIARIO_MAX_ENTREGA);
   return {
     semanal: (final ? +cfg.LIMITE_SEMANAL_FINAL : +cfg.LIMITE_SEMANAL_TRANSICAO) * 60,
-    diario: (final ? +cfg.DIARIO_MAX_FINAL : +cfg.DIARIO_MAX_TRANSICAO) * 60,
+    diario: entrega && ent > normal ? ent : normal,
+    entrega: !!(entrega && ent > normal),
     fase: final ? 'fase de 40h' : 'transição de 42h'
   };
 }
@@ -976,7 +1036,7 @@ function validarEscala(esc, ctx) {
   var add = function (n, t) { msgs.push({ nivel: n, texto: t }); };
   esc = esc || {};
   var dias = esc.dias || [];
-  var P = parametrosRegra(cfg, esc.vigencia);
+  var P = parametrosRegra(cfg, esc.vigencia, ctx.entrega);
   var trab = 0, folgas = 0, total = 0, blocos = [], noturno = false;
 
   if (!esc.vigencia) add('erro', 'Informe a data de início da escala (vigência).');
@@ -1002,7 +1062,7 @@ function validarEscala(esc, ctx) {
       if (c.liquido > (+cfg.TELE_DIARIO || 6) * 60)
         add('erro', nome + ': teleatendimento tem limite de ' + (cfg.TELE_DIARIO || 6) + 'h por dia (NR-17, Anexo II).');
     } else if (c.liquido > P.diario) {
-      add('erro', nome + ': ' + minParaHm(c.liquido) + ' passa do máximo diário de ' + minParaHm(P.diario) + ' (' + P.fase + ').');
+      add('erro', nome + ': ' + minParaHm(c.liquido) + ' passa do máximo diário de ' + minParaHm(P.diario) + (P.entrega ? ' (motorista/ajudante de entrega).' : ' (' + P.fase + ').'));
     }
     if (c.inicio < 300 || c.inicio + c.bruto > 1320) noturno = true;
   }
@@ -1159,7 +1219,7 @@ function avisosSemana(sem) {
 function validarSemanaReal(sem, ctx) {
   if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
   var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
-  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg });
+  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg, entrega: ctx.entrega });
   v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
     .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));
   var e = v.msgs.some(function (m) { return m.nivel === 'erro'; }), a = v.msgs.some(function (m) { return m.nivel === 'alerta'; });

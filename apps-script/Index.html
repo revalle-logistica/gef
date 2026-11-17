@@ -173,6 +173,20 @@ main{max-width:1280px;margin:0 auto;padding:18px;display:grid;gap:16px}
 .pd{color:var(--al)!important;font-weight:700}.okc{color:var(--ok)!important;font-weight:700}
 .tg2{font-weight:800;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--acs);color:var(--b8)}.tg2.adm{background:var(--sunk);color:var(--mut)}
 .pts{padding:0 16px 12px;display:grid;gap:6px}.pts b{font-size:13px;color:var(--b8)}
+.lnk{margin:12px 0 0;padding:12px 14px;border:1px solid var(--ln);border-radius:10px;background:var(--sunk);display:grid;gap:8px}.lnk input{font-size:12.5px}
+.mn{max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg)}
+.mn-h{display:flex;gap:12px;align-items:center;padding:18px 16px;background:linear-gradient(120deg,var(--b9),var(--b8) 55%,var(--ac));color:#fff}.mn-h div{display:grid;gap:1px}.mn-h b{font:800 18px var(--fd)}.mn-h small{opacity:.8;font-size:12.5px}
+.mn-c{padding:14px 12px 24px;display:grid;gap:12px}
+.mn-h .logo{background:#fff;color:var(--b8);flex:none}
+.mn-hoje{border-radius:14px;padding:14px 16px;display:grid;gap:2px;color:#fff;background:var(--ac)}.mn-hoje.f{background:var(--ok)}.mn-hoje.v{background:#6b3fb8}.mn-hoje.n{background:#7b879c}.mn-hoje b{font:800 24px var(--fd)}.mn-hoje small{opacity:.9}
+.mn-nav{display:flex;align-items:center;justify-content:space-between}.mn-nav b{font:800 17px var(--fd);color:var(--b8)}.mn-nav b::first-letter{text-transform:uppercase}.mn-nav .btn{font-size:20px;padding:2px 14px}
+.mn-res{display:flex;gap:6px;flex-wrap:wrap}.mn-res span{background:var(--sf);border:1px solid var(--ln);border-radius:99px;padding:4px 10px;font-size:12.5px;color:var(--mut)}.mn-res b{color:var(--ink)}
+.mn-l{display:grid;gap:6px}
+.mn-d{display:flex;gap:12px;align-items:center;background:var(--sf);border:1px solid var(--ln);border-left:5px solid var(--ac);border-radius:10px;padding:9px 12px;position:relative}
+.mn-d.f{border-left-color:var(--ok);background:var(--oks)}.mn-d.v{border-left-color:#6b3fb8;background:#efe8fb}.mn-d.n{border-left-color:#b7c0d0}
+.mn-d.hj{box-shadow:0 0 0 2px var(--ac)}.mn-d em{position:absolute;right:10px;top:8px;font:800 10px var(--fd);text-transform:uppercase;color:var(--ac);font-style:normal}
+.mn-dt{display:grid;text-align:center;min-width:34px}.mn-dt b{font:800 20px var(--fd);line-height:1}.mn-dt small{font-size:11px;color:var(--mut);text-transform:uppercase}
+.mn-tx{display:grid;gap:2px}.mn-tx b{font-size:15px}.mn-tx small{font-size:12px;color:var(--mut)}.mn-tx .tg{justify-self:start}
 .alrt{background:#fff6e0;border:1px solid #f1c76b;color:#6b4a00;border-radius:8px;padding:8px 12px;font-size:13px}
 .xp{border:0;background:transparent;color:var(--er);font-weight:900;cursor:pointer;padding:0 2px;font-size:15px;line-height:1}
 .addp{display:flex;gap:8px;max-width:460px}
@@ -339,7 +353,7 @@ const feriasDe = m => S.ferias.filter(f => f.matricula === m);
 const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
 const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
 function ajustesDe(m) { const o = {}; S.ajustes.forEach(a => { if (a.matricula === m) o[a.data] = a; }); return o; }
-function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
+function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; }); }
 
 /* ================= casca ================= */
 function render() {
@@ -550,8 +564,9 @@ function desenhaEditor() {
       <div class="fer"><b>Férias</b><div id="ed-fer"></div>
         <form class="addp" id="ed-ferf"><input type="date" name="inicio" aria-label="Início das férias"><input type="date" name="fim" aria-label="Fim das férias"><input name="obs" placeholder="Obs. (opcional)" maxlength="120"><button class="btn sm" type="submit">Adicionar férias</button></form></div>
       ${c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>'}
+      <div id="ed-lnk"></div>
     </div>
-    <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button>
+    <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button><button type="button" class="btn" data-lnk>📲 Link p/ colaborador</button>
       <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-salvar>Salvar escala</button></div>`);
   const box = modal.querySelector('.mdl');
   box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); };
@@ -577,6 +592,11 @@ function desenhaEditor() {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
     } else if (b.hasAttribute('data-salvar')) salvarEditor(b);
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
+    else if (b.hasAttribute('data-lnk') || b.hasAttribute('data-lnovo')) {
+      if (b.hasAttribute('data-lnovo') && !confirm('Gerar um link novo? O link anterior para de funcionar.')) return;
+      ocupado(b, async () => mostraLink(S.ed.c, await call('gerarLink', { matricula: S.ed.c.matricula, novo: b.hasAttribute('data-lnovo') })));
+    }
+    else if (b.hasAttribute('data-lcopia')) { const v = modal.querySelector('#lnk-url').value; (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Link copiado.')).catch(() => { const i = modal.querySelector('#lnk-url'); i.select(); document.execCommand('copy'); toast('Link copiado.'); }); }
     else if (b.hasAttribute('data-pdf')) {
       if (S.ed.sujo) return toast('Salve a escala antes de gerar o PDF.', true);
       ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas', S.semana));
@@ -591,6 +611,15 @@ function desenhaEditor() {
       S.ferias.push(f); revalida(); ev.target.reset(); listaFerias(); toast('Férias cadastradas.');
     });
   };
+}
+function mostraLink(c, r) {
+  const w = modal.querySelector('#ed-lnk'); if (!w) return;
+  const prim = String(c.nome).split(' ')[0], nm = prim.charAt(0) + prim.slice(1).toLowerCase();
+  const msg = `Olá, ${nm}! Este é o link da sua escala de trabalho na Revalle. Pelo link você vê seus dias de trabalho, folgas, férias e feriados. É pessoal, não repasse:\n${r.link}`;
+  w.innerHTML = `<div class="lnk"><b>Link da escala de ${esc(c.nome)}</b><span class="hint">Só leitura, sem senha. O colaborador vê a escala sempre atualizada. Gerado por ${esc(r.criadoPor)} em ${esc(dh(r.criadoEm))} · ${r.acessos ? `aberto ${r.acessos}x, último em ${esc(dh(r.ultimoAcesso))}` : 'ainda não foi aberto'}.</span>
+    <input id="lnk-url" readonly value="${esc(r.link)}" onclick="this.select()">
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm ok" target="_blank" rel="noopener" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msg)}">Enviar pelo WhatsApp</a><button type="button" class="btn sm" data-lcopia>${ic('copy')}Copiar link</button><span style="flex:1"></span><button type="button" class="btn sm er" data-lnovo>Gerar novo (cancela este)</button></div></div>`;
+  w.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function listaFerias() {
   const w = $('#ed-fer'); if (!w || !S.ed) return;
@@ -611,7 +640,7 @@ function caixaVal(v) {
     ${v.msgs.length ? `<ul>${v.msgs.map(x => `<li class="${x.nivel}">${esc(x.texto)}</li>`).join('')}</ul>` : ''}</div>`;
 }
 function atualizaVal() {
-  const v = validarEscala(S.ed.e, { tele: S.ed.tele, cfg: S.cfg });
+  const v = validarEscala(S.ed.e, { tele: S.ed.tele, cfg: S.cfg, entrega: ehEntregaCampo(S.ed.c) });
   $('#ed-val').innerHTML = caixaVal(v);
   const b = modal.querySelector('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   b.disabled = bloq; b.title = bloq ? 'Corrija os itens em vermelho para salvar' : '';
@@ -621,7 +650,7 @@ function salvarEditor(bt) {
   ocupado(bt, async () => {
     if (S.ed.tele !== c.tele) { await call('setTele', { matricula: c.matricula, valor: S.ed.tele }); c.tele = S.ed.tele; }
     const r = await call('salvarEscala', { matricula: c.matricula, vigencia: e.vigencia, dias: e.dias });
-    c.escala = r.escala; c.val = validarEscala(c.escala, { tele: c.tele, cfg: S.cfg });
+    c.escala = r.escala; c.val = validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
     fecharModal(true); toast(`Escala de <b>${esc(c.nome)}</b> salva.`); render();
   });
 }
@@ -651,7 +680,7 @@ function modalLote() {
   const upd = () => {
     const L = S.lote, e = { vigencia: L.vig, dias: semanaModelo(L.folga2, L.ent, L.sai, L.int) };
     $('#lt-sem').innerHTML = semana(e);
-    const v = validarEscala(e, { tele: false, cfg: S.cfg });
+    const v = validarEscala(e, { tele: false, cfg: S.cfg, entrega: L.lista.length > 0 && L.lista.every(ehEntregaCampo) });
     $('#lt-val').innerHTML = caixaVal(v);
     box.querySelector('[data-aplicar]').disabled = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   };
@@ -678,7 +707,7 @@ function mesColab(c) {
   const semanas = [];
   for (let s = segundaDaSemana(dias[0].data); s <= dias[dias.length - 1].data; s = isoMaisDias(s, 7)) {
     const sem = semanaEfetiva(c.escala, s, fer, fds, aj);
-    semanas.push({ ini: s, sem, val: validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg }) });
+    semanas.push({ ini: s, sem, val: validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) });
   }
   const horas = dias.reduce((t, d) => { const x = d.tipo === 'T' ? calcDia(d) : null; return t + (x ? x.liquido : 0); }, 0);
   return { dias, semanas, horas };
@@ -761,7 +790,7 @@ function abrirDia(mat, data, depois) {
   };
   const valida = () => {
     const aj2 = Object.assign({}, aj, { [data]: { tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int } });
-    const sem = semanaEfetiva(c.escala, segundaDaSemana(data), feriasDe(mat), feriadosDe(c.revenda), aj2), v = validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg });
+    const sem = semanaEfetiva(c.escala, segundaDaSemana(data), feriasDe(mat), feriadosDe(c.revenda), aj2), v = validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
     $('#dia-val').innerHTML = v ? '<p class="hint" style="margin-bottom:6px">Como fica a semana de ' + ddmm(sem[0].data) + ':</p>' + caixaVal(v) : '<p class="hint">Semana com férias ou sem escala: não é conferida.</p>';
   };
   box.addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) { st.tipo = b.dataset.dt; desenha(); } });
@@ -815,7 +844,7 @@ function linhasDia(e) {
   return DIAS_SEMANA.map((n, i) => { const d = e.dias[i] || { tipo: 'F' }, c = calcDia(d); return c ? [n, 'Trabalho', d.ent, d.sai, +d.int || 0, minParaHm(c.liquido)] : [n, 'Folga', '', '', '', '']; });
 }
 async function excelIndividual(c, e, tele) {
-  const X = await loadXLSX(), v = validarEscala(e, { tele, cfg: S.cfg });
+  const X = await loadXLSX(), v = validarEscala(e, { tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
   const A = [[`${S.cfg.EMPRESA} · Escala de trabalho 5x2`], [],
     ['Colaborador', c.nome], ['Matrícula', codigoMatricula(c.matricula)], ['Função', c.funcao + (tele ? ' (teleatendimento)' : '')], ['Revenda', c.revenda],
     ['Setor', c.setor], ['Lotação', c.lotacao], ['Turno', c.turno || ''], ['Vigência a partir de', dataBr(e.vigencia)], [],
@@ -1351,7 +1380,8 @@ function vRegras(m) {
     ['5 dias + 2 folgas', '5x2', 'Toda semana: 5 dias de trabalho e 2 de folga.'],
     ['Domingo', SN(c.DOMINGO_FOLGA) ? 'Folga' : 'Livre', SN(c.DOMINGO_FOLGA) ? 'Domingo é sempre uma das folgas (regra da empresa).' : 'Domingo pode ser dia de trabalho.'],
     ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(c.DATA_INICIO_5X2)} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
-    ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${c.DIARIO_MAX_TRANSICAO}h (8h + as horas distribuídas). Depois: ${c.DIARIO_MAX_FINAL}h.`],
+    ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${minParaHm(minutosCfg(c.DIARIO_MAX_TRANSICAO))}. Depois: ${minParaHm(minutosCfg(c.DIARIO_MAX_FINAL))}.`],
+    ['Motorista e ajudante de entrega', minParaHm(minutosCfg(c.DIARIO_MAX_ENTREGA)), 'Jornada diária máxima para motoristas e ajudantes do setor Entrega.'],
     ['Intervalo', '1h a 2h', 'Acima de 6h de trabalho; 15 min entre 4h e 6h (CLT, art. 71).'],
     ['Entre jornadas', '11h', 'Descanso mínimo entre o fim de um dia e o início do outro (CLT, art. 66).'],
     ['Descanso semanal', '35h', '24h de folga + 11h, seguidas, ao menos uma vez na semana.'],
@@ -1384,8 +1414,39 @@ function modalSenha() {
   };
 }
 
+/* ================= minha escala (link do colaborador, só leitura) ================= */
+async function telaMinha(tk) {
+  root.innerHTML = '<div class="mn"><div class="mn-c" style="text-align:center;padding:40px 16px"><span class="spin"></span><p class="hint">Carregando sua escala…</p></div></div>';
+  let D;
+  try { D = await call('minhaEscala', { token: tk }); }
+  catch (e) { root.innerHTML = `<div class="mn"><div class="mn-c" style="text-align:center;padding:40px 18px"><span class="logo">R</span><h2 style="margin:14px 0 6px">Escala indisponível</h2><p class="hint">${esc(e.message)}</p></div></div>`; return; }
+  const hj = hoje(); let ym = hj.slice(0, 7);
+  const aj = {}; D.ajustes.forEach(a => { aj[a.data] = a; });
+  const fh = m => { const h = Math.floor(m / 60), r = m % 60; return h + 'h' + (r ? String(r).padStart(2, '0') : ''); };
+  const linha = (data, dd) => {
+    const ds = DIAS_SEMANA[diaSemanaIso(data)], cls = dd.tipo === 'T' ? 't' : dd.tipo === 'FER' ? 'v' : dd.tipo === 'F' ? 'f' : 'n';
+    const txt = dd.tipo === 'T' ? `<b>${esc(dd.ent)} às ${esc(dd.sai)}</b><small>Trabalho${dd.int ? ' · intervalo de ' + fh(dd.int) : ''}</small>` : dd.tipo === 'FER' ? '<b>Férias</b>' : dd.tipo === 'F' ? `<b>Folga</b>${diaSemanaIso(data) === 6 ? '<small>Descanso semanal</small>' : ''}` : '<b>—</b><small>Escala ainda não definida</small>';
+    return `<div class="mn-d ${cls}${data === hj ? ' hj' : ''}"><div class="mn-dt"><b>${data.slice(8)}</b><small>${ds.slice(0, 3)}</small></div><div class="mn-tx">${txt}${dd.feriado ? `<span class="tg">🎉 ${esc(dd.feriado)}</span>` : ''}${dd.ajuste ? '<span class="tg">alterado</span>' : ''}</div>${data === hj ? '<em>hoje</em>' : ''}</div>`;
+  };
+  const desenha = () => {
+    const dias = diasDoMes(ym), DD = dias.map(d => [d, diaEfetivo(D.escala, d, D.ferias, D.feriados, aj)]);
+    const n = k => DD.filter(x => x[1].tipo === k).length, hoj = diaEfetivo(D.escala, hj, D.ferias, D.feriados, aj);
+    const pv = ym > hj.slice(0, 7) ? isoMaisDias(ym + '-01', -1).slice(0, 7) : '', nx = isoMaisDias(dias[dias.length - 1], 1).slice(0, 7), podeNx = nx <= isoMaisDias(hj, 120).slice(0, 7);
+    root.innerHTML = `<div class="mn"><header class="mn-h"><span class="logo">R</span><div><small>Minha escala · ${esc(D.empresa || 'Revalle')}</small><b>${esc(D.nome)}</b><small>${esc(D.funcao)} · ${esc(D.revenda)}</small></div></header>
+      <div class="mn-c"><div class="mn-hoje ${hoj.tipo === 'T' ? 't' : hoj.tipo === 'FER' ? 'v' : hoj.tipo === 'F' ? 'f' : 'n'}"><small>Hoje, ${dataBr(hj).slice(0, 5)}</small><b>${hoj.tipo === 'T' ? esc(hoj.ent) + ' às ' + esc(hoj.sai) : hoj.tipo === 'FER' ? 'Férias' : hoj.tipo === 'F' ? 'Folga' : 'Sem escala definida'}</b>${hoj.feriado ? `<small>Feriado: ${esc(hoj.feriado)}</small>` : ''}</div>
+        <div class="mn-nav"><button type="button" class="btn sm" data-m="${pv}" ${pv ? '' : 'disabled'} aria-label="Mês anterior">‹</button><b>${nomeMes(ym)}</b><button type="button" class="btn sm" data-m="${nx}" ${podeNx ? '' : 'disabled'} aria-label="Próximo mês">›</button></div>
+        <div class="mn-res"><span><b>${n('T')}</b> dias de trabalho</span><span><b>${n('F')}</b> folgas</span>${n('FER') ? `<span><b>${n('FER')}</b> de férias</span>` : ''}</div>
+        <div class="mn-l">${DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)).map(x => linha(x[0], x[1])).join('')}</div>
+        <p class="hint" style="text-align:center;margin:14px 0 4px">A escala pode mudar. Abra este link sempre que precisar conferir.<br>Dúvidas? Fale com seu supervisor.</p></div></div>`;
+    root.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => { if (b.dataset.m) { ym = b.dataset.m; desenha(); window.scrollTo(0, 0); } }; });
+  };
+  desenha();
+}
+
 /* ================= início ================= */
 (async function iniciar() {
+  const lk = new URLSearchParams(location.search).get('e');
+  if (lk) { document.title = 'Minha escala · Revalle'; return telaMinha(lk); }
   const t = ls.get('tk');
   if (t) { S.token = t; try { await carregar(); return; } catch (e) { S.token = null; ls.set('tk', null); } }
   telaLogin();
