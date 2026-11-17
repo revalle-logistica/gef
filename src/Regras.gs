@@ -134,12 +134,12 @@ function semanaModelo(folga2, ent, sai, int) {
   return dias;
 }
 
-/* ---------------- visões (mesma regra do QLP) ----------------
- * Centro de custo "Armazém…"  → Armazém, agrupado por turno (Turno/Tipo = T1, T2, T3 ou T1/T2…)
- * Centro de custo "Entrega…"  → Turno/Tipo começando com "Puxador" vai para Puxadores
- *                               (residente quando o tipo diz "residente" e há ponto de apoio);
- *                               os demais ficam em Entrega, agrupados por ponto de apoio (vazio = Base)
- * Qualquer outro centro de custo → Administrativo, numa lista só
+/* ---------------- visões ----------------
+ * Vêm dos campos preenchidos na tela Cadastro (parâmetros), não do relatório do DP:
+ *  Armazém → Turno (Turno 1/2/3…); turno "Administrativo" vai para a lista Administrativo
+ *  Entrega → papel pelo cargo: motorista, ajudante ou administrativo (qualquer outro cargo)
+ *            motorista "Puxador" vai para Puxadores (da sede ou residente do ponto)
+ *            motoristas de rota e ajudantes ficam em Entrega, por Sede / ponto de apoio
  */
 var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo']];
 var TURNOS_ORDEM = ['T1', 'T1/T2', 'T2', 'T2/T3', 'T3', 'T3/T1'];
@@ -148,20 +148,47 @@ function turnoTag(t) {
   var x = String(t || '').toUpperCase().replace(/\s+/g, '').replace(/-/g, '/');
   return /^T[123](\/T[123])?$/.test(x) ? x : '';
 }
-function visaoColaborador(c) {
-  var s = normTxt(c.setor), tt = normTxt(c.turno), lot = String(c.lotacao || '').trim() || 'Base';
-  var f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f), base = normTxt(lot) === 'base';
-  var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
-  if (s.indexOf('armaz') === 0) {
-    var t = turnoTag(c.turno), i = TURNOS_ORDEM.indexOf(t);
-    return { area: 'arm', areaNome: 'Armazém', grupo: t ? 'Turno ' + t : 'Sem turno informado', ordem: '2' + (t ? ('0' + i).slice(-2) : '99'), funcao: f, fordem: fo };
-  }
-  if (s.indexOf('entrega') === 0) {
-    if (/^pux/.test(tt)) {
-      var res = /resid/.test(tt) && !base;
-      return { area: 'pux', areaNome: 'Puxadores', grupo: res ? 'Residentes · ' + lot : 'Puxadores da base', ordem: '1' + (res ? '1' + normTxt(lot) : '0'), funcao: f, fordem: fo };
-    }
-    return { area: 'entrega', areaNome: 'Entrega', grupo: base ? 'Base' : lot, ordem: '0' + (base ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
-  }
-  return { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+function areaSetor(setor) { var s = normTxt(setor); return s.indexOf('armaz') === 0 ? 'arm' : s.indexOf('entrega') === 0 ? 'ent' : 'outro'; }
+/** Papel na entrega pelo cargo: 'mot' (motorista, exceto carreteiro), 'aj' (ajudante de entrega) ou 'adm'. */
+function papelEntrega(cargo) {
+  var n = normTxt(cargo);
+  if (/^motorista/.test(n) && n.indexOf('carreteiro') < 0) return 'mot';
+  if (/^(ajudante|auxiliar) de entrega/.test(n)) return 'aj';
+  return 'adm';
 }
+function ehSede(lot) { var n = normTxt(lot); return !n || n === 'sede' || n === 'base'; }
+/** O que falta preencher no cadastro do colaborador (lista vazia = completo). */
+function pendenciasCadastro(c) {
+  var p = [], a = areaSetor(c.setor);
+  if (a === 'arm' && !String(c.turno || '').trim()) p.push('turno');
+  if (a === 'ent') {
+    var pe = papelEntrega(c.funcao);
+    if (pe !== 'adm' && !String(c.lotacao || '').trim()) p.push('sede/ponto');
+    if (pe === 'mot' && !String(c.tipoMot || '').trim()) p.push('rota/puxador');
+  }
+  if (!String(c.supervisor || '').trim()) p.push('supervisor');
+  return p;
+}
+function visaoColaborador(c) {
+  var a = areaSetor(c.setor), f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f);
+  var lot = String(c.lotacao || '').trim(), sede = ehSede(lot);
+  var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
+  var adm = { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+  if (a === 'arm') {
+    var t = String(c.turno || '').trim();
+    if (normTxt(t) === 'administrativo') return adm;
+    return { area: 'arm', areaNome: 'Armazém', grupo: t || 'Turno não informado', ordem: '2' + (t ? normTxt(t) : '~'), funcao: f, fordem: fo };
+  }
+  if (a === 'ent') {
+    var pe = papelEntrega(f);
+    if (pe === 'adm') return adm;
+    if (pe === 'mot' && normTxt(c.tipoMot) === 'puxador')
+      return { area: 'pux', areaNome: 'Puxadores', grupo: sede ? 'Puxadores da sede' : 'Residentes · ' + lot, ordem: '1' + (sede ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
+    var g = !lot ? 'Sede/ponto não informado' : sede ? 'Sede' : lot;
+    return { area: 'entrega', areaNome: 'Entrega', grupo: g, ordem: '0' + (!lot ? '9' : sede ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
+  }
+  return adm;
+}
+
+/** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
+function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }

@@ -71,3 +71,14 @@ test('vigência antes de 15/12/2026 gera alerta', () => {
   const r = validarEscala({ vigencia: '2026-12-01', dias: semanaModelo(5, '07:00', '16:24', 60) }, { cfg });
   assert.strictEqual(r.status, 'ALERTA');
 });
+
+test('visões pelos campos de cadastro', () => {
+  const { visaoColaborador: v, pendenciasCadastro: p } = ctxVm;
+  assert.strictEqual(v({ setor: 'Armazém', funcao: 'CONFERENTE JR', turno: 'Turno 2' }).grupo, 'Turno 2');
+  assert.strictEqual(v({ setor: 'Armazém', funcao: 'ASSISTENTE DE LOGISTICA JR', turno: 'Administrativo' }).area, 'adm');
+  assert.strictEqual(v({ setor: 'Entrega', funcao: 'MOTORISTA', lotacao: 'Sede', tipoMot: 'Puxador' }).grupo, 'Puxadores da sede');
+  assert.strictEqual(v({ setor: 'Entrega', funcao: 'MOTORISTA', lotacao: 'Irará', tipoMot: 'Puxador' }).grupo, 'Residentes · Irará');
+  assert.strictEqual(v({ setor: 'Entrega', funcao: 'AJUDANTE DE ENTREGA', lotacao: 'Ouricangas' }).grupo, 'Ouricangas');
+  assert.strictEqual(v({ setor: 'Entrega', funcao: 'SUPERVISOR DE DISTRIBUIÇÃO JR I' }).area, 'adm');
+  assert.deepStrictEqual([...p({ setor: 'Entrega', funcao: 'MOTORISTA' })], ['sede/ponto', 'rota/puxador', 'supervisor']);
+});

@@ -48,9 +48,9 @@ function fichaPdf_(c, e, cfg, ultima) {
   return '<div class="pg' + (ultima ? ' ult' : '') + '">' +
     '<div class="top"><span>Escala 5x2 · EC 141/2026</span><b>' + h_(cfg.EMPRESA) + ' · Escala de trabalho</b></div>' +
     '<table class="inf" style="margin-top:10px">' +
-    '<tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(c.matricula) + '</td></tr>' +
+    '<tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
     '<tr><td class="k">Função</td><td>' + h_(c.funcao) + (tele ? ' (teleatendimento)' : '') + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">Setor</td><td>' + h_(c.setor) + '</td></tr>' +
-    '<tr><td class="k">Lotação</td><td>' + h_(c.lotacao || 'Base') + '</td><td class="k">Turno</td><td>' + h_(c.turno || '—') + '</td><td class="k">Vigência a partir de</td><td><b>' + dataBr_(e && e.vigencia) + '</b></td></tr>' +
+    '<tr><td class="k">' + (areaSetor(c.setor) === 'arm' ? 'Turno' : 'Sede / ponto') + '</td><td>' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td><td class="k">Departamento</td><td>' + h_(c.departamento || '—') + '</td><td class="k">Vigência a partir de</td><td><b>' + dataBr_(e && e.vigencia) + '</b></td></tr>' +
     '</table>' + corpo +
     '<p class="leg">Escala 5x2: 5 dias de trabalho e 2 folgas por semana, com domingo de folga. Jornada conforme a Emenda Constitucional nº 141/2026 e a CLT. ' +
     (e ? 'Última alteração por ' + h_(e.atualizadoPor) + ' em ' + h_(dataHoraBr_(e.atualizadoEm)) + '.' : '') + '</p>' +
@@ -75,7 +75,7 @@ function quadroPdf_(cols, esc, cfg) {
     grupos[g].forEach(function (c) {
       const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
-      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(c.matricula) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(c.lotacao || 'Base') + '</td>' +
+      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         DIAS_CURTO.map(function (_, i) {
           if (!e) return '<td>—</td>';
           const d = dias[i] || { tipo: 'F' };
@@ -85,7 +85,7 @@ function quadroPdf_(cols, esc, cfg) {
     });
   });
   return '<div class="pg ult"><div class="top"><span>Gerado em ' + agora_().split(' ')[0].split('-').reverse().join('/') + '</span><b>' + h_(cfg.EMPRESA) + ' · Quadro de escalas 5x2</b></div>' +
-    '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Lotação</th>' +
+    '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Turno / sede-ponto</th>' +
     DIAS_CURTO.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '<th>Total</th><th>Status</th></tr>' + rows + '</table></div>';
 }
 
@@ -106,7 +106,7 @@ function exportPdf_(u, d) {
   const pdf = Utilities.newBlob(html, 'text/html', 'escala.html').getAs('application/pdf');
   const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const nome = cols.length === 1 && d.modo !== 'quadro'
-    ? 'Escala_' + slug_(cols[0].matricula) + '_' + slug_(cols[0].nome) + '.pdf'
+    ? 'Escala_' + slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) + '.pdf'
     : 'Escalas_5x2_' + (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab_' + hoje + '.pdf';
   log_(u, cols.length === 1 ? cols[0].matricula : '', 'exportou PDF', (d.modo || 'fichas') + ' · ' + cols.length);
   return { nome: nome, base64: Utilities.base64Encode(pdf.getBytes()) };

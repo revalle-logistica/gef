@@ -100,11 +100,11 @@ function aprovarUsuario_(adm, d) {
   return comLock_(function () {
     const u = achaUsuario_(d.id);
     const perfil = d.perfil === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
-    const rv = (d.revendas || []).map(String), st = (d.setores || []).map(String);
-    if (perfil === 'SUPERVISOR' && (!rv.length || !st.length)) throw new Error('Escolha ao menos uma revenda e um setor para o supervisor.');
+    const rv = (d.revendas || []).map(String);
+    if (perfil === 'SUPERVISOR' && !rv.length) throw new Error('Escolha ao menos uma revenda para o supervisor.');
     u.perfil = perfil;
     u.revendas = perfil === 'ADMIN' ? '*' : rv.join(',');
-    u.setores = perfil === 'ADMIN' ? '*' : st.join(',');
+    u.setores = '*';
     const novo = u.status === 'PENDENTE';
     if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
     gravarLinha_('Usuarios', u);
@@ -126,7 +126,7 @@ function avisarAprovacao_(u, adm) {
     '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
     '<p>Seu acesso ao sistema de escalas 5x2 foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
     '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
-    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revendas: <b>' + h(lst(u.revendas)) + '</b><br>Setores: <b>' + h(lst(u.setores)) + '</b>') + '</p>' +
+    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir a Escala 5x2</a></p>' +
     '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
   try {

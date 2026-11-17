@@ -9,7 +9,7 @@
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
-  Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm'],
+  Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
@@ -17,6 +17,9 @@ const ABAS = {
 const CFG_PADRAO = [
   ['EMPRESA', 'Revalle', 'Nome no cabeçalho dos PDFs'],
   ['LINK_SISTEMA', 'https://revalle-logistica.github.io/escala-5x2/', 'Link enviado no e-mail de aprovação'],
+  ['TURNOS_ARMAZEM', 'Turno 1,Turno 2,Turno 3,Administrativo', 'Opções de turno do armazém (separadas por vírgula)'],
+  ['TIPOS_MOTORISTA', 'Rota,Puxador', 'Opções de tipo de motorista (separadas por vírgula)'],
+  ['PONTOS_APOIO', '{}', 'Pontos de apoio por revenda (editados na tela Cadastro)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10', 'Horas diárias máximas na transição (8h + até 2h distribuídas na semana)'],
@@ -58,7 +61,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, visaoColaborador].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -80,6 +83,8 @@ function rotas_() {
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
+  classificar: { f: classificar_, admin: true },
+  converterPlanilha: { f: converterPlanilha_, admin: true },
   salvarConfig: { f: salvarConfig_, admin: true }
   } };
 }
@@ -173,10 +178,10 @@ function comLock_(fn) {
 }
 function lista_(s) { return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(String); }
 function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
+/** Administrador vê todos; supervisor vê só os colaboradores vinculados a ele na tela Cadastro. */
 function podeVer_(u, c) {
   if (u.perfil === 'ADMIN') return true;
-  const rv = lista_(u.revendas), st = lista_(u.setores);
-  return (rv.indexOf('*') >= 0 || rv.indexOf(c.revenda) >= 0) && (st.indexOf('*') >= 0 || st.indexOf(c.setor) >= 0);
+  return !!c.supervisor && c.supervisor === u.id;
 }
 function parse_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
 
@@ -190,7 +195,8 @@ function carregar_(u) {
     const e = esc[c.matricula];
     return {
       matricula: c.matricula, nome: c.nome, funcao: c.funcao, revenda: c.revenda, setor: c.setor,
-      lotacao: c.lotacao || 'Base', turno: c.turno, situacao: c.situacao, tele: c.teleatendimento === 'S',
+      lotacao: c.lotacao, turno: c.turno, tipoMot: c.tipoMot, supervisor: c.supervisor, departamento: c.departamento,
+      situacao: c.situacao, tele: c.teleatendimento === 'S',
       escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), por: e.atualizadoPor, em: e.atualizadoEm } : null
     };
   });
@@ -199,6 +205,9 @@ function carregar_(u) {
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
     r.todosSetores = uniq_(todos.map(function (c) { return c.setor; }));
+    r.supervisores = ler_('Usuarios').filter(function (x) { return x.status === 'ATIVO'; })
+      .map(function (x) { return { id: x.id, nome: x.nome, perfil: x.perfil, revendas: lista_(x.revendas) }; })
+      .sort(function (a, b) { return a.nome.localeCompare(b.nome); });
   }
   return r;
 }

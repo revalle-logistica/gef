@@ -12,7 +12,7 @@
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
-  Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm'],
+  Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
@@ -20,6 +20,9 @@ const ABAS = {
 const CFG_PADRAO = [
   ['EMPRESA', 'Revalle', 'Nome no cabeçalho dos PDFs'],
   ['LINK_SISTEMA', 'https://revalle-logistica.github.io/escala-5x2/', 'Link enviado no e-mail de aprovação'],
+  ['TURNOS_ARMAZEM', 'Turno 1,Turno 2,Turno 3,Administrativo', 'Opções de turno do armazém (separadas por vírgula)'],
+  ['TIPOS_MOTORISTA', 'Rota,Puxador', 'Opções de tipo de motorista (separadas por vírgula)'],
+  ['PONTOS_APOIO', '{}', 'Pontos de apoio por revenda (editados na tela Cadastro)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10', 'Horas diárias máximas na transição (8h + até 2h distribuídas na semana)'],
@@ -61,7 +64,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, visaoColaborador].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -83,6 +86,8 @@ function rotas_() {
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
   importar: { f: importar_, admin: true },
+  classificar: { f: classificar_, admin: true },
+  converterPlanilha: { f: converterPlanilha_, admin: true },
   salvarConfig: { f: salvarConfig_, admin: true }
   } };
 }
@@ -176,10 +181,10 @@ function comLock_(fn) {
 }
 function lista_(s) { return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(String); }
 function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
+/** Administrador vê todos; supervisor vê só os colaboradores vinculados a ele na tela Cadastro. */
 function podeVer_(u, c) {
   if (u.perfil === 'ADMIN') return true;
-  const rv = lista_(u.revendas), st = lista_(u.setores);
-  return (rv.indexOf('*') >= 0 || rv.indexOf(c.revenda) >= 0) && (st.indexOf('*') >= 0 || st.indexOf(c.setor) >= 0);
+  return !!c.supervisor && c.supervisor === u.id;
 }
 function parse_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
 
@@ -193,7 +198,8 @@ function carregar_(u) {
     const e = esc[c.matricula];
     return {
       matricula: c.matricula, nome: c.nome, funcao: c.funcao, revenda: c.revenda, setor: c.setor,
-      lotacao: c.lotacao || 'Base', turno: c.turno, situacao: c.situacao, tele: c.teleatendimento === 'S',
+      lotacao: c.lotacao, turno: c.turno, tipoMot: c.tipoMot, supervisor: c.supervisor, departamento: c.departamento,
+      situacao: c.situacao, tele: c.teleatendimento === 'S',
       escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), por: e.atualizadoPor, em: e.atualizadoEm } : null
     };
   });
@@ -202,6 +208,9 @@ function carregar_(u) {
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
     r.todosSetores = uniq_(todos.map(function (c) { return c.setor; }));
+    r.supervisores = ler_('Usuarios').filter(function (x) { return x.status === 'ATIVO'; })
+      .map(function (x) { return { id: x.id, nome: x.nome, perfil: x.perfil, revendas: lista_(x.revendas) }; })
+      .sort(function (a, b) { return a.nome.localeCompare(b.nome); });
   }
   return r;
 }
@@ -310,11 +319,11 @@ function aprovarUsuario_(adm, d) {
   return comLock_(function () {
     const u = achaUsuario_(d.id);
     const perfil = d.perfil === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
-    const rv = (d.revendas || []).map(String), st = (d.setores || []).map(String);
-    if (perfil === 'SUPERVISOR' && (!rv.length || !st.length)) throw new Error('Escolha ao menos uma revenda e um setor para o supervisor.');
+    const rv = (d.revendas || []).map(String);
+    if (perfil === 'SUPERVISOR' && !rv.length) throw new Error('Escolha ao menos uma revenda para o supervisor.');
     u.perfil = perfil;
     u.revendas = perfil === 'ADMIN' ? '*' : rv.join(',');
-    u.setores = perfil === 'ADMIN' ? '*' : st.join(',');
+    u.setores = '*';
     const novo = u.status === 'PENDENTE';
     if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
     gravarLinha_('Usuarios', u);
@@ -336,7 +345,7 @@ function avisarAprovacao_(u, adm) {
     '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
     '<p>Seu acesso ao sistema de escalas 5x2 foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
     '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
-    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revendas: <b>' + h(lst(u.revendas)) + '</b><br>Setores: <b>' + h(lst(u.setores)) + '</b>') + '</p>' +
+    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir a Escala 5x2</a></p>' +
     '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
   try {
@@ -460,9 +469,10 @@ function setTele_(u, d) {
 }
 
 /**
- * Importa a planilha do DP já lida no navegador.
- * d.rows = [{matricula, nome, funcao, revenda, setor, lotacao, turno, situacao}]
- * Colaboradores das revendas importadas que não vierem no arquivo ficam inativos.
+ * Importa o relatório do DP já lido no navegador.
+ * d.rows = [{matricula, nome, funcao, revenda, setor, departamento, situacao, admissao}]
+ * Os campos de cadastro (turno, sede/ponto, rota/puxador, supervisor) e a marcação de teleatendimento
+ * de quem já existia são mantidos. Quem sumir da revenda/setor importado fica inativo.
  */
 function importar_(u, d) {
   const rows = d.rows || [];
@@ -470,7 +480,8 @@ function importar_(u, d) {
   return comLock_(function () {
     const atual = ler_('Colaboradores'), mapa = {};
     atual.forEach(function (c) { mapa[c.matricula] = c; });
-    const revs = uniq_(rows.map(function (r) { return String(r.revenda || '').trim(); }));
+    const chave = function (c) { return c.revenda + '|' + areaSetor(c.setor); };
+    const grupos = uniq_(rows.map(function (r) { return String(r.revenda || '').trim() + '|' + areaSetor(r.setor); }));
     const vistos = {}, res = { novos: 0, atualizados: 0, inativados: 0, desligados: 0 };
     const quando = agora_();
     rows.forEach(function (r) {
@@ -478,15 +489,16 @@ function importar_(u, d) {
       if (!m || !String(r.nome || '').trim()) return;
       const deslig = /demit|deslig|rescis/i.test(String(r.situacao || ''));
       if (deslig) res.desligados++;
-      const c = mapa[m] || { matricula: m, teleatendimento: 'N' };
+      const c = mapa[m] || { matricula: m, teleatendimento: 'N', lotacao: '', turno: '', tipoMot: '', supervisor: '' };
       if (!mapa[m]) { if (!deslig) res.novos++; } else res.atualizados++;
       c.nome = String(r.nome).trim();
       c.funcao = String(r.funcao || '').trim();
       c.revenda = String(r.revenda || '').trim();
       c.setor = String(r.setor || '').trim();
-      c.lotacao = String(r.lotacao || '').trim() || 'Base';
-      c.turno = String(r.turno || '').trim();
+      c.departamento = String(r.departamento || '').trim();
+      c.admissao = String(r.admissao || '').trim();
       c.situacao = String(r.situacao || '').trim();
+      ['lotacao', 'turno'].forEach(function (k) { if (r[k] && !c[k]) c[k] = String(r[k]).trim(); }); // só preenche se ainda vazio
       c.ativo = deslig ? 'N' : 'S';
       c.atualizadoEm = quando;
       mapa[m] = c;
@@ -494,15 +506,55 @@ function importar_(u, d) {
     });
     Object.keys(mapa).forEach(function (m) {
       const c = mapa[m];
-      if (!vistos[m] && revs.indexOf(c.revenda) >= 0 && c.ativo !== 'N') { c.ativo = 'N'; c.atualizadoEm = quando; res.inativados++; }
+      if (!vistos[m] && grupos.indexOf(chave(c)) >= 0 && c.ativo !== 'N') { c.ativo = 'N'; c.atualizadoEm = quando; res.inativados++; }
     });
     const tudo = Object.keys(mapa).map(function (k) { return mapa[k]; })
-      .sort(function (a, b) { return (a.revenda + a.nome).localeCompare(b.revenda + b.nome); });
+      .sort(function (a, b) { return (a.revenda + a.setor + a.nome).localeCompare(b.revenda + b.setor + b.nome); });
     gravarTudo_('Colaboradores', tudo);
-    log_(u, '', 'importou planilha do DP', revs.join(', ') + ' · ' + JSON.stringify(res));
-    res.revendas = revs;
+    log_(u, '', 'importou relatório do DP', grupos.join(', ') + ' · ' + JSON.stringify(res));
+    res.revendas = uniq_(rows.map(function (r) { return r.revenda; }));
     return res;
   });
+}
+
+/** Preenche os campos de cadastro em lote. d = {matriculas:[...], campos:{turno?, lotacao?, tipoMot?, supervisor?}} */
+function classificar_(u, d) {
+  const mats = (d.matriculas || []).map(String), campos = d.campos || {};
+  const ok = ['turno', 'lotacao', 'tipoMot', 'supervisor'].filter(function (k) { return Object.prototype.hasOwnProperty.call(campos, k); });
+  if (!mats.length || !ok.length) throw new Error('Nada para salvar.');
+  if (campos.supervisor) {
+    const s = ler_('Usuarios').filter(function (x) { return x.id === campos.supervisor && x.status === 'ATIVO'; })[0];
+    if (!s) throw new Error('Supervisor não encontrado ou sem acesso ativo.');
+  }
+  return comLock_(function () {
+    const todos = ler_('Colaboradores');
+    let n = 0;
+    todos.forEach(function (c) {
+      if (mats.indexOf(c.matricula) < 0) return;
+      ok.forEach(function (k) { c[k] = String(campos[k] == null ? '' : campos[k]).trim(); });
+      n++;
+    });
+    gravarTudo_('Colaboradores', todos);
+    log_(u, mats.length === 1 ? mats[0] : '', 'cadastro em lote', n + ' colaboradores · ' + JSON.stringify(campos));
+    return { atualizados: n };
+  });
+}
+
+/**
+ * Converte um .xls/.xlsx que o navegador não conseguiu ler (o relatório do sistema de folha sai num .xls
+ * que alguns leitores não abrem). Usa o conversor do Google Drive e devolve as células como texto.
+ * Requer o serviço avançado "Drive API" (v3) ativado no projeto.
+ */
+function converterPlanilha_(u, d) {
+  if (!d.base64) throw new Error('Arquivo vazio.');
+  const blob = Utilities.newBlob(Utilities.base64Decode(d.base64), d.tipo || 'application/vnd.ms-excel', d.nome || 'planilha.xls');
+  const f = Drive.Files.create({ name: 'tmp-escala-5x2-' + Date.now(), mimeType: 'application/vnd.google-apps.spreadsheet' }, blob);
+  try {
+    const ss = SpreadsheetApp.openById(f.id);
+    return ss.getSheets().map(function (sh) { return { nome: sh.getName(), valores: sh.getDataRange().getDisplayValues() }; });
+  } finally {
+    try { Drive.Files.remove(f.id); } catch (e) { DriveApp.getFileById(f.id).setTrashed(true); }
+  }
 }
 
 function salvarConfig_(u, d) {
@@ -571,9 +623,9 @@ function fichaPdf_(c, e, cfg, ultima) {
   return '<div class="pg' + (ultima ? ' ult' : '') + '">' +
     '<div class="top"><span>Escala 5x2 · EC 141/2026</span><b>' + h_(cfg.EMPRESA) + ' · Escala de trabalho</b></div>' +
     '<table class="inf" style="margin-top:10px">' +
-    '<tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(c.matricula) + '</td></tr>' +
+    '<tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
     '<tr><td class="k">Função</td><td>' + h_(c.funcao) + (tele ? ' (teleatendimento)' : '') + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">Setor</td><td>' + h_(c.setor) + '</td></tr>' +
-    '<tr><td class="k">Lotação</td><td>' + h_(c.lotacao || 'Base') + '</td><td class="k">Turno</td><td>' + h_(c.turno || '—') + '</td><td class="k">Vigência a partir de</td><td><b>' + dataBr_(e && e.vigencia) + '</b></td></tr>' +
+    '<tr><td class="k">' + (areaSetor(c.setor) === 'arm' ? 'Turno' : 'Sede / ponto') + '</td><td>' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td><td class="k">Departamento</td><td>' + h_(c.departamento || '—') + '</td><td class="k">Vigência a partir de</td><td><b>' + dataBr_(e && e.vigencia) + '</b></td></tr>' +
     '</table>' + corpo +
     '<p class="leg">Escala 5x2: 5 dias de trabalho e 2 folgas por semana, com domingo de folga. Jornada conforme a Emenda Constitucional nº 141/2026 e a CLT. ' +
     (e ? 'Última alteração por ' + h_(e.atualizadoPor) + ' em ' + h_(dataHoraBr_(e.atualizadoEm)) + '.' : '') + '</p>' +
@@ -598,7 +650,7 @@ function quadroPdf_(cols, esc, cfg) {
     grupos[g].forEach(function (c) {
       const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
-      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(c.matricula) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(c.lotacao || 'Base') + '</td>' +
+      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         DIAS_CURTO.map(function (_, i) {
           if (!e) return '<td>—</td>';
           const d = dias[i] || { tipo: 'F' };
@@ -608,7 +660,7 @@ function quadroPdf_(cols, esc, cfg) {
     });
   });
   return '<div class="pg ult"><div class="top"><span>Gerado em ' + agora_().split(' ')[0].split('-').reverse().join('/') + '</span><b>' + h_(cfg.EMPRESA) + ' · Quadro de escalas 5x2</b></div>' +
-    '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Lotação</th>' +
+    '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Turno / sede-ponto</th>' +
     DIAS_CURTO.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '<th>Total</th><th>Status</th></tr>' + rows + '</table></div>';
 }
 
@@ -629,7 +681,7 @@ function exportPdf_(u, d) {
   const pdf = Utilities.newBlob(html, 'text/html', 'escala.html').getAs('application/pdf');
   const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const nome = cols.length === 1 && d.modo !== 'quadro'
-    ? 'Escala_' + slug_(cols[0].matricula) + '_' + slug_(cols[0].nome) + '.pdf'
+    ? 'Escala_' + slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) + '.pdf'
     : 'Escalas_5x2_' + (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab_' + hoje + '.pdf';
   log_(u, cols.length === 1 ? cols[0].matricula : '', 'exportou PDF', (d.modo || 'fichas') + ' · ' + cols.length);
   return { nome: nome, base64: Utilities.base64Encode(pdf.getBytes()) };
@@ -773,12 +825,12 @@ function semanaModelo(folga2, ent, sai, int) {
   return dias;
 }
 
-/* ---------------- visões (mesma regra do QLP) ----------------
- * Centro de custo "Armazém…"  → Armazém, agrupado por turno (Turno/Tipo = T1, T2, T3 ou T1/T2…)
- * Centro de custo "Entrega…"  → Turno/Tipo começando com "Puxador" vai para Puxadores
- *                               (residente quando o tipo diz "residente" e há ponto de apoio);
- *                               os demais ficam em Entrega, agrupados por ponto de apoio (vazio = Base)
- * Qualquer outro centro de custo → Administrativo, numa lista só
+/* ---------------- visões ----------------
+ * Vêm dos campos preenchidos na tela Cadastro (parâmetros), não do relatório do DP:
+ *  Armazém → Turno (Turno 1/2/3…); turno "Administrativo" vai para a lista Administrativo
+ *  Entrega → papel pelo cargo: motorista, ajudante ou administrativo (qualquer outro cargo)
+ *            motorista "Puxador" vai para Puxadores (da sede ou residente do ponto)
+ *            motoristas de rota e ajudantes ficam em Entrega, por Sede / ponto de apoio
  */
 var VISOES = [['entrega', 'Entrega'], ['pux', 'Puxadores'], ['arm', 'Armazém'], ['adm', 'Administrativo']];
 var TURNOS_ORDEM = ['T1', 'T1/T2', 'T2', 'T2/T3', 'T3', 'T3/T1'];
@@ -787,20 +839,47 @@ function turnoTag(t) {
   var x = String(t || '').toUpperCase().replace(/\s+/g, '').replace(/-/g, '/');
   return /^T[123](\/T[123])?$/.test(x) ? x : '';
 }
-function visaoColaborador(c) {
-  var s = normTxt(c.setor), tt = normTxt(c.turno), lot = String(c.lotacao || '').trim() || 'Base';
-  var f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f), base = normTxt(lot) === 'base';
-  var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
-  if (s.indexOf('armaz') === 0) {
-    var t = turnoTag(c.turno), i = TURNOS_ORDEM.indexOf(t);
-    return { area: 'arm', areaNome: 'Armazém', grupo: t ? 'Turno ' + t : 'Sem turno informado', ordem: '2' + (t ? ('0' + i).slice(-2) : '99'), funcao: f, fordem: fo };
-  }
-  if (s.indexOf('entrega') === 0) {
-    if (/^pux/.test(tt)) {
-      var res = /resid/.test(tt) && !base;
-      return { area: 'pux', areaNome: 'Puxadores', grupo: res ? 'Residentes · ' + lot : 'Puxadores da base', ordem: '1' + (res ? '1' + normTxt(lot) : '0'), funcao: f, fordem: fo };
-    }
-    return { area: 'entrega', areaNome: 'Entrega', grupo: base ? 'Base' : lot, ordem: '0' + (base ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
-  }
-  return { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+function areaSetor(setor) { var s = normTxt(setor); return s.indexOf('armaz') === 0 ? 'arm' : s.indexOf('entrega') === 0 ? 'ent' : 'outro'; }
+/** Papel na entrega pelo cargo: 'mot' (motorista, exceto carreteiro), 'aj' (ajudante de entrega) ou 'adm'. */
+function papelEntrega(cargo) {
+  var n = normTxt(cargo);
+  if (/^motorista/.test(n) && n.indexOf('carreteiro') < 0) return 'mot';
+  if (/^(ajudante|auxiliar) de entrega/.test(n)) return 'aj';
+  return 'adm';
 }
+function ehSede(lot) { var n = normTxt(lot); return !n || n === 'sede' || n === 'base'; }
+/** O que falta preencher no cadastro do colaborador (lista vazia = completo). */
+function pendenciasCadastro(c) {
+  var p = [], a = areaSetor(c.setor);
+  if (a === 'arm' && !String(c.turno || '').trim()) p.push('turno');
+  if (a === 'ent') {
+    var pe = papelEntrega(c.funcao);
+    if (pe !== 'adm' && !String(c.lotacao || '').trim()) p.push('sede/ponto');
+    if (pe === 'mot' && !String(c.tipoMot || '').trim()) p.push('rota/puxador');
+  }
+  if (!String(c.supervisor || '').trim()) p.push('supervisor');
+  return p;
+}
+function visaoColaborador(c) {
+  var a = areaSetor(c.setor), f = String(c.funcao || '').trim() || 'Sem função', fn = normTxt(f);
+  var lot = String(c.lotacao || '').trim(), sede = ehSede(lot);
+  var fo = (/^motorista/.test(fn) ? '0' : /^(ajudante|auxiliar)/.test(fn) ? '1' : /^conferente/.test(fn) ? '2' : '3') + fn;
+  var adm = { area: 'adm', areaNome: 'Administrativo', grupo: 'Administrativo', ordem: '3', funcao: f, fordem: fo };
+  if (a === 'arm') {
+    var t = String(c.turno || '').trim();
+    if (normTxt(t) === 'administrativo') return adm;
+    return { area: 'arm', areaNome: 'Armazém', grupo: t || 'Turno não informado', ordem: '2' + (t ? normTxt(t) : '~'), funcao: f, fordem: fo };
+  }
+  if (a === 'ent') {
+    var pe = papelEntrega(f);
+    if (pe === 'adm') return adm;
+    if (pe === 'mot' && normTxt(c.tipoMot) === 'puxador')
+      return { area: 'pux', areaNome: 'Puxadores', grupo: sede ? 'Puxadores da sede' : 'Residentes · ' + lot, ordem: '1' + (sede ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
+    var g = !lot ? 'Sede/ponto não informado' : sede ? 'Sede' : lot;
+    return { area: 'entrega', areaNome: 'Entrega', grupo: g, ordem: '0' + (!lot ? '9' : sede ? '0' : '1' + normTxt(lot)), funcao: f, fordem: fo };
+  }
+  return adm;
+}
+
+/** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
+function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }

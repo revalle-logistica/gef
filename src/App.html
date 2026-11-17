@@ -4,7 +4,8 @@
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
   f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
-  imp: null, users: null, ed: null, lote: null, editUser: null };
+  imp: null, users: null, ed: null, lote: null, editUser: null, sups: [],
+  cad: { rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() } };
 const $ = s => document.querySelector(s);
 const root = document.getElementById('root'), modal = document.getElementById('modal');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -109,7 +110,7 @@ async function sair() { try { await call('logout'); } catch (e) { /* ok */ } S.t
 async function carregar() {
   const r = await call('carregar');
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
-  S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || [];
+  S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || [];
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
@@ -125,19 +126,19 @@ function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.val =
 function render() {
   const adm = S.user.perfil === 'ADMIN';
   const tabs = [['escalas', 'cal', 'Escalas'], ['painel', 'chart', 'Painel']]
-    .concat(adm ? [['importar', 'up', 'Importar DP'], ['usuarios', 'users', 'Usuários']] : [])
+    .concat(adm ? [['cadastro', 'users', 'Cadastro'], ['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
   root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
     <div class="br"><b>Escala 5x2</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
-    <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}</button>`).join('')}</nav>
+    <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}${k === 'cadastro' && nPendCad() ? `<em>${nPendCad()}</em>` : ''}</button>`).join('')}</nav>
     <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : ''}</span>
       <button class="btn sm" type="button" data-a="senha" title="Trocar senha" aria-label="Trocar senha">${ic('key')}</button>
       <button class="btn sm" type="button" data-a="sair">Sair</button></div></div></header><main id="main"></main>`;
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, painel: vPainel, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+  ({ escalas: vEscalas, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -182,7 +183,7 @@ function vEscalas(m) {
   const revs = uniq(S.cols.map(c => c.revenda));
   if (f.rev && !revs.includes(f.rev)) f.rev = '';
   if (!S.cols.length) {
-    m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'O administrador ainda não liberou colaboradores para o seu acesso.'}</p></div>`;
+    m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você. O administrador faz o vínculo na tela Cadastro.'}</p></div>`;
     return;
   }
   m.innerHTML = `<section class="card">
@@ -256,8 +257,8 @@ function semana(e) {
 function linhaHtml(c) {
   const s = st(c);
   return `<div class="ln"><input type="checkbox" data-sel="${esc(c.matricula)}" ${S.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
-    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}</b><small>Matr. ${esc(c.matricula)} · ${esc(c.revenda)}</small></div>
-    <div class="fn">${esc(c.funcao)}<small>${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div>
+    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
+    <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semana(c.escala)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
     <div><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span></div>
@@ -289,7 +290,7 @@ function linhaEd(i) {
 }
 function desenhaEditor() {
   const { c, e } = S.ed;
-  abrirModal(`<div class="mdl-h"><div><h2>${esc(c.nome)}</h2><small>Matr. ${esc(c.matricula)} · ${esc(c.funcao)} · ${esc(c.revenda)} · ${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+  abrirModal(`<div class="mdl-h"><div><h2>${esc(c.nome)}</h2><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)} · ${esc(c.revenda)} · ${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
     <div class="mdl-b">
       <div class="row2"><label class="f">Vigência a partir de<input type="date" id="ed-vig" value="${esc(e.vigencia)}"></label>
         <label class="sw"><input type="checkbox" id="ed-tele" ${S.ed.tele ? 'checked' : ''}><span><b>Teleatendimento</b><br>Jornada de até ${esc(S.cfg.TELE_DIARIO)}h por dia</span></label></div>
@@ -437,7 +438,7 @@ function linhasDia(e) {
 async function excelIndividual(c, e, tele) {
   const X = await loadXLSX(), v = validarEscala(e, { tele, cfg: S.cfg });
   const A = [[`${S.cfg.EMPRESA} · Escala de trabalho 5x2`], [],
-    ['Colaborador', c.nome], ['Matrícula', c.matricula], ['Função', c.funcao + (tele ? ' (teleatendimento)' : '')], ['Revenda', c.revenda],
+    ['Colaborador', c.nome], ['Matrícula', codigoMatricula(c.matricula)], ['Função', c.funcao + (tele ? ' (teleatendimento)' : '')], ['Revenda', c.revenda],
     ['Setor', c.setor], ['Lotação', c.lotacao], ['Turno', c.turno || ''], ['Vigência a partir de', dataBr(e.vigencia)], [],
     ['Dia', 'Situação', 'Entrada', 'Saída', 'Intervalo (min)', 'Horas'], ...linhasDia(e), [],
     ['Total semanal', minParaHm(v.total), 'Limite', minParaHm(v.limite), 'Status', ROT[v.status]],
@@ -446,17 +447,17 @@ async function excelIndividual(c, e, tele) {
   const ws = X.utils.aoa_to_sheet(A);
   ws['!cols'] = [{ wch: 22 }, { wch: 34 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
   const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Escala');
-  X.writeFile(wb, `Escala_${slug(c.matricula)}_${slug(c.nome)}.xlsx`);
+  X.writeFile(wb, `Escala_${slug(codigoMatricula(c.matricula))}_${slug(c.nome)}.xlsx`);
 }
 async function excelLote(list) {
   if (!list.length) throw new Error('Nenhum colaborador na lista.');
   const X = await loadXLSX();
   list = ordenar(list);
-  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Lotação', 'Turno/Tipo', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA, 'Total semanal', 'Status', 'Pendências'];
+  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Sede / ponto', 'Turno', 'Rota / puxador', 'Supervisor', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA, 'Total semanal', 'Status', 'Pendências'];
   const D0 = H.indexOf('Segunda');
   const R = list.map(c => {
     const e = c.escala, v = c.val;
-    return [c.matricula, c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo, c.setor, c.lotacao, c.turno, c.tele ? 'Sim' : 'Não', e ? dataBr(e.vigencia) : '',
+    return [codigoMatricula(c.matricula), c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo, c.setor, c.lotacao, c.turno, c.tipoMot, nomeSup(c.supervisor), c.tele ? 'Sim' : 'Não', e ? dataBr(e.vigencia) : '',
       ...DIAS_SEMANA.map((_, i) => { if (!e) return ''; const d = e.dias[i] || {}; return d.tipo === 'T' ? `${d.ent}–${d.sai} (${minParaHm(+d.int || 0)})` : 'FOLGA'; }),
       v ? minParaHm(v.total) : '', ROT[st(c)], v ? v.msgs.filter(x => x.nivel !== 'info').map(x => x.texto).join(' | ') : ''];
   });
@@ -464,7 +465,7 @@ async function excelLote(list) {
   ws1['!cols'] = H.map((h, i) => ({ wch: i === 1 ? 32 : i >= D0 && i < D0 + 7 ? 19 : i === H.length - 1 ? 60 : 15 }));
   ws1['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: R.length, c: H.length - 1 } }) };
   const D = [['Matrícula', 'Nome', 'Revenda', 'Visão', 'Grupo', 'Função', 'Dia', 'Situação', 'Entrada', 'Saída', 'Intervalo (min)', 'Horas']];
-  list.forEach(c => { if (c.escala) linhasDia(c.escala).forEach(l => D.push([c.matricula, c.nome, c.revenda, c.vis.areaNome, c.vis.grupo, c.funcao, ...l])); });
+  list.forEach(c => { if (c.escala) linhasDia(c.escala).forEach(l => D.push([codigoMatricula(c.matricula), c.nome, c.revenda, c.vis.areaNome, c.vis.grupo, c.funcao, ...l])); });
   const C = [['Pessoas trabalhando por dia (só quem tem escala)'], ['Revenda', 'Visão', 'Grupo (ponto / turno)', 'Função', 'Pessoas', 'Sem escala', ...DIAS_SEMANA]];
   const m = new Map();
   list.forEach(c => { const k = [c.revenda, c.vis.areaNome, c.vis.grupo, c.vis.funcao].join('|'); if (!m.has(k)) m.set(k, []); m.get(k).push(c); });
@@ -521,92 +522,189 @@ function vPainel(m) {
 }
 function cor(v, mx) { const a = mx && v ? 0.12 + 0.78 * v / mx : 0; return `background:${a ? `rgba(20,70,200,${a.toFixed(2)})` : 'var(--sunk)'};color:${a > 0.5 ? '#fff' : '#0c1a33'}`; }
 
-/* ================= importar planilha do DP ================= */
-const MAPA = {
-  matricula: ['matricula', 'matr', 'matr.', 'codigo', 'cod', 'cod.', 'chapa', 'registro', 'cadastro', 'codigo do empregado', 'cod empregado'],
-  nome: ['nome', 'nome do empregado', 'nome completo', 'colaborador', 'empregado', 'funcionario', 'nome do colaborador'],
-  funcao: ['funcao', 'cargo', 'descricao do cargo', 'descricao cargo', 'nome do cargo'],
-  revenda: ['revenda', 'unidade', 'filial', 'operacao', 'estabelecimento', 'empresa'],
-  setor: ['centro de custo', 'centro de custos', 'descricao centro de custo', 'setor', 'departamento', 'area'],
-  lotacao: ['ponto de apoio', 'base/ponto de apoio', 'lotacao', 'local de trabalho', 'local', 'base'],
-  turno: ['turno/tipo', 'turno', 'escala'],
-  situacao: ['descricao situacao', 'descricao da situacao', 'situacao', 'status']
-};
-const ROTULO = { matricula: 'Matrícula', nome: 'Nome', funcao: 'Função', revenda: 'Revenda', setor: 'Setor / centro de custo', lotacao: 'Base ou ponto de apoio', turno: 'Turno', situacao: 'Situação' };
+/* ================= importar relatório do DP ================= */
+// Relatório "Relação de Empregados" do sistema de folha: blocos por "Departamento: 201 - ARMAZEM - AL".
+// Só Armazém e Entrega entram; a revenda vem da sigla no fim do departamento.
 const COD_REV = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
-function achaColunas(H) {
-  const c = {};
-  Object.keys(MAPA).forEach(k => { for (const a of MAPA[k]) { const i = H.indexOf(a); if (i >= 0 && !Object.values(c).includes(i)) { c[k] = i; break; } } });
-  return c;
-}
+const SIT = { 1: 'Trabalhando', 2: 'Afastado', 3: 'Acidente de trabalho', 4: 'Serviço militar', 5: 'Licença maternidade', 6: 'Doença', 7: 'Licença sem vencimento', 8: 'Demitido', 9: 'Férias', 17: 'Acidente de trabalho', 18: 'Doença', 24: 'Afastado' };
 function revDoArquivo(nome) {
   const up = String(nome).toUpperCase(), mm = up.match(/(?:^|[^A-Z])(AL|SE|PA|RP|JZ|BF|PE|PT|BR)(?:[^A-Z]|$)/);
-  if (mm) return COD_REV[mm[1]];
-  const f = nrm(nome), hit = Object.values(COD_REV).concat(S.allRevs).find(r => f.includes(nrm(r)));
-  return hit || '';
+  return mm ? COD_REV[mm[1]] : '';
+}
+function lerRelacaoDP(A, nomeArq) {
+  const hi = A.slice(0, 40).findIndex(r => { const H = r.map(nrm); return H.includes('codigo') && H.includes('nome') && H.includes('cargo'); });
+  if (hi < 0) return null;
+  // empresa no cabeçalho do relatório (ex.: "REVENDA REVALLE AGRESTE DA BAHIA LTDA" -> AGRESTE)
+  const emp = A.slice(0, hi).flat().map(x => String(x || '')).find(x => /ltda?\b|revenda/i.test(x)) || '';
+  const STOP = ['REVENDA', 'REVALLE', 'LTDA', 'LTD', 'DA', 'DO', 'DE', 'DOS', 'DAS', 'BAHIA', 'S/A', 'SA', 'ME', 'EIRELI'];
+  const empKey = emp.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w && !STOP.includes(w)).join('_');
+  const H = A[hi].map(nrm), cC = H.indexOf('codigo'), cN = H.indexOf('nome'), cG = H.indexOf('cargo'), cS = H.indexOf('situacao');
+  let dep = '', setor = '', rev = '';
+  const rows = [], deps = {}, ign = {};
+  A.slice(hi + 1).forEach(r => {
+    const L = r.map(x => String(x == null ? '' : x).trim());
+    const di = L.findIndex(x => /^departamento:?$/i.test(x));
+    if (di >= 0) {
+      dep = L.slice(di + 1).find(Boolean) || '';
+      const m = dep.match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/);
+      const a = areaSetor(m ? m[1] : dep);
+      setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : '';
+      rev = m ? (COD_REV[m[2].toUpperCase()] || m[2].toUpperCase()) : '';
+      return;
+    }
+    if (!/^\d+$/.test(L[cC] || '') || !L[cN]) return;
+    if (!setor) { const k = dep || 'Sem departamento'; ign[k] = (ign[k] || 0) + 1; return; }
+    let sit = L[cS] || ''; if (/^\d+$/.test(sit)) sit = (SIT[+sit] || 'Situação') + ' (' + sit + ')';
+    rows.push({ matricula: (empKey || (rev || revDoArquivo(nomeArq) || 'X').toUpperCase().replace(/[^A-Z0-9]/g, '')) + '-' + L[cC], nome: L[cN], funcao: L[cG], revenda: rev || revDoArquivo(nomeArq), setor, departamento: dep, situacao: sit, admissao: L.find(x => /^\d{2}\/\d{2}\/\d{4}$/.test(x)) || '' });
+    deps[dep] = (deps[dep] || 0) + 1;
+  });
+  return { rows, deps, ign, empresa: emp.trim() };
+}
+function paraBase64(file) {
+  return new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = () => ko(new Error('Não consegui ler o arquivo.')); fr.readAsDataURL(file); });
 }
 async function lerArquivo(file) {
   const X = await loadXLSX();
-  const wb = X.read(await file.arrayBuffer(), { type: 'array' });
-  const abas = wb.SheetNames.slice().sort((a, b) => (nrm(b) === 'empregados') - (nrm(a) === 'empregados'));
-  for (const aba of abas) {
-    const A = X.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: '', raw: false });
-    const hi = A.slice(0, 25).findIndex(r => { const c = achaColunas(r.map(nrm)); return c.nome !== undefined && (c.matricula !== undefined || c.funcao !== undefined); });
-    if (hi < 0) continue;
-    const c = achaColunas(A[hi].map(nrm));
-    const g = (r, k) => c[k] === undefined ? '' : String(r[c[k]] == null ? '' : r[c[k]]).trim();
-    const rows = A.slice(hi + 1).filter(r => g(r, 'nome')).map(r => {
-      let sit = g(r, 'situacao'); if (sit === '8') sit = 'Demitido (8)';
-      return { matricula: g(r, 'matricula'), nome: g(r, 'nome'), funcao: g(r, 'funcao'), revenda: g(r, 'revenda'), setor: g(r, 'setor'), lotacao: g(r, 'lotacao'), turno: g(r, 'turno'), situacao: sit };
-    });
-    return { nome: file.name, aba, cols: c, rows, revenda: c.revenda === undefined ? revDoArquivo(file.name) : '' };
+  let abas = [], via = '';
+  try { const wb = X.read(await file.arrayBuffer(), { type: 'array' }); abas = wb.SheetNames.map(n => ({ nome: n, valores: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false }) })); } catch (e) { abas = []; }
+  const tenta = () => { for (const a of abas) { const r = lerRelacaoDP(a.valores, file.name); if (r && r.rows.length) return Object.assign({ nome: file.name, aba: a.nome, via }, r); } return null; };
+  let r = tenta();
+  if (!r) { // o .xls do sistema de folha às vezes não abre no navegador: converte pelo Google
+    via = 'convertido pelo Google';
+    abas = await call('converterPlanilha', { nome: file.name, tipo: file.type, base64: await paraBase64(file) });
+    r = tenta();
   }
-  return { nome: file.name, erro: 'Não achei o cabeçalho com Nome e Matrícula (ou Cargo) neste arquivo.' };
+  return r || { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (Código, Nome, Cargo e Departamento).' };
 }
 function vImportar(m) {
-  const I = S.imp;
-  const des = r => /demit|deslig|rescis/i.test(r.situacao);
-  m.innerHTML = `<section class="hero"><h2>Importar a planilha do DP</h2>
-      <p>Use a mesma planilha de empregados do QLP (aba <b>Empregados</b>). Pode enviar um arquivo por revenda ou vários de uma vez. Colaboradores que saírem da planilha de uma revenda ficam inativos; escalas e a marcação de teleatendimento de quem continua são mantidas.</p></section>
+  const I = S.imp, des = r => /demit|deslig|rescis/i.test(r.situacao);
+  m.innerHTML = `<section class="hero"><h2>Importar o relatório do DP</h2>
+      <p>Envie o relatório <b>Relação de Empregados</b> de cada revenda (AL, SE, RP, PA…). Entram só os departamentos de <b>Armazém</b> e <b>Entrega</b>. Quem sair do relatório fica inativo. Turno, sede/ponto, rota/puxador, supervisor e escala de quem continua são mantidos. Depois de importar, complete os campos na aba <b>Cadastro</b>.</p></section>
     <section class="card"><div class="card-b" style="display:grid;gap:12px">
-      <label class="drop" for="imp-file"><b>Escolher arquivos (.xlsx, .xls ou .csv)</b><span class="hint">Colunas lidas: ${Object.values(ROTULO).join(' · ')}</span></label>
-      <input type="file" id="imp-file" accept=".xlsx,.xls,.xlsb,.csv" multiple hidden>
+      <label class="drop" for="imp-file"><b>Escolher arquivos (.xls ou .xlsx)</b><span class="hint">Pode enviar os relatórios de várias revendas de uma vez</span></label>
+      <input type="file" id="imp-file" accept=".xls,.xlsx,.xlsb,.csv" multiple hidden>
       <div id="imp-res"></div></div></section>`;
   m.querySelector('#imp-file').onchange = async e => {
     const files = [...e.target.files]; if (!files.length) return;
-    $('#imp-res').innerHTML = '<p class="hint"><span class="spin"></span> Lendo arquivos…</p>';
-    try { S.imp = { arqs: await Promise.all(files.map(lerArquivo)) }; } catch (err) { toast(esc(err.message), true); S.imp = null; }
+    $('#imp-res').innerHTML = '<p class="hint"><span class="spin"></span> Lendo os relatórios… (arquivos .xls podem levar alguns segundos)</p>';
+    try { S.imp = { arqs: [] }; for (const f of files) S.imp.arqs.push(await lerArquivo(f).catch(err => ({ nome: f.name, erro: err.message }))); } catch (err) { toast(esc(err.message), true); S.imp = null; }
     vImportar(m);
   };
   if (!I) return;
   const ok = I.arqs.filter(a => !a.erro);
-  $('#imp-res').innerHTML = I.arqs.map((a, ix) => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}</div>` : `
-    <div class="card"><div class="card-h"><h3>${esc(a.nome)}</h3><span class="hint">aba ${esc(a.aba)} · ${a.rows.length} linhas · ${a.rows.filter(des).length} desligados (não entram)</span></div>
-    <div class="card-b" style="display:grid;gap:10px">
-      <div class="ck">${Object.keys(ROTULO).map(k => `<label style="cursor:default;${a.cols[k] === undefined ? 'color:var(--al);background:var(--als)' : ''}">${a.cols[k] === undefined ? '✕' : '✓'} ${ROTULO[k]}</label>`).join('')}</div>
-      ${a.cols.matricula === undefined ? '<div class="msgbox er">Sem coluna de matrícula: este arquivo não pode ser importado.</div>' : ''}
-      ${a.cols.revenda === undefined ? `<label class="f">Revenda deste arquivo (a planilha não tem a coluna)<input data-rev="${ix}" value="${esc(a.revenda)}" list="dl-rev" placeholder="Ex.: Alagoinhas"></label>` : `<p class="hint">Revendas no arquivo: <b>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</b></p>`}
-      <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Função</th><th>Setor</th><th>Lotação</th><th>Turno</th><th>Situação</th></tr>
-        ${a.rows.slice(0, 6).map(r => `<tr><td>${esc(r.matricula)}</td><td>${esc(r.nome)}</td><td>${esc(r.funcao)}</td><td>${esc(r.setor)}</td><td>${esc(r.lotacao || 'Base')}</td><td>${esc(r.turno)}</td><td>${esc(r.situacao)}</td></tr>`).join('')}</table></div>
+  const total = ok.reduce((s, a) => s + a.rows.filter(r => !des(r)).length, 0);
+  $('#imp-res').innerHTML = I.arqs.map(a => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}</div>` : `
+    <div class="card"><div class="card-h"><h3>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</h3><span class="hint">${esc(a.empresa || '')} · ${esc(a.nome)}${a.via ? ' · ' + a.via : ''}</span></div>
+    <div class="card-b" style="display:grid;gap:8px">
+      <div class="ck">${Object.entries(a.deps).map(([d, n]) => `<label style="cursor:default">✓ ${esc(d)} <b>${n}</b></label>`).join('')}</div>
+      ${Object.keys(a.ign).length ? `<p class="hint">Fora do foco (não entram): ${Object.entries(a.ign).map(([d, n]) => esc(d) + ' (' + n + ')').join(' · ')}</p>` : ''}
+      ${a.rows.filter(des).length ? `<p class="hint">${a.rows.filter(des).length} demitido(s) no relatório ficam inativos.</p>` : ''}
+      <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Cargo</th><th>Setor</th><th>Situação</th></tr>
+        ${a.rows.slice(0, 5).map(r => `<tr><td>${esc(codigoMatricula(r.matricula))}</td><td>${esc(r.nome)}</td><td>${esc(r.funcao)}</td><td>${esc(r.setor)}</td><td>${esc(r.situacao)}</td></tr>`).join('')}</table></div>
     </div></div>`).join('') +
-    `<datalist id="dl-rev">${uniq(Object.values(COD_REV).concat(S.allRevs)).map(r => `<option value="${esc(r)}">`).join('')}</datalist>` +
-    (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp>${ic('up')}Importar ${ok.reduce((s, a) => s + a.rows.filter(r => !des(r)).length, 0)} colaboradores</button></div>` : '');
-  m.querySelectorAll('[data-rev]').forEach(i => { i.oninput = () => { I.arqs[+i.dataset.rev].revenda = i.value.trim(); }; });
+    (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp>${ic('up')}Importar ${total} colaboradores</button></div>` : '');
   const cx = m.querySelector('[data-cancel]'); if (cx) cx.onclick = () => { S.imp = null; vImportar(m); };
   const bt = m.querySelector('[data-imp]');
   if (bt) bt.onclick = () => ocupado(bt, async () => {
-    const rows = [];
-    for (const a of ok) {
-      if (a.cols.matricula === undefined) throw new Error(`${a.nome}: falta a coluna de matrícula.`);
-      if (a.cols.revenda === undefined && !a.revenda) throw new Error(`Informe a revenda do arquivo ${a.nome}.`);
-      a.rows.forEach(r => { if (r.matricula) rows.push(Object.assign({}, r, { revenda: r.revenda || a.revenda })); });
-    }
-    if (rows.some(r => !r.revenda)) throw new Error('Há linhas sem revenda. Confira a coluna Revenda da planilha.');
+    const rows = ok.flatMap(a => a.rows);
+    if (rows.some(r => !r.revenda)) throw new Error('Há linhas sem revenda identificada. Confira o nome do departamento no relatório.');
     const r = await call('importar', { rows });
     S.imp = null;
-    toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos, <b>${r.atualizados}</b> atualizados, <b>${r.inativados}</b> inativados, ${r.desligados} desligados.`);
-    S.view = 'escalas'; await carregar();
+    toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos, <b>${r.atualizados}</b> atualizados, <b>${r.inativados}</b> inativados. Agora complete o <b>Cadastro</b>.`);
+    S.view = 'cadastro'; await carregar();
   });
+}
+
+/* ================= cadastro (turno, sede/ponto, rota/puxador, supervisor) ================= */
+const lstCfg = k => String(S.cfg[k] || '').split(',').map(x => x.trim()).filter(Boolean);
+function pontosRev(rev) { try { return (JSON.parse(S.cfg.PONTOS_APOIO || '{}')[rev] || []).slice().sort((a, b) => a.localeCompare(b, 'pt')); } catch (e) { return []; } }
+const nomeSup = id => { const s = S.sups.find(x => x.id === id); return s ? s.nome : ''; };
+function detalheCad(c) {
+  const a = areaSetor(c.setor), p = [c.setor];
+  if (a === 'arm') p.push(c.turno || 'turno?');
+  if (a === 'ent' && papelEntrega(c.funcao) !== 'adm') p.push((c.lotacao || 'sede/ponto?') + (papelEntrega(c.funcao) === 'mot' ? ' · ' + (c.tipoMot || 'rota/puxador?') : ''));
+  if (S.user.perfil === 'ADMIN') p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
+  return p.join(' · ');
+}
+function nPendCad() { return S.user && S.user.perfil === 'ADMIN' ? S.cols.filter(c => areaSetor(c.setor) !== 'outro' && pendenciasCadastro(c).length).length : 0; }
+const PAPEL = { mot: 'Motorista', aj: 'Ajudante', adm: 'Administrativo' };
+function selOpts(lista, val, vazio) { return `<option value="">${vazio}</option>` + lista.map(v => { const [k, t] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`; }).join(''); }
+function supsDaRevenda(rev) {
+  const da = S.sups.filter(s => s.revendas.includes('*') || s.revendas.includes(rev)), outros = S.sups.filter(s => !da.includes(s));
+  return da.concat(outros).map(s => [s.id, s.nome + (s.perfil === 'ADMIN' ? ' (admin)' : '')]);
+}
+async function classificar(mats, campos) {
+  await call('classificar', { matriculas: mats, campos });
+  S.cols.forEach(c => { if (mats.includes(c.matricula)) Object.assign(c, campos); });
+  revalida();
+}
+function vCadastro(m) {
+  const C = S.cad, revs = uniq(S.cols.map(c => c.revenda));
+  if (!revs.length) { m.innerHTML = '<div class="card empty"><h3>Nenhum colaborador ainda</h3><p>Importe o relatório do DP na aba <b>Importar DP</b>.</p></div>'; return; }
+  if (!revs.includes(C.rev)) C.rev = revs[0];
+  const doRev = S.cols.filter(c => c.revenda === C.rev);
+  const daArea = doRev.filter(c => areaSetor(c.setor) === C.area);
+  const q = nrm(C.q);
+  const L = daArea.filter(c => (C.f !== 'pend' || pendenciasCadastro(c).length) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao).includes(q)))
+    .sort((a, b) => papelEntrega(a.funcao).localeCompare(papelEntrega(b.funcao)) || a.funcao.localeCompare(b.funcao) || a.nome.localeCompare(b.nome));
+  [...C.sel].forEach(x => { if (!daArea.some(c => c.matricula === x)) C.sel.delete(x); });
+  const pend = daArea.filter(c => pendenciasCadastro(c).length).length;
+  const turnos = lstCfg('TURNOS_ARMAZEM'), tipos = lstCfg('TIPOS_MOTORISTA'), pontos = ['Sede'].concat(pontosRev(C.rev)), sups = supsDaRevenda(C.rev);
+  const linha = c => {
+    const pe = papelEntrega(c.funcao), pc = pendenciasCadastro(c);
+    const campos = C.area === 'arm'
+      ? `<label class="f">Turno<select data-k="turno">${selOpts(turnos, c.turno, '— turno —')}</select></label>`
+      : (pe === 'adm' ? '<span class="hint" style="align-self:end">Administrativo: só o supervisor</span>' : `<label class="f">Sede / ponto<select data-k="lotacao">${selOpts(pontos, c.lotacao, '— sede/ponto —')}</select></label>`) +
+        (pe === 'mot' ? `<label class="f">Motorista<select data-k="tipoMot">${selOpts(tipos, c.tipoMot, '— rota/puxador —')}</select></label>` : '');
+    return `<div class="cr" data-m="${esc(c.matricula)}"><input type="checkbox" data-cs ${C.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
+      <div class="nm"><b>${esc(c.nome)}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)}${C.area === 'ent' ? ' · <span class="tg2 ' + pe + '">' + PAPEL[pe] + '</span>' : ''}${/trabalhando/i.test(c.situacao) || !c.situacao ? '' : ' · ' + esc(c.situacao)}</small>
+        ${pc.length ? `<small class="pd">Falta: ${pc.join(', ')}</small>` : '<small class="okc">✓ completo</small>'}</div>
+      <div class="cf">${campos}<label class="f">Supervisor<select data-k="supervisor">${selOpts(sups, c.supervisor, '— supervisor —')}</select></label></div></div>`;
+  };
+  const ns = C.sel.size;
+  m.innerHTML = `<section class="card">
+    <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
+      <label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label></div>
+    <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega']].map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
+    <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
+    ${C.area === 'ent' ? `<div class="pts"><b>Pontos de apoio de ${esc(C.rev)}</b><div class="ck">${pontosRev(C.rev).map(p => `<label style="cursor:default">${esc(p)} <button type="button" class="xp" data-delp="${esc(p)}" aria-label="Remover ${esc(p)}">×</button></label>`).join('') || '<span class="hint">Nenhum ponto cadastrado: todos ficam na Sede.</span>'}</div>
+      <form class="addp" data-addp><input placeholder="Novo ponto de apoio (ex.: Irará)" maxlength="40"><button class="btn sm" type="submit">Adicionar</button></form></div>` : ''}
+    <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
+        ${C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
+        <select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>
+        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button>`
+      : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
+    <div class="ls">${L.map(linha).join('') || `<div class="empty">${C.f === 'pend' ? 'Tudo preenchido nesta revenda e setor. 🎉' : 'Ninguém aqui.'}</div>`}</div></section>`;
+  m.querySelector('[data-c=rev]').onchange = e => { C.rev = e.target.value; C.sel.clear(); vCadastro(m); };
+  m.querySelector('[data-c=q]').oninput = e => { C.q = e.target.value; clearTimeout(C.t); C.t = setTimeout(() => { vCadastro(m); const i = m.querySelector('[data-c=q]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  m.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.area) { C.area = b.dataset.area; C.sel.clear(); vCadastro(m); }
+    else if (b.dataset.cf) { C.f = b.dataset.cf; vCadastro(m); }
+    else if (b.hasAttribute('data-btodos')) { L.forEach(c => C.sel.add(c.matricula)); vCadastro(m); }
+    else if (b.hasAttribute('data-blimpa')) { C.sel.clear(); vCadastro(m); }
+    else if (b.dataset.delp) { if (confirm('Remover o ponto de apoio "' + b.dataset.delp + '"? Quem estiver nele continua com o nome gravado.')) salvaPontos(C.rev, pontosRev(C.rev).filter(p => p !== b.dataset.delp), m); }
+    else if (b.hasAttribute('data-bapl')) {
+      const campos = {}; m.querySelectorAll('[data-b]').forEach(s => { if (s.value) campos[s.dataset.b] = s.value; });
+      if (!Object.keys(campos).length) return toast('Escolha ao menos um campo para aplicar.', true);
+      ocupado(b, async () => { await classificar([...C.sel], campos); toast(`Cadastro atualizado para <b>${C.sel.size}</b> colaboradores.`); C.sel.clear(); vCadastro(m); });
+    }
+  };
+  m.onchange = e => {
+    const s = e.target;
+    if (s.hasAttribute('data-cs')) { const mt = s.closest('[data-m]').dataset.m; s.checked ? C.sel.add(mt) : C.sel.delete(mt); vCadastro(m); return; }
+    if (s.dataset.k) {
+      const mt = s.closest('[data-m]').dataset.m; s.disabled = true;
+      classificar([mt], { [s.dataset.k]: s.value }).then(() => { toast('Salvo.'); vCadastro(m); }).catch(err => { toast(esc(err.message), true); s.disabled = false; });
+    }
+  };
+  const fa = m.querySelector('[data-addp]');
+  if (fa) fa.onsubmit = e => { e.preventDefault(); const v = fa.querySelector('input').value.trim(); if (!v) return; if (pontosRev(C.rev).some(p => nrm(p) === nrm(v)) || nrm(v) === 'sede') return toast('Esse ponto já existe.', true); salvaPontos(C.rev, pontosRev(C.rev).concat(v), m); };
+}
+async function salvaPontos(rev, lista, m) {
+  let o = {}; try { o = JSON.parse(S.cfg.PONTOS_APOIO || '{}'); } catch (e) { o = {}; }
+  o[rev] = lista;
+  try { S.cfg = await call('salvarConfig', { PONTOS_APOIO: JSON.stringify(o) }); revalida(); toast('Pontos de apoio salvos.'); vCadastro(m); } catch (e) { toast(esc(e.message), true); }
 }
 
 /* ================= usuários ================= */
@@ -621,9 +719,9 @@ function formAcesso(u) {
   const ck = (nome, arr, sel, todos) => `<div class="ck"><label><input type="checkbox" data-${nome}="*" ${sel.includes('*') ? 'checked' : ''}> <b>${todos}</b></label>${arr.map(v => `<label><input type="checkbox" data-${nome}="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
   return `<div class="ap" data-form="${esc(u.id)}">
     <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${!adm ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
-    ${revs.length ? '' : '<p class="hint">Importe a planilha do DP para listar as revendas e os setores. Por enquanto dá para liberar "Todas" e "Todos".</p>'}
-    <div><b style="font-size:12px;color:var(--mut)">REVENDAS</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
-    <div><b style="font-size:12px;color:var(--mut)">SETORES</b>${ck('st', sets, u.setores, 'Todos')}</div>
+    ${revs.length ? '' : '<p class="hint">Importe o relatório do DP para listar as revendas. Por enquanto dá para liberar "Todas".</p>'}
+    <div><b style="font-size:12px;color:var(--mut)">REVENDA(S) DO SUPERVISOR</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
+    <p class="hint">O supervisor vê só os colaboradores vinculados a ele na tela <b>Cadastro</b>.</p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn sm" data-u="cancel">Cancelar</button><button type="button" class="btn sm ok" data-u="salvar" data-id="${esc(u.id)}">${u.status === 'PENDENTE' ? 'Aprovar acesso' : 'Salvar acesso'}</button></div></div>`;
 }
 function desenhaUsuarios(m) {
@@ -631,7 +729,7 @@ function desenhaUsuarios(m) {
   const esc2 = a => a.includes('*') ? 'todas' : a.join(', ') || '—';
   const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
       <small>${esc(u.login)}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
-      ${u.status !== 'PENDENTE' ? `<small>Revendas: ${esc(esc2(u.revendas))} · Setores: ${esc(esc2(u.setores))}</small>` : ''}</div>
+      ${u.status !== 'PENDENTE' ? `<small>Revenda: ${esc(esc2(u.revendas))} · ${S.cols.filter(c => c.supervisor === u.id).length} colaboradores vinculados</small>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       ${u.status === 'PENDENTE' ? `<button type="button" class="btn sm ok" data-u="abrir" data-id="${esc(u.id)}">Aprovar</button><button type="button" class="btn sm er" data-u="BLOQUEADO" data-id="${esc(u.id)}">Recusar</button>`
       : `<button type="button" class="btn sm" data-u="abrir" data-id="${esc(u.id)}">Acesso</button><button type="button" class="btn sm" data-u="reset" data-id="${esc(u.id)}">Nova senha</button>${u.id !== S.user.id ? `<button type="button" class="btn sm ${u.status === 'ATIVO' ? 'er' : ''}" data-u="${u.status === 'ATIVO' ? 'BLOQUEADO' : 'ATIVO'}" data-id="${esc(u.id)}">${u.status === 'ATIVO' ? 'Bloquear' : 'Reativar'}</button>` : ''}`}</div>
@@ -648,8 +746,8 @@ function desenhaUsuarios(m) {
     if (a === 'salvar') {
       const f = b.closest('[data-form]');
       const pick = n => [...f.querySelectorAll(`[data-${n}]:checked`)].map(x => x.getAttribute('data-' + n));
-      let rv = pick('rv'), sts = pick('st'); if (rv.includes('*')) rv = ['*']; if (sts.includes('*')) sts = ['*'];
-      return ocupado(b, async () => { const r = await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv, setores: sts }); S.editUser = null; toast(r.emailEnviado ? `Acesso aprovado. E-mail enviado para <b>${esc(r.emailEnviado)}</b>.` : 'Acesso salvo.'); vUsuarios(m); });
+      let rv = pick('rv'); if (rv.includes('*')) rv = ['*'];
+      return ocupado(b, async () => { const r = await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv }); S.editUser = null; await carregar(); toast(r.emailEnviado ? `Acesso aprovado. E-mail enviado para <b>${esc(r.emailEnviado)}</b>.` : 'Acesso salvo.'); });
     }
     if (a === 'reset') {
       if (!confirm('Gerar uma senha temporária para este usuário?')) return;
@@ -685,7 +783,7 @@ function vRegras(m) {
       <p>Base: Emenda Constitucional nº 141/2026 (fim da 6x1), em vigor a partir de ${dataBr(c.DATA_INICIO_5X2)}, e a CLT. Escalas com erro ficam em vermelho${SN(c.BLOQUEAR_ERRO) ? ' e não podem ser salvas' : ''}. Regimes diferentes previstos em acordo ou convenção coletiva devem ser confirmados com o DP.</p></section>
     <div class="rg">${cards.map(([t, v, p]) => `<div class="rc"><b>${t}</b><span class="v">${esc(v)}</span><p>${esc(p)}</p></div>`).join('')}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>Parâmetros (administrador)</h3><button type="button" class="btn sm pr" data-cfg>Salvar parâmetros</button></div>
-      <div class="card-b row2">${Object.keys(c).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
+      <div class="card-b row2">${Object.keys(c).filter(k => k !== 'PONTOS_APOIO').map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
       <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>` : ''}`;
   const b = m.querySelector('[data-cfg]');
   if (b) b.onclick = () => ocupado(b, async () => {
