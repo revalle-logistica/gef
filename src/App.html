@@ -408,7 +408,7 @@ function loadXLSX() {
   if (XP) return XP;
   XP = new Promise((ok, ko) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.src = 'https:\/\/cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; // barras escapadas: o Apps Script corta '//' ao servir
     s.onload = () => ok(window.XLSX);
     s.onerror = () => { XP = null; ko(new Error('Não consegui carregar o leitor de Excel. Verifique a internet e tente de novo.')); };
     document.head.appendChild(s);
