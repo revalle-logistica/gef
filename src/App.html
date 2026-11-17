@@ -1,0 +1,715 @@
+<script>
+(function () {
+'use strict';
+/* ================= estado e utilidades ================= */
+const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
+  f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
+  imp: null, users: null, ed: null, lote: null, editUser: null };
+const $ = s => document.querySelector(s);
+const root = document.getElementById('root'), modal = document.getElementById('modal');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nrm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/:$/, '');
+const uniq = a => [...new Set(a.filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pt'));
+const slug = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+const dataBr = iso => iso ? String(iso).split('-').reverse().join('/') : '';
+const dh = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}:\d{2}))?/); return m ? `${m[3]}/${m[2]}/${m[1]}${m[4] ? ' ' + m[4] : ''}` : String(s || ''); };
+const hoje = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const SN = v => String(v || '').toUpperCase() === 'S';
+const ROT = { OK: 'Dentro das regras', ALERTA: 'Com alerta', ERRO: 'Com erro', SEM: 'Sem escala' };
+const st = c => c.val ? c.val.status : 'SEM';
+const IC = {
+  cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  up: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 17v4h16v-4"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.6-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M17 11a3 3 0 1 0 0-6M21.5 20c-.6-2.2-1.8-3.8-3.5-4.7"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/>',
+  xls: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 11l5 6M14 11l-5 6"/>',
+  pdf: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 14h6M9 17h4"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+  wand: '<path d="M15 4V2M15 10V8M11 6h2M17 6h2M4 20L14 10"/>',
+  ref: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'
+};
+const ic = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
+const ls = {
+  get(k) { try { return localStorage.getItem('esc5x2_' + k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem('esc5x2_' + k) : localStorage.setItem('esc5x2_' + k, v); } catch (e) { /* sem armazenamento */ } }
+};
+
+function trataResposta(r, ok, ko) {
+  if (r && r.ok) return ok(r.data);
+  if (r && r.sessao) { S.token = null; ls.set('tk', null); fecharModal(true); telaLogin({ t: r.erro }); }
+  ko(new Error((r && r.erro) || 'Falha na comunicação.'));
+}
+/* Dentro do Apps Script usa google.script.run; pela página do GitHub usa fetch no link /exec (window.API_URL). */
+function call(acao, dados) {
+  return new Promise((ok, ko) => {
+    if (window.API_URL) {
+      fetch(window.API_URL, { method: 'POST', body: JSON.stringify({ token: S.token, acao, dados: dados || {} }), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, credentials: 'omit' })
+        .then(r => r.json()).then(r => trataResposta(r, ok, ko))
+        .catch(() => ko(new Error('Sem conexão com o servidor. Verifique a internet.')));
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(r => trataResposta(r, ok, ko))
+      .withFailureHandler(e => ko(new Error((e && e.message) || 'Falha na comunicação.')))
+      .api(S.token, acao, dados || {});
+  });
+}
+let tT;
+function toast(m, er) { const t = $('#toast'); t.innerHTML = m; t.className = 'toast' + (er ? ' er' : ''); t.hidden = false; clearTimeout(tT); tT = setTimeout(() => { t.hidden = true; }, er ? 9000 : 5000); }
+async function ocupado(bt, fn) {
+  const h = bt ? bt.innerHTML : '';
+  if (bt) { bt.disabled = true; bt.innerHTML = '<span class="spin"></span> Aguarde…'; }
+  try { return await fn(); } catch (e) { toast(esc(e.message), true); } finally { if (bt && bt.isConnected) { bt.disabled = false; bt.innerHTML = h; } }
+}
+
+/* ================= login ================= */
+function telaLogin(msg, aba) {
+  aba = aba || 'in';
+  const up = aba === 'up';
+  root.innerHTML = `<div class="lg"><div class="lg-c">
+    <div class="lg-h"><span class="logo">R</span><div><b>Escala 5x2</b><small>Revalle · escalas dos colaboradores</small></div></div>
+    <div class="lg-t"><button type="button" data-aba="in" aria-pressed="${!up}">Entrar</button><button type="button" data-aba="up" aria-pressed="${up}">Criar acesso</button></div>
+    <form class="lg-f" id="lgf" novalidate>
+      <div id="lgmsg">${msg ? `<div class="msgbox ${msg.ok ? 'ok' : 'er'}">${esc(msg.t)}</div>` : ''}</div>
+      ${up ? '<label class="f">Nome completo<input name="nome" autocomplete="name"></label><label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel"></label>' : ''}
+      <label class="f">Login<input name="login" autocapitalize="none" autocomplete="username" placeholder="ex.: joao.silva"></label>
+      <label class="f">Senha<input name="senha" type="password" autocomplete="${up ? 'new-password' : 'current-password'}"></label>
+      ${up ? '<label class="f">Repita a senha<input name="senha2" type="password" autocomplete="new-password"></label>' : ''}
+      <button class="btn pr" type="submit">${up ? 'Enviar cadastro para aprovação' : 'Entrar'}</button>
+      <p class="lg-n">${up ? 'O administrador aprova seu acesso e define quais revendas e setores você vai ver.' : 'Ainda não tem acesso? Toque em <b>Criar acesso</b>.'}</p>
+    </form></div></div>`;
+  root.querySelectorAll('[data-aba]').forEach(b => { b.onclick = () => telaLogin(null, b.dataset.aba); });
+  $('#lgf').onsubmit = e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const bt = e.target.querySelector('button[type=submit]'), box = $('#lgmsg');
+    const erro = t => { box.innerHTML = `<div class="msgbox er">${esc(t)}</div>`; };
+    if (!f.login || !f.senha) return erro('Preencha login e senha.');
+    if (up && f.senha !== f.senha2) return erro('As senhas não conferem.');
+    bt.disabled = true; const h = bt.innerHTML; bt.innerHTML = '<span class="spin"></span> Aguarde…';
+    (async () => {
+      try {
+        if (up) {
+          const r = await call('registrar', f);
+          if (r.primeiro) { entrar(await call('login', f)); toast('Você é o <b>administrador</b> do sistema.'); return; }
+          telaLogin({ ok: true, t: 'Cadastro enviado. Assim que o administrador aprovar, você já consegue entrar.' }, 'in');
+        } else entrar(await call('login', f));
+      } catch (err) { erro(err.message); bt.disabled = false; bt.innerHTML = h; }
+    })();
+  };
+}
+async function entrar(l) { S.token = l.token; ls.set('tk', l.token); await carregar(); }
+async function sair() { try { await call('logout'); } catch (e) { /* ok */ } S.token = null; ls.set('tk', null); S.sel.clear(); telaLogin(); }
+
+async function carregar() {
+  const r = await call('carregar');
+  S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
+  S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || [];
+  S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
+  revalida();
+  const ok = new Set(S.cols.map(c => c.matricula));
+  [...S.sel].forEach(m => { if (!ok.has(m)) S.sel.delete(m); });
+  const prim = (VISOES.find(([k]) => S.cols.some(c => c.vis.area === k)) || ['todos'])[0];
+  if (!S.f.vis) S.f.vis = prim;
+  if (!S.pnl.vis) S.pnl.vis = prim;
+  render();
+}
+function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
+
+/* ================= casca ================= */
+function render() {
+  const adm = S.user.perfil === 'ADMIN';
+  const tabs = [['escalas', 'cal', 'Escalas'], ['painel', 'chart', 'Painel']]
+    .concat(adm ? [['importar', 'up', 'Importar DP'], ['usuarios', 'users', 'Usuários']] : [])
+    .concat([['regras', 'shield', 'Regras']]);
+  if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
+  root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
+    <div class="br"><b>Escala 5x2</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
+    <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}</button>`).join('')}</nav>
+    <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : ''}</span>
+      <button class="btn sm" type="button" data-a="senha" title="Trocar senha" aria-label="Trocar senha">${ic('key')}</button>
+      <button class="btn sm" type="button" data-a="sair">Sair</button></div></div></header><main id="main"></main>`;
+  root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
+  root.querySelector('[data-a=sair]').onclick = sair;
+  root.querySelector('[data-a=senha]').onclick = modalSenha;
+  ({ escalas: vEscalas, painel: vPainel, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+}
+function abrirModal(html, sm) {
+  modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
+  modal.hidden = false;
+}
+function fecharModal(forcar) {
+  if (!forcar && S.ed && S.ed.sujo && !confirm('Sair sem salvar as alterações desta escala?')) return;
+  modal.hidden = true; modal.innerHTML = ''; S.ed = null; S.lote = null;
+}
+modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) fecharModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) fecharModal(); });
+
+/* ================= escalas ================= */
+function opts(arr, sel, todos) { return `<option value="">${todos}</option>` + arr.map(v => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join(''); }
+const VIS_TXT = { entrega: 'Entrega · ponto de apoio e função', pux: 'Puxadores', arm: 'Armazém · turno e função', adm: 'Administrativo', todos: 'Todos' };
+function filtrados(ignSt, ignVis) {
+  const f = S.f, q = nrm(f.q);
+  return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
+    (!f.tele || c.tele) && (ignSt || !f.st || st(c) === f.st) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
+}
+function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
+function ordenar(L) { return L.slice().sort((a, b) => (S.f.rev ? 0 : a.revenda.localeCompare(b.revenda, 'pt')) || a.vis.ordem.localeCompare(b.vis.ordem) || a.vis.fordem.localeCompare(b.vis.fordem) || a.nome.localeCompare(b.nome, 'pt')); }
+/** Agrupa por grupo da visão (ponto, turno…) e, dentro, por função. */
+function agrupar(L, comArea) {
+  const G = new Map();
+  ordenar(L).forEach(c => {
+    const gk = (S.f.rev ? '' : c.revenda + ' · ') + (comArea || c.vis.area === 'adm' ? c.vis.areaNome + (c.vis.area === 'adm' ? '' : ' · ') : '') + (c.vis.area === 'adm' ? '' : c.vis.grupo);
+    if (!G.has(gk)) G.set(gk, new Map());
+    const F = G.get(gk);
+    if (!F.has(c.vis.funcao)) F.set(c.vis.funcao, []);
+    F.get(c.vis.funcao).push(c);
+  });
+  return G;
+}
+function porDia(arr) { const d = [0, 0, 0, 0, 0, 0, 0]; arr.forEach(c => { if (c.escala) c.escala.dias.forEach((x, i) => { if (x.tipo === 'T') d[i]++; }); }); return d; }
+function faixaDias(arr) {
+  const d = porDia(arr), sem = arr.filter(c => !c.escala).length;
+  return `<div class="cd">${d.map((v, i) => `<span title="${DIAS_SEMANA[i]}: ${v} trabalhando"><small>${DIAS_CURTO[i]}</small>${v}</span>`).join('')}</div>${sem ? `<em class="se">${sem} sem escala</em>` : ''}`;
+}
+function vEscalas(m) {
+  const f = S.f;
+  const revs = uniq(S.cols.map(c => c.revenda));
+  if (f.rev && !revs.includes(f.rev)) f.rev = '';
+  if (!S.cols.length) {
+    m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'O administrador ainda não liberou colaboradores para o seu acesso.'}</p></div>`;
+    return;
+  }
+  m.innerHTML = `<section class="card">
+    <div class="vt" id="vt"></div>
+    <div class="filt">
+      <label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
+      <label class="f">Buscar<input data-f="q" value="${esc(f.q)}" placeholder="Nome, matrícula, função ou ponto"></label>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="acts" id="acts"></div>
+    <div class="ls" id="ls"></div></section>`;
+  m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; vEscalas(m); };
+  m.querySelector('input[data-f=q]').oninput = e => { f.q = e.target.value; lista(); };
+  m.onclick = e => {
+    const t = e.target.closest('button, [data-chip]');
+    if (!t) return;
+    if (t.dataset.vis) { f.vis = t.dataset.vis; lista(); }
+    else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else f.st = k; lista(); }
+    else if (t.dataset.ed) abrirEditor(t.dataset.ed);
+    else if (t.dataset.gsel) { const L = grupoSel[t.dataset.gsel] || []; const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
+    else if (t.dataset.ac === 'todos') { const L = filtrados(); const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
+    else if (t.dataset.ac === 'limpar') { S.sel.clear(); lista(); }
+    else if (t.dataset.ac === 'lote') modalLote();
+    else if (t.dataset.ac === 'xls') ocupado(t, () => excelLote(alvo().lista));
+    else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas'));
+    else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro'));
+  };
+  m.onchange = e => { const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
+  lista();
+}
+let grupoSel = {};
+function lista() {
+  const f = S.f, tudo = filtrados(true, true), base = filtrados(true), L = filtrados();
+  $('#vt').innerHTML = VISOES.concat([['todos', 'Todos']]).map(([k]) => {
+    const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length;
+    return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`;
+  }).join('');
+  const n = k => base.filter(c => st(c) === k).length;
+  $('#chips').innerHTML = [['', 'Todos', base.length], ['SEM', 'Sem escala', n('SEM')], ['ERRO', 'Com erro', n('ERRO')], ['ALERTA', 'Com alerta', n('ALERTA')], ['OK', 'Dentro das regras', n('OK')]]
+    .map(([k, t, q]) => `<button type="button" class="chip" data-chip="${k}" aria-pressed="${f.st === k}">${k ? `<span class="dot d-${k}"></span>` : ''}${t} <i>${q}</i></button>`).join('') +
+    `<button type="button" class="chip" data-chip="tele" aria-pressed="${!!f.tele}">Teleatendimento <i>${base.filter(c => c.tele).length}</i></button>`;
+  grupoSel = {};
+  let h = '', gi = 0;
+  agrupar(L, f.vis === 'todos').forEach((F, gk) => {
+    const todosG = [...F.values()].flat(); grupoSel[gi] = todosG;
+    h += `<div class="gh"><div><b>${esc(gk)}</b><span>${todosG.length} ${todosG.length === 1 ? 'pessoa' : 'pessoas'}</span></div><button type="button" class="btn sm" data-gsel="${gi++}">Selecionar grupo</button></div>`;
+    F.forEach((arr, fn) => { h += `<div class="gf"><b>${esc(fn)} <span>(${arr.length})</span></b>${faixaDias(arr)}</div>` + arr.map(linhaHtml).join(''); });
+  });
+  $('#ls').innerHTML = L.length
+    ? `<div class="ln hd"><span></span><span>Colaborador</span><span>Função · lotação</span><span>Semana</span><span style="text-align:right">Horas</span><span>Status</span><span></span></div>` + h
+    : '<div class="empty">Nenhum colaborador nesta visão com esses filtros.</div>';
+  acoes();
+}
+function acoes() {
+  const a = alvo(), ns = S.sel.size;
+  $('#acts').innerHTML = `<button type="button" class="btn sm" data-ac="todos">Marcar/desmarcar lista</button>
+    ${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b><button type="button" class="btn sm" data-ac="limpar">Limpar</button>` : `<span class="hint">Nenhum selecionado: as ações valem para os ${a.lista.length} da lista</span>`}
+    <span class="sp"></span>
+    <button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote (${a.lista.length})</button>
+    <button type="button" class="btn sm" data-ac="xls">${ic('xls')}Excel</button>
+    <button type="button" class="btn sm" data-ac="pdf">${ic('pdf')}PDF por colaborador</button>
+    <button type="button" class="btn sm" data-ac="quadro">${ic('pdf')}PDF quadro</button>`;
+}
+function semana(e) {
+  return `<div class="wk">${DIAS_CURTO.map((d, i) => {
+    if (!e) return `<span class="n">${d}<small>–</small></span>`;
+    const x = e.dias[i] || {};
+    return x.tipo === 'T' ? `<span class="t">${d}<small>${esc(x.ent || '')}</small></span>` : `<span class="f">${d}<small>folga</small></span>`;
+  }).join('')}</div>`;
+}
+function linhaHtml(c) {
+  const s = st(c);
+  return `<div class="ln"><input type="checkbox" data-sel="${esc(c.matricula)}" ${S.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
+    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}</b><small>Matr. ${esc(c.matricula)} · ${esc(c.revenda)}</small></div>
+    <div class="fn">${esc(c.funcao)}<small>${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div>
+    ${semana(c.escala)}
+    <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
+    <div><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span></div>
+    <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
+}
+
+/* ================= editor individual ================= */
+const INTS = [0, 15, 30, 45, 60, 75, 90, 120];
+function vigPadrao() { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; return h > i ? h : i; }
+function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, S.cfg.PADRAO_ENTRADA, S.cfg.PADRAO_SAIDA, S.cfg.PADRAO_INTERVALO) }; }
+function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
+const domFixo = () => SN(S.cfg.DOMINGO_FOLGA);
+
+function abrirEditor(mat) {
+  const c = S.cols.find(x => x.matricula === mat);
+  if (!c) return;
+  S.ed = { c, e: JSON.parse(JSON.stringify(c.escala ? { vigencia: c.escala.vigencia, dias: c.escala.dias } : escalaPadrao())), tele: c.tele, sujo: !c.escala };
+  desenhaEditor();
+}
+function linhaEd(i) {
+  const d = S.ed.e.dias[i] || { tipo: 'F' }, T = d.tipo === 'T', dom = i === 6 && domFixo();
+  const ints = INTS.includes(+d.int) ? INTS : INTS.concat(+d.int || 0).sort((a, b) => a - b);
+  return `<div class="ed-r ${T ? '' : 'f'}" data-i="${i}"><b>${DIAS_SEMANA[i]}</b>
+    <div class="tgl"><button type="button" class="t ${T ? 'on' : ''}" data-tp="T" ${dom ? 'disabled title="Domingo é folga fixa"' : ''}>Trabalho</button><button type="button" class="f ${T ? '' : 'on'}" data-tp="F">Folga</button></div>
+    ${T ? `<input type="time" data-k="ent" value="${esc(d.ent || '')}" aria-label="Entrada">
+      <input type="time" data-k="sai" value="${esc(d.sai || '')}" aria-label="Saída">
+      <select data-k="int" aria-label="Intervalo">${ints.map(v => `<option value="${v}" ${(+d.int || 0) === v ? 'selected' : ''}>${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select>
+      <span class="hh" data-hh>${horasDia(d)}</span>` : '<span class="fz">FOLGA</span><span class="hh"></span>'}</div>`;
+}
+function desenhaEditor() {
+  const { c, e } = S.ed;
+  abrirModal(`<div class="mdl-h"><div><h2>${esc(c.nome)}</h2><small>Matr. ${esc(c.matricula)} · ${esc(c.funcao)} · ${esc(c.revenda)} · ${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b">
+      <div class="row2"><label class="f">Vigência a partir de<input type="date" id="ed-vig" value="${esc(e.vigencia)}"></label>
+        <label class="sw"><input type="checkbox" id="ed-tele" ${S.ed.tele ? 'checked' : ''}><span><b>Teleatendimento</b><br>Jornada de até ${esc(S.cfg.TELE_DIARIO)}h por dia</span></label></div>
+      <div class="ed" id="ed-dias"><div class="ed-r hd"><span>Dia</span><span>Situação</span><span>Entrada</span><span>Saída</span><span>Intervalo</span><span style="text-align:right">Horas</span></div>
+        ${DIAS_SEMANA.map((_, i) => linhaEd(i)).join('')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-copiar>${ic('copy')}Repetir o 1º horário nos outros dias</button>
+        <button type="button" class="btn sm" data-padrao>Horário padrão (${esc(S.cfg.PADRAO_ENTRADA)}–${esc(S.cfg.PADRAO_SAIDA)})</button></div>
+      <div id="ed-val"></div>
+      ${c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>'}
+    </div>
+    <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button>
+      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-salvar>Salvar escala</button></div>`);
+  const box = modal.querySelector('.mdl');
+  box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); };
+  box.querySelector('#ed-tele').onchange = ev => { S.ed.tele = ev.target.checked; S.ed.sujo = true; atualizaVal(); };
+  box.addEventListener('input', ev => {
+    const k = ev.target.dataset.k; if (!k) return;
+    const r = ev.target.closest('[data-i]'), i = +r.dataset.i;
+    S.ed.e.dias[i][k] = k === 'int' ? +ev.target.value : ev.target.value; S.ed.sujo = true;
+    r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal();
+  });
+  box.addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    const D = S.ed.e.dias;
+    if (b.dataset.tp) {
+      const i = +b.closest('[data-i]').dataset.i;
+      if (b.dataset.tp === 'T') { const ref = D.find(x => x.tipo === 'T') || { ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; D[i] = { tipo: 'T', ent: ref.ent, sai: ref.sai, int: +ref.int }; }
+      else D[i] = { tipo: 'F' };
+      S.ed.sujo = true; redesenhaDias();
+    } else if (b.hasAttribute('data-copiar')) {
+      const ref = D.find(x => x.tipo === 'T'); if (!ref) return toast('Marque ao menos um dia de trabalho.', true);
+      D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: ref.ent, sai: ref.sai, int: +ref.int }; }); S.ed.sujo = true; redesenhaDias();
+    } else if (b.hasAttribute('data-padrao')) {
+      D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
+    } else if (b.hasAttribute('data-salvar')) salvarEditor(b);
+    else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
+    else if (b.hasAttribute('data-pdf')) {
+      if (S.ed.sujo) return toast('Salve a escala antes de gerar o PDF.', true);
+      ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas'));
+    }
+  });
+  atualizaVal();
+}
+function redesenhaDias() {
+  const w = $('#ed-dias');
+  w.innerHTML = w.firstElementChild.outerHTML + DIAS_SEMANA.map((_, i) => linhaEd(i)).join('');
+  atualizaVal();
+}
+function caixaVal(v) {
+  const pct = Math.min(100, v.limite ? v.total / v.limite * 100 : 0);
+  return `<div class="val ${v.status}"><div class="val-h"><b>${({ OK: 'Dentro das regras', ALERTA: 'Dentro das regras, com alerta', ERRO: 'Fora das regras' })[v.status]}</b>
+    <span>${minParaHm(v.total)} de ${minParaHm(v.limite)} na semana · ${v.trabalho} ${v.trabalho === 1 ? 'dia' : 'dias'} de trabalho · ${v.folgas} ${v.folgas === 1 ? 'folga' : 'folgas'}</span>
+    <div class="gauge"><i style="width:${pct}%"></i></div></div>
+    ${v.msgs.length ? `<ul>${v.msgs.map(x => `<li class="${x.nivel}">${esc(x.texto)}</li>`).join('')}</ul>` : ''}</div>`;
+}
+function atualizaVal() {
+  const v = validarEscala(S.ed.e, { tele: S.ed.tele, cfg: S.cfg });
+  $('#ed-val').innerHTML = caixaVal(v);
+  const b = modal.querySelector('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
+  b.disabled = bloq; b.title = bloq ? 'Corrija os itens em vermelho para salvar' : '';
+}
+function salvarEditor(bt) {
+  const { c, e } = S.ed;
+  ocupado(bt, async () => {
+    if (S.ed.tele !== c.tele) { await call('setTele', { matricula: c.matricula, valor: S.ed.tele }); c.tele = S.ed.tele; }
+    const r = await call('salvarEscala', { matricula: c.matricula, vigencia: e.vigencia, dias: e.dias });
+    c.escala = r.escala; c.val = validarEscala(c.escala, { tele: c.tele, cfg: S.cfg });
+    fecharModal(true); toast(`Escala de <b>${esc(c.nome)}</b> salva.`); render();
+  });
+}
+
+/* ================= horário em lote ================= */
+function modalLote() {
+  const a = alvo();
+  if (!a.lista.length) return toast('Nenhum colaborador na lista.', true);
+  S.lote = { vig: vigPadrao(), folga2: 5, ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO, lista: a.lista };
+  const jaTem = a.lista.filter(c => c.escala).length, tele = a.lista.filter(c => c.tele).length;
+  abrirModal(`<div class="mdl-h"><div><h2>Horário em lote</h2><small>${a.lista.length} colaboradores ${a.tipo}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b">
+      <p class="hint">Todos recebem a mesma semana: folga no domingo e em mais um dia, com o mesmo horário nos 5 dias de trabalho. Depois dá para ajustar um a um.</p>
+      <div class="row2">
+        <label class="f">Vigência a partir de<input type="date" data-l="vig" value="${esc(S.lote.vig)}"></label>
+        <label class="f">2ª folga da semana<select data-l="folga2">${DIAS_SEMANA.slice(0, 6).map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <label class="f">Entrada<input type="time" data-l="ent" value="${esc(S.lote.ent)}"></label>
+        <label class="f">Saída<input type="time" data-l="sai" value="${esc(S.lote.sai)}"></label>
+        <label class="f">Intervalo<select data-l="int">${INTS.map(v => `<option value="${v}" ${v === S.lote.int ? 'selected' : ''}>${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select></label>
+      </div>
+      <div id="lt-sem"></div><div id="lt-val"></div>
+      ${jaTem ? `<div class="msgbox er">${jaTem} já ${jaTem > 1 ? 'têm' : 'tem'} escala e ${jaTem > 1 ? 'serão substituídos' : 'será substituído'}.</div>` : ''}
+      ${tele ? `<div class="msgbox er">${tele} ${tele > 1 ? 'são' : 'é'} de teleatendimento (limite de ${esc(S.cfg.TELE_DIARIO)}h/dia): ${tele > 1 ? 'eles só serão salvos' : 'ele só será salvo'} se o horário couber nesse limite.</div>` : ''}
+    </div>
+    <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-aplicar>Aplicar em ${a.lista.length}</button></div>`);
+  const box = modal.querySelector('.mdl');
+  const upd = () => {
+    const L = S.lote, e = { vigencia: L.vig, dias: semanaModelo(L.folga2, L.ent, L.sai, L.int) };
+    $('#lt-sem').innerHTML = semana(e);
+    const v = validarEscala(e, { tele: false, cfg: S.cfg });
+    $('#lt-val').innerHTML = caixaVal(v);
+    box.querySelector('[data-aplicar]').disabled = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
+  };
+  box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; S.lote[k] = ['folga2', 'int'].includes(k) ? +ev.target.value : ev.target.value; upd(); });
+  box.querySelector('[data-aplicar]').onclick = ev => ocupado(ev.currentTarget, async () => {
+    const L = S.lote;
+    const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
+    fecharModal(true); await carregar();
+    if (r.falhas.length) {
+      abrirModal(`<div class="mdl-h"><div><h2>${r.salvos} salvos · ${r.falhas.length} não salvos</h2><small>Ajuste estes individualmente</small></div><button type="button" class="x" data-x>×</button></div>
+        <div class="mdl-b ovf"><table class="tb"><tr><th>Colaborador</th><th>Motivo</th></tr>${r.falhas.map(x => `<tr><td><b>${esc(x.nome)}</b><br>${esc(x.matricula)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</table></div>
+        <div class="mdl-f"><button type="button" class="btn pr" data-x>Entendi</button></div>`);
+    } else toast(`Escala aplicada em <b>${r.salvos}</b> colaboradores.`);
+  });
+  upd();
+}
+
+/* ================= exportação ================= */
+let XP = null;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (XP) return XP;
+  XP = new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => ok(window.XLSX);
+    s.onerror = () => { XP = null; ko(new Error('Não consegui carregar o leitor de Excel. Verifique a internet e tente de novo.')); };
+    document.head.appendChild(s);
+  });
+  return XP;
+}
+function baixar(b64, nome, mime) {
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([u8], { type: mime }));
+  const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+}
+async function pdfServidor(mats, modo) {
+  if (!mats.length) throw new Error('Nenhum colaborador na lista.');
+  const r = await call('exportPdf', { matriculas: mats, modo });
+  baixar(r.base64, r.nome, 'application/pdf');
+  toast(`PDF gerado: <b>${esc(r.nome)}</b>`);
+}
+function linhasDia(e) {
+  return DIAS_SEMANA.map((n, i) => { const d = e.dias[i] || { tipo: 'F' }, c = calcDia(d); return c ? [n, 'Trabalho', d.ent, d.sai, +d.int || 0, minParaHm(c.liquido)] : [n, 'Folga', '', '', '', '']; });
+}
+async function excelIndividual(c, e, tele) {
+  const X = await loadXLSX(), v = validarEscala(e, { tele, cfg: S.cfg });
+  const A = [[`${S.cfg.EMPRESA} · Escala de trabalho 5x2`], [],
+    ['Colaborador', c.nome], ['Matrícula', c.matricula], ['Função', c.funcao + (tele ? ' (teleatendimento)' : '')], ['Revenda', c.revenda],
+    ['Setor', c.setor], ['Lotação', c.lotacao], ['Turno', c.turno || ''], ['Vigência a partir de', dataBr(e.vigencia)], [],
+    ['Dia', 'Situação', 'Entrada', 'Saída', 'Intervalo (min)', 'Horas'], ...linhasDia(e), [],
+    ['Total semanal', minParaHm(v.total), 'Limite', minParaHm(v.limite), 'Status', ROT[v.status]],
+    ...v.msgs.filter(x => x.nivel !== 'info').map(x => [x.nivel.toUpperCase(), x.texto]), [],
+    ['Assinatura do colaborador:'], [], ['Assinatura do supervisor:']];
+  const ws = X.utils.aoa_to_sheet(A);
+  ws['!cols'] = [{ wch: 22 }, { wch: 34 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Escala');
+  X.writeFile(wb, `Escala_${slug(c.matricula)}_${slug(c.nome)}.xlsx`);
+}
+async function excelLote(list) {
+  if (!list.length) throw new Error('Nenhum colaborador na lista.');
+  const X = await loadXLSX();
+  list = ordenar(list);
+  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Lotação', 'Turno/Tipo', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA, 'Total semanal', 'Status', 'Pendências'];
+  const D0 = H.indexOf('Segunda');
+  const R = list.map(c => {
+    const e = c.escala, v = c.val;
+    return [c.matricula, c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo, c.setor, c.lotacao, c.turno, c.tele ? 'Sim' : 'Não', e ? dataBr(e.vigencia) : '',
+      ...DIAS_SEMANA.map((_, i) => { if (!e) return ''; const d = e.dias[i] || {}; return d.tipo === 'T' ? `${d.ent}–${d.sai} (${minParaHm(+d.int || 0)})` : 'FOLGA'; }),
+      v ? minParaHm(v.total) : '', ROT[st(c)], v ? v.msgs.filter(x => x.nivel !== 'info').map(x => x.texto).join(' | ') : ''];
+  });
+  const ws1 = X.utils.aoa_to_sheet([H, ...R]);
+  ws1['!cols'] = H.map((h, i) => ({ wch: i === 1 ? 32 : i >= D0 && i < D0 + 7 ? 19 : i === H.length - 1 ? 60 : 15 }));
+  ws1['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: R.length, c: H.length - 1 } }) };
+  const D = [['Matrícula', 'Nome', 'Revenda', 'Visão', 'Grupo', 'Função', 'Dia', 'Situação', 'Entrada', 'Saída', 'Intervalo (min)', 'Horas']];
+  list.forEach(c => { if (c.escala) linhasDia(c.escala).forEach(l => D.push([c.matricula, c.nome, c.revenda, c.vis.areaNome, c.vis.grupo, c.funcao, ...l])); });
+  const C = [['Pessoas trabalhando por dia (só quem tem escala)'], ['Revenda', 'Visão', 'Grupo (ponto / turno)', 'Função', 'Pessoas', 'Sem escala', ...DIAS_SEMANA]];
+  const m = new Map();
+  list.forEach(c => { const k = [c.revenda, c.vis.areaNome, c.vis.grupo, c.vis.funcao].join('|'); if (!m.has(k)) m.set(k, []); m.get(k).push(c); });
+  m.forEach((arr, k) => C.push([...k.split('|'), arr.length, arr.filter(c => !c.escala).length, ...porDia(arr)]));
+  const wb = X.utils.book_new();
+  X.utils.book_append_sheet(wb, ws1, 'Escalas');
+  X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(C), 'Cobertura por visão');
+  X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(D), 'Detalhe por dia');
+  X.writeFile(wb, `Escalas_5x2_${list.length}_colab_${hoje()}.xlsx`);
+}
+
+/* ================= painel ================= */
+function vPainel(m) {
+  const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));
+  if (P.rev && !revs.includes(P.rev)) P.rev = '';
+  const L = S.cols.filter(c => !P.rev || c.revenda === P.rev);
+  const cnt = a => { const o = { OK: 0, ALERTA: 0, ERRO: 0, SEM: 0 }; a.forEach(c => o[st(c)]++); return o; };
+  const k = cnt(L), tot = L.length, pc = x => tot ? Math.round(x / tot * 100) : 0;
+  const and = P.rev
+    ? VISOES.map(([v, nome]) => ({ g: nome, a: L.filter(c => c.vis.area === v) })).filter(x => x.a.length)
+    : revs.map(r => ({ g: r, a: L.filter(c => c.revenda === r) }));
+  const LV = L.filter(c => P.vis === 'todos' || c.vis.area === P.vis);
+  const salvaRev = S.f.rev; S.f.rev = P.rev; const G = agrupar(LV, P.vis === 'todos'); S.f.rev = salvaRev;
+  let hm = '';
+  G.forEach((F, gk) => {
+    const todos = [...F.values()].flat(), dg = porDia(todos), mx = Math.max(...dg, 1);
+    hm += `<tr class="hg"><td class="n">${esc(gk)} <span class="hint">(${todos.length})</span></td>${dg.map(v => `<td style="${cor(v, mx)}">${v}</td>`).join('')}<td>${todos.filter(c => !c.escala).length || ''}</td></tr>`;
+    if (P.vis !== 'adm' || F.size > 1) F.forEach((arr, fn) => {
+      const d = porDia(arr), m2 = Math.max(...d, 1);
+      hm += `<tr><td class="n fx">${esc(fn)} <span class="hint">(${arr.length})</span></td>${d.map(v => `<td style="${cor(v, m2)}">${v}</td>`).join('')}<td class="sem">${arr.filter(c => !c.escala).length || ''}</td></tr>`;
+    });
+  });
+  const pend = L.filter(c => ['ERRO', 'SEM'].includes(st(c))).sort((a, b) => (st(a) === 'ERRO' ? 0 : 1) - (st(b) === 'ERRO' ? 0 : 1) || a.vis.ordem.localeCompare(b.vis.ordem)).slice(0, 40);
+  m.innerHTML = `<section class="card"><div class="filt">
+      <label class="f">Revenda<select data-p="rev">${opts(revs, P.rev, 'Todas')}</select></label></div></section>
+    <div class="kpis">
+      <div class="kpi"><span>Colaboradores</span><b>${tot}</b><small>${pc(k.OK + k.ALERTA)}% com escala válida</small></div>
+      <div class="kpi OK"><span>Dentro das regras</span><b>${k.OK}</b><small>${pc(k.OK)}%</small></div>
+      <div class="kpi ALERTA"><span>Com alerta</span><b>${k.ALERTA}</b><small>${pc(k.ALERTA)}%</small></div>
+      <div class="kpi ERRO"><span>Com erro</span><b>${k.ERRO}</b><small>${pc(k.ERRO)}%</small></div>
+      <div class="kpi SEM"><span>Sem escala</span><b>${k.SEM}</b><small>${pc(k.SEM)}%</small></div></div>
+    <section class="card"><div class="card-h"><h3>Andamento por ${P.rev ? 'visão' : 'revenda'}</h3><div class="leg"><span><span class="dot d-OK"></span> OK</span><span><span class="dot d-ALERTA"></span> Alerta</span><span><span class="dot d-ERRO"></span> Erro</span><span><span class="dot d-SEM"></span> Sem escala</span></div></div>
+      <div class="card-b prg">${and.map(x => { const c = cnt(x.a), n = x.a.length; return `<div class="pr"><b title="${esc(x.g)}">${esc(x.g)}</b><div class="stk">${['OK', 'ALERTA', 'ERRO', 'SEM'].map(s => c[s] ? `<i class="${s}" style="width:${c[s] / n * 100}%" title="${ROT[s]}: ${c[s]}"></i>` : '').join('')}</div><span class="pc">${Math.round((c.OK + c.ALERTA) / n * 100)}%</span></div>`; }).join('') || '<p class="hint">Sem dados.</p>'}</div></section>
+    <section class="card"><div class="card-h"><h3>Pessoas trabalhando por dia</h3><span class="hint">só quem já tem escala · a última coluna mostra quem está sem escala</span></div>
+      <div class="vt">${VISOES.concat([['todos', 'Todos']]).map(([v]) => { const n = v === 'todos' ? L.length : L.filter(c => c.vis.area === v).length; return `<button type="button" data-pv="${v}" aria-pressed="${P.vis === v}" ${n || v === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[v]}<i>${n}</i></button>`; }).join('')}</div>
+      <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map(d => `<th>${d}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
+    <section class="card"><div class="card-h"><h3>Pendências</h3><span class="hint">erros primeiro · toque para abrir</span></div>
+      <div class="pend">${pend.map(c => `<button type="button" data-ed="${esc(c.matricula)}"><span class="pill p-${st(c)}">${ROT[st(c)]}</span><b>${esc(c.nome)}</b><small>${esc(c.funcao)} · ${esc(c.vis.areaNome)}${c.vis.area === 'adm' ? '' : ' · ' + esc(c.vis.grupo)} · ${esc(c.revenda)}${c.val ? '<br>' + esc((c.val.msgs.find(x => x.nivel === 'erro') || {}).texto || '') : ''}</small></button>`).join('') || '<p class="empty">Nada pendente. Todas as escalas estão válidas.</p>'}</div></section>`;
+  m.querySelector('[data-p=rev]').onchange = e => { P.rev = e.target.value; vPainel(m); };
+  m.onclick = e => {
+    const v = e.target.closest('[data-pv]'); if (v) { P.vis = v.dataset.pv; return vPainel(m); }
+    const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
+  };
+}
+function cor(v, mx) { const a = mx && v ? 0.12 + 0.78 * v / mx : 0; return `background:${a ? `rgba(20,70,200,${a.toFixed(2)})` : 'var(--sunk)'};color:${a > 0.5 ? '#fff' : '#0c1a33'}`; }
+
+/* ================= importar planilha do DP ================= */
+const MAPA = {
+  matricula: ['matricula', 'matr', 'matr.', 'codigo', 'cod', 'cod.', 'chapa', 'registro', 'cadastro', 'codigo do empregado', 'cod empregado'],
+  nome: ['nome', 'nome do empregado', 'nome completo', 'colaborador', 'empregado', 'funcionario', 'nome do colaborador'],
+  funcao: ['funcao', 'cargo', 'descricao do cargo', 'descricao cargo', 'nome do cargo'],
+  revenda: ['revenda', 'unidade', 'filial', 'operacao', 'estabelecimento', 'empresa'],
+  setor: ['centro de custo', 'centro de custos', 'descricao centro de custo', 'setor', 'departamento', 'area'],
+  lotacao: ['ponto de apoio', 'base/ponto de apoio', 'lotacao', 'local de trabalho', 'local', 'base'],
+  turno: ['turno/tipo', 'turno', 'escala'],
+  situacao: ['descricao situacao', 'descricao da situacao', 'situacao', 'status']
+};
+const ROTULO = { matricula: 'Matrícula', nome: 'Nome', funcao: 'Função', revenda: 'Revenda', setor: 'Setor / centro de custo', lotacao: 'Base ou ponto de apoio', turno: 'Turno', situacao: 'Situação' };
+const COD_REV = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
+function achaColunas(H) {
+  const c = {};
+  Object.keys(MAPA).forEach(k => { for (const a of MAPA[k]) { const i = H.indexOf(a); if (i >= 0 && !Object.values(c).includes(i)) { c[k] = i; break; } } });
+  return c;
+}
+function revDoArquivo(nome) {
+  const up = String(nome).toUpperCase(), mm = up.match(/(?:^|[^A-Z])(AL|SE|PA|RP|JZ|BF|PE|PT|BR)(?:[^A-Z]|$)/);
+  if (mm) return COD_REV[mm[1]];
+  const f = nrm(nome), hit = Object.values(COD_REV).concat(S.allRevs).find(r => f.includes(nrm(r)));
+  return hit || '';
+}
+async function lerArquivo(file) {
+  const X = await loadXLSX();
+  const wb = X.read(await file.arrayBuffer(), { type: 'array' });
+  const abas = wb.SheetNames.slice().sort((a, b) => (nrm(b) === 'empregados') - (nrm(a) === 'empregados'));
+  for (const aba of abas) {
+    const A = X.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: '', raw: false });
+    const hi = A.slice(0, 25).findIndex(r => { const c = achaColunas(r.map(nrm)); return c.nome !== undefined && (c.matricula !== undefined || c.funcao !== undefined); });
+    if (hi < 0) continue;
+    const c = achaColunas(A[hi].map(nrm));
+    const g = (r, k) => c[k] === undefined ? '' : String(r[c[k]] == null ? '' : r[c[k]]).trim();
+    const rows = A.slice(hi + 1).filter(r => g(r, 'nome')).map(r => {
+      let sit = g(r, 'situacao'); if (sit === '8') sit = 'Demitido (8)';
+      return { matricula: g(r, 'matricula'), nome: g(r, 'nome'), funcao: g(r, 'funcao'), revenda: g(r, 'revenda'), setor: g(r, 'setor'), lotacao: g(r, 'lotacao'), turno: g(r, 'turno'), situacao: sit };
+    });
+    return { nome: file.name, aba, cols: c, rows, revenda: c.revenda === undefined ? revDoArquivo(file.name) : '' };
+  }
+  return { nome: file.name, erro: 'Não achei o cabeçalho com Nome e Matrícula (ou Cargo) neste arquivo.' };
+}
+function vImportar(m) {
+  const I = S.imp;
+  const des = r => /demit|deslig|rescis/i.test(r.situacao);
+  m.innerHTML = `<section class="hero"><h2>Importar a planilha do DP</h2>
+      <p>Use a mesma planilha de empregados do QLP (aba <b>Empregados</b>). Pode enviar um arquivo por revenda ou vários de uma vez. Colaboradores que saírem da planilha de uma revenda ficam inativos; escalas e a marcação de teleatendimento de quem continua são mantidas.</p></section>
+    <section class="card"><div class="card-b" style="display:grid;gap:12px">
+      <label class="drop" for="imp-file"><b>Escolher arquivos (.xlsx, .xls ou .csv)</b><span class="hint">Colunas lidas: ${Object.values(ROTULO).join(' · ')}</span></label>
+      <input type="file" id="imp-file" accept=".xlsx,.xls,.xlsb,.csv" multiple hidden>
+      <div id="imp-res"></div></div></section>`;
+  m.querySelector('#imp-file').onchange = async e => {
+    const files = [...e.target.files]; if (!files.length) return;
+    $('#imp-res').innerHTML = '<p class="hint"><span class="spin"></span> Lendo arquivos…</p>';
+    try { S.imp = { arqs: await Promise.all(files.map(lerArquivo)) }; } catch (err) { toast(esc(err.message), true); S.imp = null; }
+    vImportar(m);
+  };
+  if (!I) return;
+  const ok = I.arqs.filter(a => !a.erro);
+  $('#imp-res').innerHTML = I.arqs.map((a, ix) => a.erro ? `<div class="msgbox er"><b>${esc(a.nome)}</b>: ${esc(a.erro)}</div>` : `
+    <div class="card"><div class="card-h"><h3>${esc(a.nome)}</h3><span class="hint">aba ${esc(a.aba)} · ${a.rows.length} linhas · ${a.rows.filter(des).length} desligados (não entram)</span></div>
+    <div class="card-b" style="display:grid;gap:10px">
+      <div class="ck">${Object.keys(ROTULO).map(k => `<label style="cursor:default;${a.cols[k] === undefined ? 'color:var(--al);background:var(--als)' : ''}">${a.cols[k] === undefined ? '✕' : '✓'} ${ROTULO[k]}</label>`).join('')}</div>
+      ${a.cols.matricula === undefined ? '<div class="msgbox er">Sem coluna de matrícula: este arquivo não pode ser importado.</div>' : ''}
+      ${a.cols.revenda === undefined ? `<label class="f">Revenda deste arquivo (a planilha não tem a coluna)<input data-rev="${ix}" value="${esc(a.revenda)}" list="dl-rev" placeholder="Ex.: Alagoinhas"></label>` : `<p class="hint">Revendas no arquivo: <b>${esc(uniq(a.rows.map(r => r.revenda)).join(', '))}</b></p>`}
+      <div class="ovf"><table class="tb"><tr><th>Matrícula</th><th>Nome</th><th>Função</th><th>Setor</th><th>Lotação</th><th>Turno</th><th>Situação</th></tr>
+        ${a.rows.slice(0, 6).map(r => `<tr><td>${esc(r.matricula)}</td><td>${esc(r.nome)}</td><td>${esc(r.funcao)}</td><td>${esc(r.setor)}</td><td>${esc(r.lotacao || 'Base')}</td><td>${esc(r.turno)}</td><td>${esc(r.situacao)}</td></tr>`).join('')}</table></div>
+    </div></div>`).join('') +
+    `<datalist id="dl-rev">${uniq(Object.values(COD_REV).concat(S.allRevs)).map(r => `<option value="${esc(r)}">`).join('')}</datalist>` +
+    (ok.length ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn" data-cancel>Cancelar</button><button type="button" class="btn pr" data-imp>${ic('up')}Importar ${ok.reduce((s, a) => s + a.rows.filter(r => !des(r)).length, 0)} colaboradores</button></div>` : '');
+  m.querySelectorAll('[data-rev]').forEach(i => { i.oninput = () => { I.arqs[+i.dataset.rev].revenda = i.value.trim(); }; });
+  const cx = m.querySelector('[data-cancel]'); if (cx) cx.onclick = () => { S.imp = null; vImportar(m); };
+  const bt = m.querySelector('[data-imp]');
+  if (bt) bt.onclick = () => ocupado(bt, async () => {
+    const rows = [];
+    for (const a of ok) {
+      if (a.cols.matricula === undefined) throw new Error(`${a.nome}: falta a coluna de matrícula.`);
+      if (a.cols.revenda === undefined && !a.revenda) throw new Error(`Informe a revenda do arquivo ${a.nome}.`);
+      a.rows.forEach(r => { if (r.matricula) rows.push(Object.assign({}, r, { revenda: r.revenda || a.revenda })); });
+    }
+    if (rows.some(r => !r.revenda)) throw new Error('Há linhas sem revenda. Confira a coluna Revenda da planilha.');
+    const r = await call('importar', { rows });
+    S.imp = null;
+    toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos, <b>${r.atualizados}</b> atualizados, <b>${r.inativados}</b> inativados, ${r.desligados} desligados.`);
+    S.view = 'escalas'; await carregar();
+  });
+}
+
+/* ================= usuários ================= */
+async function vUsuarios(m) {
+  m.innerHTML = '<section class="card"><p class="empty"><span class="spin"></span> Carregando usuários…</p></section>';
+  try { S.users = await call('usuarios'); } catch (e) { m.innerHTML = `<div class="msgbox er">${esc(e.message)}</div>`; return; }
+  S.pend = S.users.filter(u => u.status === 'PENDENTE').length;
+  desenhaUsuarios(m);
+}
+function formAcesso(u) {
+  const revs = S.allRevs, sets = S.allSets, adm = u.perfil === 'ADMIN';
+  const ck = (nome, arr, sel, todos) => `<div class="ck"><label><input type="checkbox" data-${nome}="*" ${sel.includes('*') ? 'checked' : ''}> <b>${todos}</b></label>${arr.map(v => `<label><input type="checkbox" data-${nome}="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
+  return `<div class="ap" data-form="${esc(u.id)}">
+    <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${!adm ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
+    ${revs.length ? '' : '<p class="hint">Importe a planilha do DP para listar as revendas e os setores. Por enquanto dá para liberar "Todas" e "Todos".</p>'}
+    <div><b style="font-size:12px;color:var(--mut)">REVENDAS</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
+    <div><b style="font-size:12px;color:var(--mut)">SETORES</b>${ck('st', sets, u.setores, 'Todos')}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn sm" data-u="cancel">Cancelar</button><button type="button" class="btn sm ok" data-u="salvar" data-id="${esc(u.id)}">${u.status === 'PENDENTE' ? 'Aprovar acesso' : 'Salvar acesso'}</button></div></div>`;
+}
+function desenhaUsuarios(m) {
+  const U = S.users, pend = U.filter(u => u.status === 'PENDENTE'), out = U.filter(u => u.status !== 'PENDENTE');
+  const esc2 = a => a.includes('*') ? 'todas' : a.join(', ') || '—';
+  const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
+      <small>Login: ${esc(u.login)}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
+      ${u.status !== 'PENDENTE' ? `<small>Revendas: ${esc(esc2(u.revendas))} · Setores: ${esc(esc2(u.setores))}</small>` : ''}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      ${u.status === 'PENDENTE' ? `<button type="button" class="btn sm ok" data-u="abrir" data-id="${esc(u.id)}">Aprovar</button><button type="button" class="btn sm er" data-u="BLOQUEADO" data-id="${esc(u.id)}">Recusar</button>`
+      : `<button type="button" class="btn sm" data-u="abrir" data-id="${esc(u.id)}">Acesso</button><button type="button" class="btn sm" data-u="reset" data-id="${esc(u.id)}">Nova senha</button>${u.id !== S.user.id ? `<button type="button" class="btn sm ${u.status === 'ATIVO' ? 'er' : ''}" data-u="${u.status === 'ATIVO' ? 'BLOQUEADO' : 'ATIVO'}" data-id="${esc(u.id)}">${u.status === 'ATIVO' ? 'Bloquear' : 'Reativar'}</button>` : ''}`}</div>
+    ${S.editUser === u.id ? formAcesso(u) : ''}</div>`;
+  m.innerHTML = `<section class="card"><div class="card-h"><h3>Aguardando aprovação (${pend.length})</h3><button type="button" class="btn sm" data-u="ref">${ic('ref')}Atualizar</button></div>
+      ${pend.map(linha).join('') || '<p class="empty">Nenhum cadastro pendente.</p>'}</section>
+    <section class="card"><div class="card-h"><h3>Usuários (${out.length})</h3><span class="hint">Supervisores só veem as revendas e os setores liberados</span></div>${out.map(linha).join('')}</section>`;
+  m.onclick = e => {
+    const b = e.target.closest('[data-u]'); if (!b) return;
+    const a = b.dataset.u, id = b.dataset.id;
+    if (a === 'ref') return vUsuarios(m);
+    if (a === 'abrir') { S.editUser = S.editUser === id ? null : id; return desenhaUsuarios(m); }
+    if (a === 'cancel') { S.editUser = null; return desenhaUsuarios(m); }
+    if (a === 'salvar') {
+      const f = b.closest('[data-form]');
+      const pick = n => [...f.querySelectorAll(`[data-${n}]:checked`)].map(x => x.getAttribute('data-' + n));
+      let rv = pick('rv'), sts = pick('st'); if (rv.includes('*')) rv = ['*']; if (sts.includes('*')) sts = ['*'];
+      return ocupado(b, async () => { await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv, setores: sts }); S.editUser = null; toast('Acesso salvo.'); vUsuarios(m); });
+    }
+    if (a === 'reset') {
+      if (!confirm('Gerar uma senha temporária para este usuário?')) return;
+      return ocupado(b, async () => {
+        const r = await call('resetSenha', { id });
+        abrirModal(`<div class="mdl-h"><div><h2>Senha temporária</h2><small>Envie ao usuário e peça para trocar no primeiro acesso</small></div><button type="button" class="x" data-x>×</button></div>
+          <div class="mdl-b"><p>Login: <b>${esc(r.login)}</b></p><p style="font:900 34px var(--fd);letter-spacing:.1em;margin:0">${esc(r.senhaTemporaria)}</p></div>
+          <div class="mdl-f"><button type="button" class="btn pr" data-x>Fechar</button></div>`, true);
+      });
+    }
+    if (a === 'ATIVO' || a === 'BLOQUEADO') {
+      if (a === 'BLOQUEADO' && !confirm('Bloquear o acesso deste usuário?')) return;
+      return ocupado(b, async () => { await call('statusUsuario', { id, status: a }); vUsuarios(m); });
+    }
+  };
+}
+
+/* ================= regras ================= */
+function vRegras(m) {
+  const c = S.cfg, adm = S.user.perfil === 'ADMIN';
+  const P = parametrosRegra(c, hoje() < c.DATA_INICIO_5X2 ? c.DATA_INICIO_5X2 : hoje());
+  const cards = [
+    ['5 dias + 2 folgas', '5x2', 'Toda semana: 5 dias de trabalho e 2 de folga.'],
+    ['Domingo', SN(c.DOMINGO_FOLGA) ? 'Folga' : 'Livre', SN(c.DOMINGO_FOLGA) ? 'Domingo é sempre uma das folgas (regra da empresa).' : 'Domingo pode ser dia de trabalho.'],
+    ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(c.DATA_INICIO_5X2)} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
+    ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${c.DIARIO_MAX_TRANSICAO}h (8h + as horas distribuídas). Depois: ${c.DIARIO_MAX_FINAL}h.`],
+    ['Intervalo', '1h a 2h', 'Acima de 6h de trabalho; 15 min entre 4h e 6h (CLT, art. 71).'],
+    ['Entre jornadas', '11h', 'Descanso mínimo entre o fim de um dia e o início do outro (CLT, art. 66).'],
+    ['Descanso semanal', '35h', '24h de folga + 11h, seguidas, ao menos uma vez na semana.'],
+    ['Teleatendimento', `${c.TELE_DIARIO}h/dia`, `Até ${c.TELE_SEMANAL}h na semana, com as pausas da NR-17 (Anexo II).`]
+  ];
+  m.innerHTML = `<section class="hero"><h2>Regras que o sistema confere</h2>
+      <p>Base: Emenda Constitucional nº 141/2026 (fim da 6x1), em vigor a partir de ${dataBr(c.DATA_INICIO_5X2)}, e a CLT. Escalas com erro ficam em vermelho${SN(c.BLOQUEAR_ERRO) ? ' e não podem ser salvas' : ''}. Regimes diferentes previstos em acordo ou convenção coletiva devem ser confirmados com o DP.</p></section>
+    <div class="rg">${cards.map(([t, v, p]) => `<div class="rc"><b>${t}</b><span class="v">${esc(v)}</span><p>${esc(p)}</p></div>`).join('')}</div>
+    ${adm ? `<section class="card"><div class="card-h"><h3>Parâmetros (administrador)</h3><button type="button" class="btn sm pr" data-cfg>Salvar parâmetros</button></div>
+      <div class="card-b row2">${Object.keys(c).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
+      <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>` : ''}`;
+  const b = m.querySelector('[data-cfg]');
+  if (b) b.onclick = () => ocupado(b, async () => {
+    const d = {}; m.querySelectorAll('input[data-k]').forEach(i => { d[i.dataset.k] = i.value; });
+    S.cfg = await call('salvarConfig', d); revalida(); toast('Parâmetros salvos. As escalas foram reavaliadas com as novas regras.'); render();
+  });
+}
+
+/* ================= trocar senha ================= */
+function modalSenha() {
+  abrirModal(`<div class="mdl-h"><div><h2>Trocar senha</h2></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <form class="mdl-b" id="fs"><label class="f">Senha atual<input type="password" name="atual" autocomplete="current-password"></label>
+      <label class="f">Nova senha<input type="password" name="nova" autocomplete="new-password"></label>
+      <label class="f">Repita a nova senha<input type="password" name="nova2" autocomplete="new-password"></label>
+      <button class="btn pr" type="submit">Salvar nova senha</button></form>`, true);
+  $('#fs').onsubmit = e => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    if (f.nova !== f.nova2) return toast('As senhas não conferem.', true);
+    ocupado(e.target.querySelector('button'), async () => { await call('trocarSenha', f); fecharModal(true); toast('Senha alterada.'); });
+  };
+}
+
+/* ================= início ================= */
+(async function iniciar() {
+  const t = ls.get('tk');
+  if (t) { S.token = t; try { await carregar(); return; } catch (e) { S.token = null; ls.set('tk', null); } }
+  telaLogin();
+})();
+})();
+</script>

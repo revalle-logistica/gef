@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escala 5x2 · Revalle</title>
+<style>body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#eef2f9;color:#0c1a33;display:flex;align-items:center;justify-content:center;height:100vh}.l{text-align:center;color:#44526b}.s{width:34px;height:34px;border:4px solid #dbe2ee;border-top-color:#0b2a6b;border-radius:50%;margin:0 auto 12px;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}</style>
+</head>
+<body>
+<div class="l" id="l"><div class="s"></div>Carregando a Escala 5x2…</div>
+<script>
+(function(){
+// Link /exec do app da Web publicado no Apps Script
+const U="COLE_AQUI_O_LINK_EXEC";
+const K="esc5x2_app_html";
+const prep=h=>h.replace('<base target="_top">','').replace(/<head>/i,'<head><script>window.API_URL='+JSON.stringify(U)+'<\/script>');
+const mostra=h=>{ document.open(); document.write(h); document.close(); };
+let cache=null; try{ cache=localStorage.getItem(K); }catch(e){}
+// abre na hora com a versão guardada no aparelho; a nova versão é baixada em segundo plano
+if(cache){ const go=()=>mostra(prep(cache)); if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",()=>setTimeout(go,0)); else setTimeout(go,0); }
+fetch(U+"?raw=1",{credentials:"omit",cache:"no-store"}).then(r=>{ if(!r.ok) throw 0; return r.text(); }).then(h=>{
+  if(!/<html/i.test(h)) throw 0;
+  if(h===cache) return;
+  try{ localStorage.setItem(K,h); }catch(e){ try{ localStorage.removeItem(K); }catch(_){} }
+  if(!cache){ mostra(prep(h)); return; }
+  const b=document.createElement("div");
+  b.textContent="🔄 Nova versão da Escala 5x2 disponível — toque aqui para atualizar";
+  b.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#0b2a6b;color:#fff;padding:10px 16px;border-radius:12px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;max-width:92vw;text-align:center";
+  b.onclick=()=>location.reload();
+  (document.body||document.documentElement).appendChild(b);
+}).catch(()=>{ if(!cache){ const l=document.getElementById("l"); if(l) l.textContent="Não foi possível carregar. Verifique a internet e atualize a página."; } });
+})();
+</script>
+</body>
+</html>

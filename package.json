@@ -1,0 +1,10 @@
+{
+  "name": "escala-5x2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de escalas 5x2 da Revalle (Google Apps Script)",
+  "scripts": {
+    "test": "node --test tests/regras.test.js",
+    "build": "node tools/build.js"
+  }
+}

@@ -1,0 +1,73 @@
+// Testes das regras legais: node --test tests/
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const vm = require('vm');
+const path = require('path');
+
+const ctxVm = {};
+vm.createContext(ctxVm);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'Regras.gs'), 'utf8'), ctxVm);
+const { validarEscala, semanaModelo, calcDia } = ctxVm;
+
+const cfg = {
+  DATA_INICIO_5X2: '2026-12-15', LIMITE_SEMANAL_TRANSICAO: '42', DATA_40H: '2027-12-15',
+  LIMITE_SEMANAL_FINAL: '40', DIARIO_MAX_TRANSICAO: '10', DIARIO_MAX_FINAL: '8',
+  DOMINGO_FOLGA: 'S', TELE_DIARIO: '6', TELE_SEMANAL: '30'
+};
+const v = (dias, extra = {}) => validarEscala({ vigencia: '2026-12-16', dias, ...extra }, { cfg, tele: !!extra.tele });
+const erros = r => r.msgs.filter(m => m.nivel === 'erro').map(m => m.texto).join(' | ');
+
+test('padrão 8h24 seg-sex com 1h de intervalo é OK (42h)', () => {
+  const r = v(semanaModelo(5, '07:00', '16:24', 60));
+  assert.strictEqual(r.status, 'OK', erros(r));
+  assert.strictEqual(r.total, 42 * 60);
+});
+
+test('acima de 42h na transição dá erro', () => {
+  const r = v(semanaModelo(5, '07:00', '16:30', 60));
+  assert.strictEqual(r.status, 'ERRO');
+  assert.match(erros(r), /limite/);
+});
+
+test('na fase de 40h, 8h24/dia dá erro', () => {
+  const r = validarEscala({ vigencia: '2028-01-03', dias: semanaModelo(5, '07:00', '16:24', 60) }, { cfg });
+  assert.strictEqual(r.status, 'ERRO');
+  assert.match(erros(r), /máximo diário/);
+});
+
+test('domingo trabalhado dá erro', () => {
+  const d = semanaModelo(2, '07:00', '15:00', 60); d[6] = { tipo: 'T', ent: '07:00', sai: '15:00', int: 60 }; d[5] = { tipo: 'F' };
+  const r = v(d);
+  assert.match(erros(r), /Domingo/);
+});
+
+test('6 dias de trabalho dá erro', () => {
+  const d = semanaModelo(5, '07:00', '13:00', 15); d[5] = { tipo: 'T', ent: '07:00', sai: '13:00', int: 15 };
+  assert.match(erros(v(d)), /5 dias de trabalho/);
+});
+
+test('intervalo menor que 1h acima de 6h dá erro', () => {
+  assert.match(erros(v(semanaModelo(5, '07:00', '15:30', 30))), /art. 71/);
+});
+
+test('interjornada menor que 11h dá erro', () => {
+  const d = semanaModelo(5, '14:00', '22:00', 60); d[1] = { tipo: 'T', ent: '06:00', sai: '14:00', int: 60 };
+  assert.match(erros(v(d)), /11h/);
+});
+
+test('turno noturno atravessando a meia-noite calcula certo e avisa', () => {
+  const r = v(semanaModelo(5, '22:00', '06:24', 60));
+  assert.strictEqual(calcDia({ tipo: 'T', ent: '22:00', sai: '06:24', int: 60 }).liquido, 444);
+  assert.ok(r.msgs.some(m => m.nivel === 'info' && /22h/.test(m.texto)));
+});
+
+test('teleatendimento: 6h/dia OK, 8h dá erro', () => {
+  assert.strictEqual(v(semanaModelo(5, '08:00', '14:15', 15), { tele: true }).status, 'OK');
+  assert.match(erros(v(semanaModelo(5, '08:00', '17:00', 60), { tele: true })), /teleatendimento/);
+});
+
+test('vigência antes de 15/12/2026 gera alerta', () => {
+  const r = validarEscala({ vigencia: '2026-12-01', dias: semanaModelo(5, '07:00', '16:24', 60) }, { cfg });
+  assert.strictEqual(r.status, 'ALERTA');
+});

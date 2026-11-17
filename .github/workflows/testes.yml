@@ -1,0 +1,16 @@
+# Roda os testes das regras legais e confere se apps-script/ está em dia com src/.
+name: Testes
+on: [push, pull_request]
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
+      - name: apps-script/ atualizado
+        run: |
+          node tools/build.js
+          git diff --exit-code apps-script/ || (echo "Rode 'node tools/build.js' e faça commit de apps-script/" && exit 1)

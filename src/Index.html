@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..900&family=Public+Sans:wght@400;600;700&display=swap">
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <div id="root"><div class="boot">Carregando…</div></div>
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script><?!= regrasFonte() ?></script>
+  <?!= include('App') ?>
+</body>
+</html>
