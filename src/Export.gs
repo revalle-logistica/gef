@@ -33,7 +33,7 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
   if (!e) {
     corpo = '<p style="margin:30px 0;font-size:14px;color:#b42318"><b>Escala ainda não cadastrada.</b></p>';
   } else {
-    const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
+    const esc = e;
     const val = validarEscala(esc, { tele: tele, cfg: cfg, entrega: ehEntregaCampo(c) });
     const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
@@ -76,11 +76,11 @@ function quadroPdf_(cols, esc, cfg, ctx) {
   ordem.forEach(function (g) {
     rows += '<tr class="g"><td colspan="12">' + h_(g) + ' (' + grupos[g].length + ')</td></tr>';
     grupos[g].forEach(function (c) {
-      const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
+      const e = esc[c.matricula], dias = e ? e.dias : [];
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         (function () {
-          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
+          const sem = ctx && ctx.semana ? semanaEfetiva(e || null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
           return DIAS_CURTO.map(function (_, i) {
             if (sem && sem[i].tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8;font-weight:bold">FÉRIAS</td>';
             if (!e || (sem && sem[i].tipo === 'N')) return '<td>—</td>';
@@ -106,8 +106,7 @@ function exportPdf_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Nenhum colaborador selecionado.');
   if (mats.length > 500) throw new Error('Gere no máximo 500 colaboradores por arquivo.');
-  const cfg = cfg_(), esc = {};
-  ler_('Escalas').forEach(function (e) { esc[e.matricula] = e; });
+  const cfg = cfg_(), esc = escalasPorMatricula_(/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
   const cols = ler_('Colaboradores')
     .filter(function (c) { return mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N' && podeVer_(u, c); })
     .sort(ordemVisao_);
@@ -138,7 +137,7 @@ function exportPdf_(u, d) {
 const MESES_ = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 function nomeMes_(ym) { const p = ym.split('-'); return MESES_[+p[1] - 1] + ' de ' + p[0]; }
 function diasMesColab_(c, e, ctx) {
-  const esc = e ? { vigencia: e.vigencia, dias: parse_(e.dias, []) } : null;
+  const esc = e || null;
   return diasDoMes(ctx.mes).map(function (dt) { return diaEfetivo(esc, dt, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]); });
 }
 function fichaMesPdf_(c, e, cfg, ultima, ctx) {

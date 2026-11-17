@@ -130,7 +130,14 @@ const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
 const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
 function ajustesDe(m) { const o = {}; S.ajustes.forEach(a => { if (a.matricula === m) o[a.data] = a; }); return o; }
 const grupoFuncao = () => { const o = cfgJson('FUNCOES_GRUPO'), r = {}; Object.keys(o).forEach(k => { if (String(o[k] || '').trim()) r[nrm(k)] = String(o[k]).trim(); }); return r; };
-function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; });  atualizaVisoesExtra(); }
+/** Deixa no topo da escala o período que vale na semana em tela (ou o mais próximo). */
+function periodoDaSemana(c) {
+  const e = c.escala; if (!e || !e.periodos || !e.periodos.length) return;
+  const ps = e.periodos, fim = isoMaisDias(S.semana, 6);
+  const p = periodoNaData(e, S.semana) || ps.filter(x => x.vigencia <= fim && (!x.ate || x.ate >= S.semana)).pop() || ps.find(x => x.vigencia > fim) || ps[ps.length - 1];
+  Object.assign(e, { vigencia: p.vigencia, ate: p.ate || '', dias: p.dias, por: p.por, em: p.em });
+}
+function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { periodoDaSemana(c); c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; });  atualizaVisoesExtra(); }
 
 /* ================= casca ================= */
 function render() {
@@ -311,6 +318,7 @@ function semanaReal(c) {
   return `<div class="wk">${c.sem.map((x, i) => {
     const h = x.feriado ? ' h' : '', tt = x.feriado ? ` title="Feriado: ${esc(x.feriado)}"` : '';
     if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[i]}<small>férias</small></span>`;
+    if (x.tipo === 'N' && x.depois) return `<span class="n an${h}" title="A escala terminou em ${dataBr(x.depois)}: monte o próximo período">${DIAS_CURTO[i]}<small>fim ${dataBr(x.depois).slice(0, 5)}</small></span>`;
     if (x.tipo === 'N') return x.antes ? `<span class="n an${h}" title="A escala começa em ${dataBr(x.antes)}${x.feriado ? ' · feriado: ' + esc(x.feriado) : ''}">${DIAS_CURTO[i]}<small>início ${dataBr(x.antes).slice(0, 5)}</small></span>` : `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>sem escala</small></span>`;
     const a = x.ajuste ? ' aj' : '';
     return x.tipo === 'T' ? `<span class="t${h}${a}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}${a}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
@@ -322,7 +330,7 @@ function linhaHtml(c) {
     <div class="nm"><b><button type="button" class="lkb${c.temLink ? ' on' : ''}" data-link="${esc(c.matricula)}" title="${c.temLink ? 'Link da escala ativo: ver, enviar ou cancelar' : 'Gerar link da escala para o colaborador'}" aria-label="Link da escala de ${esc(c.nome)}">📲</button>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}${c.semVal && c.semVal.status === 'ERRO' && c.sem.some(d => d.ajuste) ? `<span class="tg th" title="${esc(c.semVal.msgs.filter(x => x.nivel === 'erro').map(x => x.texto).join(' '))}">SEMANA COM ERRO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semanaReal(c)}
-    <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
+    <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}${c.escala && c.escala.ate ? `<small class="ate${c.escala.ate <= isoMaisDias(S.semana, 13) ? ' vence' : ''}" title="Este período da escala vale até ${dataBr(c.escala.ate)}">até ${dataBr(c.escala.ate).slice(0, 5)}</small>` : ''}</div>
     <div><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span></div>
     <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
 }
@@ -344,10 +352,30 @@ function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, 
 function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
 const domFixo = () => SN(S.cfg.DOMINGO_FOLGA);
 
+/** Último dia de um período de n meses a partir de iso (ex.: 01/03 + 2 meses = 30/04). */
+function maisMeses(iso, n) { const p = iso.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1 + n, +p[2])); return isoMaisDias(d.toISOString().slice(0, 10), -1); }
+const perTxtE = p => `${dataBr(p.vigencia)} → ${p.ate ? dataBr(p.ate) : 'sem data final'}`;
+function resumoDias(dias) { const T = (dias || []).filter(x => x && x.tipo === 'T'); if (!T.length) return 'só folgas'; const f = (dias || []).map((x, i) => x && x.tipo === 'T' ? '' : DIAS_CURTO[i]).filter(Boolean); return `${T[0].ent}–${T[0].sai} · folga ${f.join(' e ')}`; }
+/** Painel de períodos do editor: lista, data final rápida e como fica depois de salvar. */
+function periodosEd() {
+  const w = modal.querySelector('#ed-per'), ch = modal.querySelector('#ed-atech'); if (!w || !S.ed) return;
+  const { c, e } = S.ed, ps = (c.escala && c.escala.periodos) || [];
+  ch.innerHTML = '<span class="hint">Vale por:</span>' + [[0, 'Sem data final'], [1, '1 mês'], [2, '2 meses'], [3, '3 meses'], [6, '6 meses']].map(([n, l]) => `<button type="button" class="chip" data-meses="${n}" aria-pressed="${n ? e.ate === maisMeses(e.vigencia, n) : !e.ate}">${l}</button>`).join('');
+  let h = '';
+  if (ps.length) h += `<div class="pers"><b>Períodos da escala</b>${ps.map(p => `<button type="button" class="per${S.ed.vigOrig === p.vigencia ? ' on' : ''}" data-perv="${esc(p.vigencia)}"><span>${perTxtE(p)}</span><small>${esc(resumoDias(p.dias))}</small></button>`).join('')}<button type="button" class="per novo" data-pernovo>+ Novo período</button></div>`;
+  const outros = ps.filter(p => p.vigencia !== S.ed.vigOrig);
+  if (e.vigencia && (outros.length || S.ed.vigOrig)) {
+    const depois = aplicarPeriodo(outros.map(p => Object.assign({}, p)), { vigencia: e.vigencia, ate: e.ate || '', dias: e.dias, novo: true });
+    const mudou = depois.length !== ps.length || depois.some((p, i) => !ps[i] || p.vigencia !== ps[i].vigencia || (p.ate || '') !== (ps[i].ate || ''));
+    if (mudou) h += `<div class="msgbox"><b>Ao salvar fica assim:</b>${depois.map(p => `<div class="${p.novo ? 'pn' : ''}">${p.novo ? '▶ ' : ''}${perTxtE(p)} <span class="hint">· ${esc(resumoDias(p.dias))}</span></div>`).join('')}</div>`;
+  }
+  if (S.ed.vigOrig && ps.length) h += `<div style="text-align:right"><button type="button" class="fx-lk" data-perdel style="color:var(--er)">Excluir este período</button></div>`;
+  w.innerHTML = h;
+}
 function abrirEditor(mat) {
   const c = S.cols.find(x => x.matricula === mat);
   if (!c) return;
-  S.ed = { c, e: JSON.parse(JSON.stringify(c.escala ? { vigencia: c.escala.vigencia, dias: c.escala.dias } : escalaPadrao())), tele: c.tele, sujo: !c.escala };
+  S.ed = { c, e: JSON.parse(JSON.stringify(c.escala ? { vigencia: c.escala.vigencia, ate: c.escala.ate || '', dias: c.escala.dias } : Object.assign(escalaPadrao(), { ate: '' }))), vigOrig: c.escala ? c.escala.vigencia : '', tele: c.tele, sujo: !c.escala };
   desenhaEditor();
 }
 function linhaEd(i) {
@@ -363,7 +391,11 @@ function desenhaEditor() {
   const { c, e } = S.ed;
   abrirModal(`<div class="mdl-h"><div><h2>${esc(c.nome)}</h2><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)} · ${esc(c.revenda)} · ${esc(c.setor)} · ${esc(c.lotacao)}${c.turno ? ' · ' + esc(c.turno) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
     <div class="mdl-b">
-      <div class="row2"><label class="f">Vigência a partir de<input type="date" id="ed-vig" value="${esc(e.vigencia)}"></label>
+      <div id="ed-per"></div>
+      <div class="row2"><label class="f">Vale de<input type="date" id="ed-vig" value="${esc(e.vigencia)}"></label>
+        <label class="f">Até <span class="hint">(vazio = sem fim)</span><input type="date" id="ed-ate" value="${esc(e.ate || '')}"></label></div>
+      <div class="chips pz" id="ed-atech"></div>
+      <div class="row2">
         <label class="sw"><input type="checkbox" id="ed-tele" ${S.ed.tele ? 'checked' : ''}><span><b>Teleatendimento</b><br>Jornada de até ${esc(S.cfg.TELE_DIARIO)}h por dia</span></label></div>
       <div class="ed" id="ed-dias"><div class="ed-r hd"><span>Dia</span><span>Situação</span><span>Entrada</span><span>Saída</span><span>Intervalo</span><span style="text-align:right">Horas</span></div>
         ${DIAS_SEMANA.map((_, i) => linhaEd(i)).join('')}</div>
@@ -372,24 +404,43 @@ function desenhaEditor() {
       <div id="ed-val"></div>
       <div class="fer"><b>Férias</b><div id="ed-fer"></div>
         <form class="addp" id="ed-ferf"><input type="date" name="inicio" aria-label="Início das férias"><input type="date" name="fim" aria-label="Fim das férias"><input name="obs" placeholder="Obs. (opcional)" maxlength="120"><button class="btn sm" type="submit">Adicionar férias</button></form></div>
-      ${c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>'}
+      ${S.ed.vigOrig && c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : (c.escala ? '<p class="hint">Novo período: ajuste o horário e as datas e salve.</p>' : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>')}
       <div id="ed-lnk"></div>
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button><button type="button" class="btn" data-lnk>📲 Link p/ colaborador</button>
       <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-salvar>Salvar escala</button></div>`);
   const box = modal.querySelector('.mdl');
-  box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); };
+  box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); periodosEd(); };
+  box.querySelector('#ed-ate').onchange = ev => { S.ed.e.ate = ev.target.value; S.ed.sujo = true; periodosEd(); };
   box.querySelector('#ed-tele').onchange = ev => { S.ed.tele = ev.target.checked; S.ed.sujo = true; atualizaVal(); };
   box.addEventListener('input', ev => {
     const k = ev.target.dataset.k; if (!k) return;
     const r = ev.target.closest('[data-i]'), i = +r.dataset.i;
     if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.ed.e.dias[i].int = v; } else S.ed.e.dias[i][k] = ev.target.value;
     S.ed.sujo = true;
-    r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal();
+    r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal(); periodosEd();
   });
   box.addEventListener('click', ev => {
     const b = ev.target.closest('button'); if (!b) return;
     const D = S.ed.e.dias;
+    if (b.dataset.meses !== undefined) {
+      const n = +b.dataset.meses; S.ed.e.ate = n ? maisMeses(S.ed.e.vigencia, n) : ''; modal.querySelector('#ed-ate').value = S.ed.e.ate; S.ed.sujo = true; periodosEd(); return;
+    }
+    if (b.dataset.perv !== undefined) {
+      if (S.ed.sujo && !confirm('Trocar de período sem salvar as alterações?')) return;
+      const p = S.ed.c.escala.periodos.find(x => x.vigencia === b.dataset.perv); if (!p) return;
+      S.ed.e = JSON.parse(JSON.stringify({ vigencia: p.vigencia, ate: p.ate || '', dias: p.dias })); S.ed.vigOrig = p.vigencia; S.ed.sujo = false; desenhaEditor(); return;
+    }
+    if (b.hasAttribute('data-pernovo')) {
+      if (S.ed.sujo && !confirm('Começar um período novo sem salvar as alterações?')) return;
+      const ps = (S.ed.c.escala && S.ed.c.escala.periodos) || [], ult = ps[ps.length - 1];
+      const ini = ult && ult.ate ? isoMaisDias(ult.ate, 1) : isoMaisDias(segundaDaSemana(hoje()), 7);
+      S.ed.e = { vigencia: ini > vigPadrao() ? ini : vigPadrao(), ate: '', dias: JSON.parse(JSON.stringify(S.ed.e.dias)) }; S.ed.vigOrig = ''; S.ed.sujo = true; desenhaEditor(); return;
+    }
+    if (b.hasAttribute('data-perdel')) {
+      if (!confirm(`Excluir o período de ${dataBr(S.ed.vigOrig)}${S.ed.e.ate ? ' a ' + dataBr(S.ed.e.ate) : ''}? Os dias desse período ficam sem escala.`)) return;
+      return ocupado(b, async () => { const r = await call('removerPeriodo', { matricula: S.ed.c.matricula, vigencia: S.ed.vigOrig }); S.ed.c.escala = r.escala; revalida(); fecharModal(true); toast('Período excluído.'); render(); });
+    }
     if (b.dataset.tp) {
       const i = +b.closest('[data-i]').dataset.i;
       if (b.dataset.tp === 'T') { const ref = D.find(x => x.tipo === 'T') || { ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; D[i] = { tipo: 'T', ent: ref.ent, sai: ref.sai, int: +ref.int }; }
@@ -408,7 +459,7 @@ function desenhaEditor() {
       ocupado(b, () => pdfServidor([S.ed.c.matricula], 'fichas', S.semana));
     }
   });
-  atualizaVal(); listaFerias();
+  atualizaVal(); listaFerias(); periodosEd();
   box.querySelector('#ed-ferf').onsubmit = ev => {
     ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
     if (!fd.inicio || !fd.fim) return toast('Informe início e fim das férias.', true);
@@ -471,7 +522,7 @@ function listaFerias() {
 function redesenhaDias() {
   const w = $('#ed-dias');
   w.innerHTML = w.firstElementChild.outerHTML + DIAS_SEMANA.map((_, i) => linhaEd(i)).join('');
-  atualizaVal();
+  atualizaVal(); periodosEd();
 }
 function caixaVal(v) {
   const pct = Math.min(100, v.limite ? v.total / v.limite * 100 : 0);
@@ -490,8 +541,9 @@ function salvarEditor(bt) {
   const { c, e } = S.ed;
   ocupado(bt, async () => {
     if (S.ed.tele !== c.tele) { await call('setTele', { matricula: c.matricula, valor: S.ed.tele }); c.tele = S.ed.tele; }
-    const r = await call('salvarEscala', { matricula: c.matricula, vigencia: e.vigencia, dias: e.dias });
-    c.escala = r.escala; c.val = validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
+    if (e.ate && e.ate < e.vigencia) { toast('A data final não pode ser antes do início.', true); return; }
+    const r = await call('salvarEscala', { matricula: c.matricula, vigencia: e.vigencia, ate: e.ate || '', vigOrig: S.ed.vigOrig, dias: e.dias });
+    c.escala = r.escala; revalida();
     fecharModal(true); toast(`Escala de <b>${esc(c.nome)}</b> salva.`); render();
   });
 }
@@ -500,35 +552,40 @@ function salvarEditor(bt) {
 function modalLote() {
   const a = alvo();
   if (!a.lista.length) return toast('Nenhum colaborador na lista.', true);
-  S.lote = { vig: vigPadrao(), folga2: 5, ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO, lista: a.lista };
+  S.lote = { vig: vigPadrao(), ate: '', folga2: 5, ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO, lista: a.lista };
   const jaTem = a.lista.filter(c => c.escala).length, tele = a.lista.filter(c => c.tele).length;
   abrirModal(`<div class="mdl-h"><div><h2>Horário em lote</h2><small>${a.lista.length} colaboradores ${a.tipo}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
     <div class="mdl-b">
       <p class="hint">Todos recebem a mesma semana: folga no domingo e em mais um dia, com o mesmo horário nos 5 dias de trabalho. Depois dá para ajustar um a um.</p>
       <div class="row2">
-        <label class="f">Vigência a partir de<input type="date" data-l="vig" value="${esc(S.lote.vig)}"></label>
+        <label class="f">Vale de<input type="date" data-l="vig" value="${esc(S.lote.vig)}"></label>
+        <label class="f">Até <span class="hint">(em branco = sem fim)</span><input type="date" data-l="ate" value=""></label>
         <label class="f">2ª folga da semana<select data-l="folga2">${DIAS_SEMANA.slice(0, 6).map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
         <label class="f">Entrada<input type="time" data-l="ent" value="${esc(S.lote.ent)}"></label>
         <label class="f">Saída<input type="time" data-l="sai" value="${esc(S.lote.sai)}"></label>
         <label class="f">Intervalo${campoInt('data-l="int"', S.lote.int)}</label>
       </div>
+      <div class="chips pz" id="lt-atech"></div>
       <div id="lt-sem"></div><div id="lt-val"></div>
-      ${jaTem ? `<div class="msgbox er">${jaTem} já ${jaTem > 1 ? 'têm' : 'tem'} escala e ${jaTem > 1 ? 'serão substituídos' : 'será substituído'}.</div>` : ''}
+      ${jaTem ? `<div class="msgbox er">${jaTem} já ${jaTem > 1 ? 'têm' : 'tem'} escala: o horário novo vale no período escolhido e o que existir fora dele continua.</div>` : ''}
       ${tele ? `<div class="msgbox er">${tele} ${tele > 1 ? 'são' : 'é'} de teleatendimento (limite de ${esc(S.cfg.TELE_DIARIO)}h/dia): ${tele > 1 ? 'eles só serão salvos' : 'ele só será salvo'} se o horário couber nesse limite.</div>` : ''}
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-aplicar>Aplicar em ${a.lista.length}</button></div>`);
   const box = modal.querySelector('.mdl');
   const upd = () => {
     const L = S.lote, e = { vigencia: L.vig, dias: semanaModelo(L.folga2, L.ent, L.sai, L.int) };
+    $('#lt-atech').innerHTML = '<span class="hint">Vale por:</span>' + [[0, 'Sem data final'], [1, '1 mês'], [2, '2 meses'], [3, '3 meses'], [6, '6 meses']].map(([n, l]) => `<button type="button" class="chip" data-lmeses="${n}" aria-pressed="${n ? L.ate === maisMeses(L.vig, n) : !L.ate}">${l}</button>`).join('');
     $('#lt-sem').innerHTML = semana(e);
     const v = validarEscala(e, { tele: false, cfg: S.cfg, entrega: L.lista.length > 0 && L.lista.every(ehEntregaCampo) });
     $('#lt-val').innerHTML = caixaVal(v);
     box.querySelector('[data-aplicar]').disabled = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   };
   box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.lote.int = v; } else S.lote[k] = k === 'folga2' ? +ev.target.value : ev.target.value; upd(); });
+  box.addEventListener('click', ev => { const b = ev.target.closest('[data-lmeses]'); if (!b) return; const n = +b.dataset.lmeses; S.lote.ate = n ? maisMeses(S.lote.vig, n) : ''; box.querySelector('[data-l=ate]').value = S.lote.ate; upd(); });
   box.querySelector('[data-aplicar]').onclick = ev => ocupado(ev.currentTarget, async () => {
     const L = S.lote;
-    const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
+    if (L.ate && L.ate < L.vig) { toast('A data final não pode ser antes do início.', true); return; }
+    const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, ate: L.ate, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
     fecharModal(true); await carregar();
     if (r.falhas.length) {
       abrirModal(`<div class="mdl-h"><div><h2>${r.salvos} salvos · ${r.falhas.length} não salvos</h2><small>Ajuste estes individualmente</small></div><button type="button" class="x" data-x>×</button></div>

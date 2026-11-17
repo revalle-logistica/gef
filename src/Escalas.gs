@@ -22,57 +22,80 @@ function vigenciaOk_(v) {
   return v;
 }
 
-/** Grava (ou recusa) uma escala já validada. Retorna o resultado da validação. */
-function gravaEscala_(u, c, esc, cfg, mapa) {
-  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
+function ateOk_(v, vig) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error('Data final inválida.');
+  if (v < vig) throw new Error('A data final não pode ser antes do início.');
+  return v;
+}
+/**
+ * Grava (ou recusa) um período de escala já validado. todas = todas as linhas da aba Escalas (alterada aqui).
+ * O período novo vale inteiro de vigencia até ate; períodos da pessoa que se sobrepõem são cortados.
+ * vigOrig: ao editar um período existente, ele sai antes de gravar o novo.
+ */
+function gravaEscala_(u, c, esc, cfg, todas, vigOrig) {
+  const val = validarEscala({ vigencia: esc.vigencia, dias: esc.dias }, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
   if (val.status === 'ERRO' && String(cfg.BLOQUEAR_ERRO).toUpperCase() === 'S') return { gravou: false, val: val };
-  const atual = mapa[c.matricula] || {};
   const o = {
-    _row: atual._row, matricula: c.matricula, vigencia: esc.vigencia, dias: JSON.stringify(esc.dias),
+    matricula: c.matricula, vigencia: esc.vigencia, ate: esc.ate || '', dias: JSON.stringify(esc.dias),
     status: val.status, total: val.total, msgs: JSON.stringify(val.msgs), atualizadoPor: u.nome, atualizadoEm: agora_()
   };
-  mapa[c.matricula] = o;
-  return { gravou: true, val: val, linha: o };
+  let minhas = todas.filter(function (r) { return r.matricula === c.matricula; });
+  if (vigOrig) minhas = minhas.filter(function (r) { return r.vigencia !== vigOrig; });
+  const novas = aplicarPeriodo(minhas, o);
+  for (let i = todas.length - 1; i >= 0; i--) if (todas[i].matricula === c.matricula) todas.splice(i, 1);
+  novas.forEach(function (r) { todas.push(r); });
+  return { gravou: true, val: val, linha: o, linhas: novas };
 }
 
 function salvarEscala_(u, d) {
   return comLock_(function () {
-    const c = achaColab_(u, d.matricula), cfg = cfg_();
-    const esc = { vigencia: vigenciaOk_(d.vigencia), dias: limpaDias_(d.dias) };
-    const mapa = {};
-    ler_('Escalas').forEach(function (e) { mapa[e.matricula] = e; });
-    const r = gravaEscala_(u, c, esc, cfg, mapa);
+    const c = achaColab_(u, d.matricula), cfg = cfg_(), vig = vigenciaOk_(d.vigencia);
+    const esc = { vigencia: vig, ate: ateOk_(d.ate, vig), dias: limpaDias_(d.dias) };
+    const todas = ler_('Escalas');
+    const r = gravaEscala_(u, c, esc, cfg, todas, d.vigOrig ? String(d.vigOrig) : '');
     if (!r.gravou) {
       const e = new Error('A escala não foi salva porque tem erro legal: ' + r.val.msgs.filter(function (m) { return m.nivel === 'erro'; }).map(function (m) { return m.texto; }).join(' '));
       throw e;
     }
-    gravarLinha_('Escalas', r.linha);
-    log_(u, c.matricula, 'salvou escala', esc.vigencia + ' · ' + r.val.status + ' · ' + minParaHm(r.val.total));
-    return { escala: { vigencia: esc.vigencia, dias: esc.dias, por: u.nome, em: r.linha.atualizadoEm }, val: r.val };
+    gravarTudo_('Escalas', todas);
+    log_(u, c.matricula, 'salvou escala', esc.vigencia + (esc.ate ? ' a ' + esc.ate : ' (sem data final)') + ' · ' + r.val.status + ' · ' + minParaHm(r.val.total));
+    return { escala: escalaObj_(r.linhas, esc.vigencia), val: r.val };
+  });
+}
+/** Remove um período da escala de uma pessoa. */
+function removerPeriodo_(u, d) {
+  return comLock_(function () {
+    const c = achaColab_(u, d.matricula), todas = ler_('Escalas');
+    const resto = todas.filter(function (r) { return !(r.matricula === c.matricula && r.vigencia === String(d.vigencia)); });
+    if (resto.length === todas.length) throw new Error('Período não encontrado.');
+    gravarTudo_('Escalas', resto);
+    log_(u, c.matricula, 'removeu período da escala', String(d.vigencia));
+    return { escala: escalaObj_(resto.filter(function (r) { return r.matricula === c.matricula; }), String(d.vigencia)) };
   });
 }
 
-/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, folga2, ent, sai, int} */
+/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga2, ent, sai, int} */
 function salvarLote_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
   return comLock_(function () {
-    const cfg = cfg_(), vig = vigenciaOk_(d.vigencia);
+    const cfg = cfg_(), vig = vigenciaOk_(d.vigencia), ate = ateOk_(d.ate, vig);
     const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int));
     const cols = {};
     ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
-    const lista = ler_('Escalas'), mapa = {};
-    lista.forEach(function (e) { mapa[e.matricula] = e; });
+    const todas = ler_('Escalas');
     const res = { salvos: 0, falhas: [] };
     mats.forEach(function (m) {
       const c = cols[m];
       if (!c || c.ativo === 'N' || !podeVer_(u, c)) { res.falhas.push({ matricula: m, nome: c ? c.nome : m, motivo: 'Sem acesso ou inativo.' }); return; }
-      const r = gravaEscala_(u, c, { vigencia: vig, dias: dias }, cfg, mapa);
+      const r = gravaEscala_(u, c, { vigencia: vig, ate: ate, dias: dias }, cfg, todas, '');
       if (r.gravou) res.salvos++;
       else res.falhas.push({ matricula: m, nome: c.nome, motivo: r.val.msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }).join(' ') });
     });
-    gravarTudo_('Escalas', Object.keys(mapa).map(function (k) { return mapa[k]; }));
-    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
+    gravarTudo_('Escalas', todas);
+    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
     return res;
   });
 }
@@ -374,11 +397,11 @@ function minhaEscala_(d) {
   const c = ler_('Colaboradores').filter(function (x) { return x.matricula === l.matricula; })[0];
   if (!c || c.ativo === 'N') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
   try { l.acessos = String((+l.acessos || 0) + 1); l.ultimoAcesso = agora_(); gravarLinha_('Links', l); } catch (e) { /* contador é só informativo */ }
-  const e = ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; })[0];
+  const e = escalaObj_(ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; }), Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));
   const desde = Utilities.formatDate(new Date(Date.now() - 70 * 864e5), TZ, 'yyyy-MM-dd');
   return {
     nome: c.nome, funcao: c.funcao, revenda: c.revenda, empresa: cfg_().EMPRESA,
-    escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), em: e.atualizadoEm } : null,
+    escala: e,
     ferias: ler_('Ferias').filter(function (f) { return f.matricula === c.matricula; }).map(function (f) { return { inicio: f.inicio, fim: f.fim }; }),
     feriados: ler_('Feriados').filter(function (f) { return f.revenda === c.revenda; }).map(function (f) { return { data: f.data, descricao: f.descricao, tipo: f.tipo, contaAlerta: f.contaAlerta }; }),
     ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })

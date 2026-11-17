@@ -233,14 +233,46 @@ function feriadoConta(f) { return !/^n/i.test(String(f && f.contaAlerta != null 
  * ajustes = {"AAAA-MM-DD": {tipo:'T'|'F', ent, sai, int}} (troca só daquele dia).
  * tipo: 'T' trabalho, 'F' folga, 'FER' férias, 'N' sem escala vigente.
  */
+/** Períodos da escala: [{vigencia, ate, dias}] (ate vazio = sem data final). Aceita o formato antigo {vigencia, dias}. */
+function periodosDe(esc) {
+  if (!esc) return [];
+  if (esc.periodos && esc.periodos.length) return esc.periodos;
+  return esc.vigencia ? [{ vigencia: esc.vigencia, ate: esc.ate || '', dias: esc.dias }] : [];
+}
+/** Período que vale numa data (o de vigência mais recente que cobre a data), ou null. */
+function periodoNaData(esc, data) {
+  var b = null;
+  periodosDe(esc).forEach(function (p) { if (p.vigencia && p.vigencia <= data && (!p.ate || data <= p.ate) && (!b || p.vigencia > b.vigencia)) b = p; });
+  return b;
+}
+/**
+ * Encaixa um período novo {vigencia, ate} numa lista: o novo vale inteiro no seu intervalo.
+ * Período anterior que invade é cortado na véspera; se ele ia além do fim do novo, continua no dia seguinte.
+ */
+function aplicarPeriodo(lista, novo) {
+  var out = [], nv = novo.vigencia, na = novo.ate || '';
+  (lista || []).forEach(function (p) {
+    var pv = p.vigencia, pa = p.ate || '';
+    if (!((!na || pv <= na) && (!pa || pa >= nv))) { out.push(p); return; }
+    if (pv < nv) { var a = {}; for (var k in p) a[k] = p[k]; a.ate = isoMaisDias(nv, -1); out.push(a); }
+    if (na && (!pa || pa > na)) { var c = {}; for (var k2 in p) c[k2] = p[k2]; c.vigencia = isoMaisDias(na, 1); c.ate = pa; delete c._row; out.push(c); }
+  });
+  out.push(novo);
+  return out.sort(function (x, y) { return x.vigencia < y.vigencia ? -1 : x.vigencia > y.vigencia ? 1 : 0; });
+}
 function diaEfetivo(esc, data, ferias, feriados, ajustes) {
   var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
   var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '', feriadoConta: fer ? feriadoConta(fer) : false, ajuste: false };
   if ((ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; })) { o.tipo = 'FER'; return o; }
   var aj = ajustes && ajustes[data];
   if (aj) { o.ajuste = true; o.tipo = aj.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = aj.ent; o.sai = aj.sai; o.int = +aj.int || 0; } return o; }
-  var base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[diaSemanaIso(data)] || { tipo: 'F' }) : null;
-  if (!base) { o.tipo = 'N'; if (esc && esc.vigencia && data < esc.vigencia) o.antes = esc.vigencia; return o; }
+  var per = periodoNaData(esc, data), base = per ? ((per.dias || [])[diaSemanaIso(data)] || { tipo: 'F' }) : null;
+  if (!base) {
+    o.tipo = 'N';
+    var ps = periodosDe(esc), prox = ps.filter(function (p) { return p.vigencia > data; }).sort(function (a, b) { return a.vigencia < b.vigencia ? -1 : 1; })[0];
+    if (prox) o.antes = prox.vigencia; else if (ps.length) o.depois = ps.reduce(function (m, p) { return p.ate > m ? p.ate : m; }, '');
+    return o;
+  }
   o.tipo = base.tipo === 'T' ? 'T' : 'F';
   if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = +base.int || 0; }
   return o;

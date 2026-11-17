@@ -127,3 +127,23 @@ test('departamento próprio vira aba separada; administrativo da logística mant
   assert.strictEqual(a.area, 'adm'); assert.strictEqual(a.areaNome, 'Administrativo-Logística');
   assert.strictEqual(ctxVm.pendenciasCadastro({ setor: 'Departamento · Vendas', funcao: 'VENDEDOR', supervisor: 's' }).length, 0);
 });
+
+test('escala por período: data a data, sobreposição e volta ao padrão anterior', () => {
+  const A = ctxVm.semanaModelo(5, '07:00', '16:24', 60), B = ctxVm.semanaModelo(2, '06:00', '15:24', 60);
+  let L = [{ vigencia: '2026-12-14', ate: '', dias: A }];
+  L = ctxVm.aplicarPeriodo(L, { vigencia: '2027-01-04', ate: '2027-02-28', dias: B });
+  assert.strictEqual(JSON.stringify(L.map(p => [p.vigencia, p.ate])), JSON.stringify([['2026-12-14', '2027-01-03'], ['2027-01-04', '2027-02-28'], ['2027-03-01', '']]));
+  const esc = { periodos: L };
+  assert.strictEqual(ctxVm.periodoNaData(esc, '2027-02-10').vigencia, '2027-01-04');
+  assert.strictEqual(ctxVm.periodoNaData(esc, '2027-03-02').dias, A);
+  // quarta 06/01/2027 é folga no padrão B (folga na quarta)
+  assert.strictEqual(ctxVm.diaEfetivo(esc, '2027-01-06', [], [], {}).tipo, 'F');
+  assert.strictEqual(ctxVm.diaEfetivo(esc, '2027-01-07', [], [], {}).ent, '06:00');
+  // só um período com fim: depois dele fica sem escala
+  const so = { periodos: [{ vigencia: '2027-01-04', ate: '2027-01-31', dias: B }] };
+  const d = ctxVm.diaEfetivo(so, '2027-02-02', [], [], {});
+  assert.strictEqual(d.tipo, 'N'); assert.strictEqual(d.depois, '2027-01-31');
+  assert.strictEqual(ctxVm.diaEfetivo(so, '2027-01-01', [], [], {}).antes, '2027-01-04');
+  // formato antigo continua valendo
+  assert.strictEqual(ctxVm.diaEfetivo({ vigencia: '2026-12-14', dias: A }, '2027-05-04', [], [], {}).tipo, 'T');
+});

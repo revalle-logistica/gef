@@ -19,7 +19,7 @@ const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
-  Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
+  Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm', 'ate'],
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
   Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
   Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
@@ -85,7 +85,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -101,6 +101,7 @@ function rotas_() {
   trocarSenha: { f: trocarSenha_ },
   salvarEscala: { f: salvarEscala_ },
   salvarLote: { f: salvarLote_ },
+  removerPeriodo: { f: removerPeriodo_ },
   setTele: { f: setTele_ },
   exportPdf: { f: exportPdf_ },
   usuarios: { f: usuarios_, admin: true },
@@ -246,11 +247,27 @@ function podeVer_(u, c) {
 }
 function parse_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
 
+/** Escalas de cada pessoa com todos os períodos; os campos de cima são do período que vale em ref (ou o mais próximo). */
+function escalaObj_(rows, ref) {
+  if (!rows || !rows.length) return null;
+  const ps = rows.map(function (e) { return { vigencia: e.vigencia, ate: e.ate || '', dias: parse_(e.dias, []), por: e.atualizadoPor, em: e.atualizadoEm }; })
+    .sort(function (a, b) { return a.vigencia < b.vigencia ? -1 : 1; });
+  const o = { periodos: ps };
+  const p = periodoNaData(o, ref) || ps.filter(function (x) { return x.vigencia > ref; })[0] || ps[ps.length - 1];
+  return { vigencia: p.vigencia, ate: p.ate, dias: p.dias, por: p.por, em: p.em, atualizadoPor: p.por, atualizadoEm: p.em, periodos: ps };
+}
+function escalasPorMatricula_(ref) {
+  const g = {}, out = {};
+  ler_('Escalas').forEach(function (e) { (g[e.matricula] = g[e.matricula] || []).push(e); });
+  ref = ref || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  Object.keys(g).forEach(function (m) { out[m] = escalaObj_(g[m], ref); });
+  return out;
+}
+
 /* ---------------- carga inicial da tela ---------------- */
 function carregar_(u) {
   const cfg = cfg_();
-  const esc = {};
-  ler_('Escalas').forEach(function (e) { esc[e.matricula] = e; });
+  const esc = escalasPorMatricula_();
   const todos = ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N'; });
   const cols = todos.filter(function (c) { return podeVer_(u, c); }).map(function (c) {
     const e = esc[c.matricula];
@@ -258,7 +275,7 @@ function carregar_(u) {
       matricula: c.matricula, nome: c.nome, funcao: c.funcao, revenda: c.revenda, setor: c.setor,
       lotacao: c.lotacao, turno: c.turno, tipoMot: c.tipoMot, supervisor: c.supervisor, departamento: c.departamento,
       situacao: c.situacao, tele: c.teleatendimento === 'S',
-      escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), por: e.atualizadoPor, em: e.atualizadoEm } : null
+      escala: e || null
     };
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
@@ -470,57 +487,80 @@ function vigenciaOk_(v) {
   return v;
 }
 
-/** Grava (ou recusa) uma escala já validada. Retorna o resultado da validação. */
-function gravaEscala_(u, c, esc, cfg, mapa) {
-  const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
+function ateOk_(v, vig) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error('Data final inválida.');
+  if (v < vig) throw new Error('A data final não pode ser antes do início.');
+  return v;
+}
+/**
+ * Grava (ou recusa) um período de escala já validado. todas = todas as linhas da aba Escalas (alterada aqui).
+ * O período novo vale inteiro de vigencia até ate; períodos da pessoa que se sobrepõem são cortados.
+ * vigOrig: ao editar um período existente, ele sai antes de gravar o novo.
+ */
+function gravaEscala_(u, c, esc, cfg, todas, vigOrig) {
+  const val = validarEscala({ vigencia: esc.vigencia, dias: esc.dias }, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
   if (val.status === 'ERRO' && String(cfg.BLOQUEAR_ERRO).toUpperCase() === 'S') return { gravou: false, val: val };
-  const atual = mapa[c.matricula] || {};
   const o = {
-    _row: atual._row, matricula: c.matricula, vigencia: esc.vigencia, dias: JSON.stringify(esc.dias),
+    matricula: c.matricula, vigencia: esc.vigencia, ate: esc.ate || '', dias: JSON.stringify(esc.dias),
     status: val.status, total: val.total, msgs: JSON.stringify(val.msgs), atualizadoPor: u.nome, atualizadoEm: agora_()
   };
-  mapa[c.matricula] = o;
-  return { gravou: true, val: val, linha: o };
+  let minhas = todas.filter(function (r) { return r.matricula === c.matricula; });
+  if (vigOrig) minhas = minhas.filter(function (r) { return r.vigencia !== vigOrig; });
+  const novas = aplicarPeriodo(minhas, o);
+  for (let i = todas.length - 1; i >= 0; i--) if (todas[i].matricula === c.matricula) todas.splice(i, 1);
+  novas.forEach(function (r) { todas.push(r); });
+  return { gravou: true, val: val, linha: o, linhas: novas };
 }
 
 function salvarEscala_(u, d) {
   return comLock_(function () {
-    const c = achaColab_(u, d.matricula), cfg = cfg_();
-    const esc = { vigencia: vigenciaOk_(d.vigencia), dias: limpaDias_(d.dias) };
-    const mapa = {};
-    ler_('Escalas').forEach(function (e) { mapa[e.matricula] = e; });
-    const r = gravaEscala_(u, c, esc, cfg, mapa);
+    const c = achaColab_(u, d.matricula), cfg = cfg_(), vig = vigenciaOk_(d.vigencia);
+    const esc = { vigencia: vig, ate: ateOk_(d.ate, vig), dias: limpaDias_(d.dias) };
+    const todas = ler_('Escalas');
+    const r = gravaEscala_(u, c, esc, cfg, todas, d.vigOrig ? String(d.vigOrig) : '');
     if (!r.gravou) {
       const e = new Error('A escala não foi salva porque tem erro legal: ' + r.val.msgs.filter(function (m) { return m.nivel === 'erro'; }).map(function (m) { return m.texto; }).join(' '));
       throw e;
     }
-    gravarLinha_('Escalas', r.linha);
-    log_(u, c.matricula, 'salvou escala', esc.vigencia + ' · ' + r.val.status + ' · ' + minParaHm(r.val.total));
-    return { escala: { vigencia: esc.vigencia, dias: esc.dias, por: u.nome, em: r.linha.atualizadoEm }, val: r.val };
+    gravarTudo_('Escalas', todas);
+    log_(u, c.matricula, 'salvou escala', esc.vigencia + (esc.ate ? ' a ' + esc.ate : ' (sem data final)') + ' · ' + r.val.status + ' · ' + minParaHm(r.val.total));
+    return { escala: escalaObj_(r.linhas, esc.vigencia), val: r.val };
+  });
+}
+/** Remove um período da escala de uma pessoa. */
+function removerPeriodo_(u, d) {
+  return comLock_(function () {
+    const c = achaColab_(u, d.matricula), todas = ler_('Escalas');
+    const resto = todas.filter(function (r) { return !(r.matricula === c.matricula && r.vigencia === String(d.vigencia)); });
+    if (resto.length === todas.length) throw new Error('Período não encontrado.');
+    gravarTudo_('Escalas', resto);
+    log_(u, c.matricula, 'removeu período da escala', String(d.vigencia));
+    return { escala: escalaObj_(resto.filter(function (r) { return r.matricula === c.matricula; }), String(d.vigencia)) };
   });
 }
 
-/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, folga2, ent, sai, int} */
+/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga2, ent, sai, int} */
 function salvarLote_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
   return comLock_(function () {
-    const cfg = cfg_(), vig = vigenciaOk_(d.vigencia);
+    const cfg = cfg_(), vig = vigenciaOk_(d.vigencia), ate = ateOk_(d.ate, vig);
     const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int));
     const cols = {};
     ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
-    const lista = ler_('Escalas'), mapa = {};
-    lista.forEach(function (e) { mapa[e.matricula] = e; });
+    const todas = ler_('Escalas');
     const res = { salvos: 0, falhas: [] };
     mats.forEach(function (m) {
       const c = cols[m];
       if (!c || c.ativo === 'N' || !podeVer_(u, c)) { res.falhas.push({ matricula: m, nome: c ? c.nome : m, motivo: 'Sem acesso ou inativo.' }); return; }
-      const r = gravaEscala_(u, c, { vigencia: vig, dias: dias }, cfg, mapa);
+      const r = gravaEscala_(u, c, { vigencia: vig, ate: ate, dias: dias }, cfg, todas, '');
       if (r.gravou) res.salvos++;
       else res.falhas.push({ matricula: m, nome: c.nome, motivo: r.val.msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }).join(' ') });
     });
-    gravarTudo_('Escalas', Object.keys(mapa).map(function (k) { return mapa[k]; }));
-    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
+    gravarTudo_('Escalas', todas);
+    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
     return res;
   });
 }
@@ -822,11 +862,11 @@ function minhaEscala_(d) {
   const c = ler_('Colaboradores').filter(function (x) { return x.matricula === l.matricula; })[0];
   if (!c || c.ativo === 'N') throw new Error('Este link não está mais ativo. Peça um novo ao seu supervisor.');
   try { l.acessos = String((+l.acessos || 0) + 1); l.ultimoAcesso = agora_(); gravarLinha_('Links', l); } catch (e) { /* contador é só informativo */ }
-  const e = ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; })[0];
+  const e = escalaObj_(ler_('Escalas').filter(function (x) { return x.matricula === c.matricula; }), Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));
   const desde = Utilities.formatDate(new Date(Date.now() - 70 * 864e5), TZ, 'yyyy-MM-dd');
   return {
     nome: c.nome, funcao: c.funcao, revenda: c.revenda, empresa: cfg_().EMPRESA,
-    escala: e ? { vigencia: e.vigencia, dias: parse_(e.dias, []), em: e.atualizadoEm } : null,
+    escala: e,
     ferias: ler_('Ferias').filter(function (f) { return f.matricula === c.matricula; }).map(function (f) { return { inicio: f.inicio, fim: f.fim }; }),
     feriados: ler_('Feriados').filter(function (f) { return f.revenda === c.revenda; }).map(function (f) { return { data: f.data, descricao: f.descricao, tipo: f.tipo, contaAlerta: f.contaAlerta }; }),
     ajustes: ler_('Ajustes').filter(function (a) { return a.matricula === c.matricula && a.data >= desde; }).map(function (a) { return { data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: a.int }; })
@@ -1291,7 +1331,7 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
   if (!e) {
     corpo = '<p style="margin:30px 0;font-size:14px;color:#b42318"><b>Escala ainda não cadastrada.</b></p>';
   } else {
-    const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
+    const esc = e;
     const val = validarEscala(esc, { tele: tele, cfg: cfg, entrega: ehEntregaCampo(c) });
     const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
@@ -1334,11 +1374,11 @@ function quadroPdf_(cols, esc, cfg, ctx) {
   ordem.forEach(function (g) {
     rows += '<tr class="g"><td colspan="12">' + h_(g) + ' (' + grupos[g].length + ')</td></tr>';
     grupos[g].forEach(function (c) {
-      const e = esc[c.matricula], dias = e ? parse_(e.dias, []) : [];
+      const e = esc[c.matricula], dias = e ? e.dias : [];
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         (function () {
-          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
+          const sem = ctx && ctx.semana ? semanaEfetiva(e || null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
           return DIAS_CURTO.map(function (_, i) {
             if (sem && sem[i].tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8;font-weight:bold">FÉRIAS</td>';
             if (!e || (sem && sem[i].tipo === 'N')) return '<td>—</td>';
@@ -1364,8 +1404,7 @@ function exportPdf_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Nenhum colaborador selecionado.');
   if (mats.length > 500) throw new Error('Gere no máximo 500 colaboradores por arquivo.');
-  const cfg = cfg_(), esc = {};
-  ler_('Escalas').forEach(function (e) { esc[e.matricula] = e; });
+  const cfg = cfg_(), esc = escalasPorMatricula_(/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
   const cols = ler_('Colaboradores')
     .filter(function (c) { return mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N' && podeVer_(u, c); })
     .sort(ordemVisao_);
@@ -1396,7 +1435,7 @@ function exportPdf_(u, d) {
 const MESES_ = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 function nomeMes_(ym) { const p = ym.split('-'); return MESES_[+p[1] - 1] + ' de ' + p[0]; }
 function diasMesColab_(c, e, ctx) {
-  const esc = e ? { vigencia: e.vigencia, dias: parse_(e.dias, []) } : null;
+  const esc = e || null;
   return diasDoMes(ctx.mes).map(function (dt) { return diaEfetivo(esc, dt, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]); });
 }
 function fichaMesPdf_(c, e, cfg, ultima, ctx) {
@@ -1694,14 +1733,46 @@ function feriadoConta(f) { return !/^n/i.test(String(f && f.contaAlerta != null 
  * ajustes = {"AAAA-MM-DD": {tipo:'T'|'F', ent, sai, int}} (troca só daquele dia).
  * tipo: 'T' trabalho, 'F' folga, 'FER' férias, 'N' sem escala vigente.
  */
+/** Períodos da escala: [{vigencia, ate, dias}] (ate vazio = sem data final). Aceita o formato antigo {vigencia, dias}. */
+function periodosDe(esc) {
+  if (!esc) return [];
+  if (esc.periodos && esc.periodos.length) return esc.periodos;
+  return esc.vigencia ? [{ vigencia: esc.vigencia, ate: esc.ate || '', dias: esc.dias }] : [];
+}
+/** Período que vale numa data (o de vigência mais recente que cobre a data), ou null. */
+function periodoNaData(esc, data) {
+  var b = null;
+  periodosDe(esc).forEach(function (p) { if (p.vigencia && p.vigencia <= data && (!p.ate || data <= p.ate) && (!b || p.vigencia > b.vigencia)) b = p; });
+  return b;
+}
+/**
+ * Encaixa um período novo {vigencia, ate} numa lista: o novo vale inteiro no seu intervalo.
+ * Período anterior que invade é cortado na véspera; se ele ia além do fim do novo, continua no dia seguinte.
+ */
+function aplicarPeriodo(lista, novo) {
+  var out = [], nv = novo.vigencia, na = novo.ate || '';
+  (lista || []).forEach(function (p) {
+    var pv = p.vigencia, pa = p.ate || '';
+    if (!((!na || pv <= na) && (!pa || pa >= nv))) { out.push(p); return; }
+    if (pv < nv) { var a = {}; for (var k in p) a[k] = p[k]; a.ate = isoMaisDias(nv, -1); out.push(a); }
+    if (na && (!pa || pa > na)) { var c = {}; for (var k2 in p) c[k2] = p[k2]; c.vigencia = isoMaisDias(na, 1); c.ate = pa; delete c._row; out.push(c); }
+  });
+  out.push(novo);
+  return out.sort(function (x, y) { return x.vigencia < y.vigencia ? -1 : x.vigencia > y.vigencia ? 1 : 0; });
+}
 function diaEfetivo(esc, data, ferias, feriados, ajustes) {
   var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
   var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '', feriadoConta: fer ? feriadoConta(fer) : false, ajuste: false };
   if ((ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; })) { o.tipo = 'FER'; return o; }
   var aj = ajustes && ajustes[data];
   if (aj) { o.ajuste = true; o.tipo = aj.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = aj.ent; o.sai = aj.sai; o.int = +aj.int || 0; } return o; }
-  var base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[diaSemanaIso(data)] || { tipo: 'F' }) : null;
-  if (!base) { o.tipo = 'N'; if (esc && esc.vigencia && data < esc.vigencia) o.antes = esc.vigencia; return o; }
+  var per = periodoNaData(esc, data), base = per ? ((per.dias || [])[diaSemanaIso(data)] || { tipo: 'F' }) : null;
+  if (!base) {
+    o.tipo = 'N';
+    var ps = periodosDe(esc), prox = ps.filter(function (p) { return p.vigencia > data; }).sort(function (a, b) { return a.vigencia < b.vigencia ? -1 : 1; })[0];
+    if (prox) o.antes = prox.vigencia; else if (ps.length) o.depois = ps.reduce(function (m, p) { return p.ate > m ? p.ate : m; }, '');
+    return o;
+  }
   o.tipo = base.tipo === 'T' ? 'T' : 'F';
   if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = +base.int || 0; }
   return o;
