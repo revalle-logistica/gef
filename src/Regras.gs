@@ -193,38 +193,62 @@ function visaoColaborador(c) {
 /** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
 function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }
 
-/* ---------------- semana com férias e feriados ---------------- */
+/* ---------------- dias reais: padrão + ajustes do dia + férias + feriados ---------------- */
 function isoMaisDias(iso, n) {
   var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
   return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
 }
-/** Segunda-feira da semana que contém a data (ISO yyyy-mm-dd). */
-function segundaDaSemana(iso) {
-  var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])), dow = (d.getUTCDay() + 6) % 7;
-  return isoMaisDias(iso, -dow);
-}
-/**
- * Dias reais de uma semana para um colaborador.
- * esc = escala-padrão {vigencia, dias}; ferias = [{inicio, fim}]; feriados = [{data, descricao}] da revenda.
- * Retorna 7 itens {data, tipo:'T'|'F'|'FER'|'N', ent, sai, int, feriado} ('N' = sem escala vigente).
- */
-function semanaEfetiva(esc, segunda, ferias, feriados) {
-  var out = [];
-  for (var i = 0; i < 7; i++) {
-    var data = isoMaisDias(segunda, i), base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[i] || { tipo: 'F' }) : null;
-    var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
-    var emFerias = (ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; });
-    var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '' };
-    if (emFerias) o.tipo = 'FER';
-    else if (!base) o.tipo = 'N';
-    else { o.tipo = base.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = base.int; } }
-    out.push(o);
-  }
+/** 0 = segunda ... 6 = domingo */
+function diaSemanaIso(iso) { var p = String(iso).split('-'); return (new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() + 6) % 7; }
+function segundaDaSemana(iso) { return isoMaisDias(iso, -diaSemanaIso(iso)); }
+/** Datas ISO de um mês "AAAA-MM". */
+function diasDoMes(ym) {
+  var p = String(ym).split('-'), n = new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(), out = [];
+  for (var i = 1; i <= n; i++) out.push(p[0] + '-' + p[1] + '-' + String(i).padStart(2, '0'));
   return out;
 }
-/** Avisos da semana real (feriado trabalhado). */
+/** Feriado conta no alerta, a não ser que "Conta no alerta" seja Não. */
+function feriadoConta(f) { return !/^n/i.test(String(f && f.contaAlerta != null ? f.contaAlerta : 'S').trim()); }
+/**
+ * Um dia real do colaborador.
+ * esc = padrão semanal {vigencia, dias}; ferias = [{inicio, fim}]; feriados = [{data, descricao, contaAlerta}];
+ * ajustes = {"AAAA-MM-DD": {tipo:'T'|'F', ent, sai, int}} (troca só daquele dia).
+ * tipo: 'T' trabalho, 'F' folga, 'FER' férias, 'N' sem escala vigente.
+ */
+function diaEfetivo(esc, data, ferias, feriados, ajustes) {
+  var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
+  var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '', feriadoConta: fer ? feriadoConta(fer) : false, ajuste: false };
+  if ((ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; })) { o.tipo = 'FER'; return o; }
+  var aj = ajustes && ajustes[data];
+  if (aj) { o.ajuste = true; o.tipo = aj.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = aj.ent; o.sai = aj.sai; o.int = +aj.int || 0; } return o; }
+  var base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[diaSemanaIso(data)] || { tipo: 'F' }) : null;
+  if (!base) { o.tipo = 'N'; return o; }
+  o.tipo = base.tipo === 'T' ? 'T' : 'F';
+  if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = +base.int || 0; }
+  return o;
+}
+function semanaEfetiva(esc, segunda, ferias, feriados, ajustes) {
+  var out = [];
+  for (var i = 0; i < 7; i++) out.push(diaEfetivo(esc, isoMaisDias(segunda, i), ferias, feriados, ajustes));
+  return out;
+}
+/** Avisos da semana real (feriado trabalhado que conta no alerta). */
 function avisosSemana(sem) {
-  return sem.filter(function (d) { return d.tipo === 'T' && d.feriado; }).map(function (d) {
+  return sem.filter(function (d) { return d.tipo === 'T' && d.feriado && d.feriadoConta; }).map(function (d) {
     return 'Trabalha no feriado de ' + d.data.split('-').reverse().slice(0, 2).join('/') + ' (' + d.feriado + '): garantir folga compensatória na semana ou pagar em dobro (Lei 605/49).';
   });
+}
+/**
+ * Confere uma semana real (já com ajustes) contra as regras. Semanas com férias ou sem escala não são
+ * conferidas (retorna null). Feriado trabalhado entra como alerta.
+ */
+function validarSemanaReal(sem, ctx) {
+  if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
+  var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
+  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg });
+  v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
+    .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));
+  var e = v.msgs.some(function (m) { return m.nivel === 'erro'; }), a = v.msgs.some(function (m) { return m.nivel === 'alerta'; });
+  v.status = e ? 'ERRO' : a ? 'ALERTA' : 'OK';
+  return v;
 }

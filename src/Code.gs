@@ -12,7 +12,8 @@ const ABAS = {
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
-  Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm'],
+  Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
+  Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -63,7 +64,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, segundaDaSemana, semanaEfetiva, avisosSemana].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -90,6 +91,8 @@ function rotas_() {
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
   salvarFeriado: { f: salvarFeriado_, admin: true },
+  importarFeriados: { f: importarFeriados_, admin: true },
+  salvarAjuste: { f: salvarAjuste_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true },
   salvarConfig: { f: salvarConfig_, admin: true }
@@ -209,8 +212,10 @@ function carregar_(u) {
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
-  const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao }; });
-  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados };
+  const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
+  const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
+  const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
+  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes };
   if (u.perfil === 'ADMIN') {
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));

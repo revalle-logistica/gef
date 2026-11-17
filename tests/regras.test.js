@@ -92,3 +92,15 @@ test('semana real: férias e feriado', () => {
   assert.strictEqual(av(s).length, 1);
   assert.strictEqual(se(esc, '2026-12-07', [], []).every(d => d.tipo === 'N'), true);
 });
+
+test('ajuste de um dia vale só naquele dia e entra na conferência', () => {
+  const { semanaEfetiva: se, validarSemanaReal: vs } = ctxVm;
+  const esc = { vigencia: '2026-12-15', dias: semanaModelo(5, '07:00', '16:24', 60) };
+  const aj = { '2027-01-09': { tipo: 'T', ent: '07:00', sai: '16:24', int: 60 } };
+  const s = se(esc, '2027-01-04', [], [], aj);
+  assert.strictEqual(s.map(d => d.tipo).join(','), 'T,T,T,T,T,T,F');
+  assert.strictEqual(vs(s, { cfg }).status, 'ERRO');
+  aj['2027-01-08'] = { tipo: 'F' };
+  assert.strictEqual(vs(se(esc, '2027-01-04', [], [], aj), { cfg }).status, 'OK');
+  assert.strictEqual(se(esc, '2027-01-11', [], [], aj)[5].tipo, 'F');
+});

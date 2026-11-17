@@ -4,7 +4,7 @@
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
   f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
-  imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], semana: '',
+  imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], ajustes: [], semana: '', mes: '',
   cad: { rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() } };
 const $ = s => document.querySelector(s);
 const root = document.getElementById('root'), modal = document.getElementById('modal');
@@ -111,8 +111,9 @@ async function carregar() {
   const r = await call('carregar');
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || [];
-  S.ferias = r.ferias || []; S.feriados = r.feriados || [];
+  S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
   if (!S.semana) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.semana = segundaDaSemana(h > i ? h : i); }
+  if (!S.mes) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.mes = (h > i ? h : i).slice(0, 7); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
@@ -125,12 +126,13 @@ async function carregar() {
 const feriasDe = m => S.ferias.filter(f => f.matricula === m);
 const feriadosDe = rev => S.feriados.filter(f => f.revenda === rev);
 const ddmm = iso => String(iso).split('-').reverse().slice(0, 2).join('/');
-function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda)); c.avisos = avisosSemana(c.sem); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
+function ajustesDe(m) { const o = {}; S.ajustes.forEach(a => { if (a.matricula === m) o[a.data] = a; }); return o; }
+function revalida() { S.cols.forEach(c => { c.vis = visaoColaborador(c); c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg }) : null; }); }
 
 /* ================= casca ================= */
 function render() {
   const adm = S.user.perfil === 'ADMIN';
-  const tabs = [['escalas', 'cal', 'Escalas'], ['painel', 'chart', 'Painel']]
+  const tabs = [['escalas', 'cal', 'Escalas'], ['mes', 'cal', 'Mês'], ['painel', 'chart', 'Painel']]
     .concat(adm ? [['cadastro', 'users', 'Cadastro'], ['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
@@ -143,7 +145,7 @@ function render() {
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+  ({ escalas: vEscalas, mes: vMes, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -284,13 +286,14 @@ function semanaReal(c) {
     const h = x.feriado ? ' h' : '', tt = x.feriado ? ` title="Feriado: ${esc(x.feriado)}"` : '';
     if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[i]}<small>férias</small></span>`;
     if (x.tipo === 'N') return `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>–</small></span>`;
-    return x.tipo === 'T' ? `<span class="t${h}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
+    const a = x.ajuste ? ' aj' : '';
+    return x.tipo === 'T' ? `<span class="t${h}${a}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}${a}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
   }).join('')}</div>`;
 }
 function linhaHtml(c) {
   const s = st(c);
   return `<div class="ln"><input type="checkbox" data-sel="${esc(c.matricula)}" ${S.sel.has(c.matricula) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}">
-    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
+    <div class="nm"><b>${esc(c.nome)}${c.tele ? '<span class="tg">TELE</span>' : ''}${c.sem.some(d => d.tipo === 'FER') ? '<span class="tg tv">FÉRIAS</span>' : ''}${c.avisos.length ? `<span class="tg th" title="${esc(c.avisos.join(' '))}">FERIADO</span>` : ''}${c.semVal && c.semVal.status === 'ERRO' && c.sem.some(d => d.ajuste) ? `<span class="tg th" title="${esc(c.semVal.msgs.filter(x => x.nivel === 'erro').map(x => x.texto).join(' '))}">SEMANA COM ERRO</span>` : ''}</b><small>Matr. ${esc(codigoMatricula(c.matricula))} · ${esc(c.revenda)}</small></div>
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}</div>
@@ -452,6 +455,121 @@ function modalLote() {
     } else toast(`Escala aplicada em <b>${r.salvos}</b> colaboradores.`);
   });
   upd();
+}
+
+/* ================= visão do mês ================= */
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const nomeMes = ym => { const p = ym.split('-'); return MESES[+p[1] - 1] + ' de ' + p[0]; };
+function mesColab(c) {
+  const fer = feriasDe(c.matricula), fds = feriadosDe(c.revenda), aj = c.aj || ajustesDe(c.matricula);
+  const dias = diasDoMes(S.mes).map(dt => diaEfetivo(c.escala, dt, fer, fds, aj));
+  const semanas = [];
+  for (let s = segundaDaSemana(dias[0].data); s <= dias[dias.length - 1].data; s = isoMaisDias(s, 7)) {
+    const sem = semanaEfetiva(c.escala, s, fer, fds, aj);
+    semanas.push({ ini: s, sem, val: validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg }) });
+  }
+  const horas = dias.reduce((t, d) => { const x = d.tipo === 'T' ? calcDia(d) : null; return t + (x ? x.liquido : 0); }, 0);
+  return { dias, semanas, horas };
+}
+function vMes(m) {
+  const f = S.f, revs = uniq(S.cols.map(c => c.revenda));
+  if (f.rev && !revs.includes(f.rev)) f.rev = '';
+  if (!S.cols.length) { m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Importe o relatório do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você.'}</p></div>`; return; }
+  const datas = diasDoMes(S.mes), L = ordenar(filtrados(true));
+  const ferAll = d => S.feriados.filter(x => x.data === d && (!f.rev || x.revenda === f.rev));
+  const tudo = filtrados(true, true);
+  let corpo = '', gi = 0, nErro = 0;
+  const G = agrupar(L, f.vis === 'todos');
+  G.forEach((F, gk) => {
+    const arr = [...F.values()].flat();
+    corpo += `<tr class="mg"><td colspan="${datas.length + 3}"><b>${esc(gk)}</b> <span>${arr.length} ${arr.length === 1 ? 'pessoa' : 'pessoas'}</span></td></tr>`;
+    arr.forEach(c => {
+      const M = mesColab(c), err = M.semanas.filter(s => s.val && s.val.status === 'ERRO').length;
+      if (err) nErro++;
+      corpo += `<tr><td class="mn"><button type="button" class="lk" data-ed="${esc(c.matricula)}" title="Abrir o padrão semanal">${esc(c.nome)}</button><small>${esc(codigoMatricula(c.matricula))} · ${esc(c.funcao)}</small></td>` +
+        M.dias.map(d => {
+          const cl = d.tipo === 'T' ? 't' : d.tipo === 'F' ? 'f' : d.tipo === 'FER' ? 'v' : 'n', h = d.feriado ? ' h' : '', a = d.ajuste ? ' aj' : '';
+          const tx = d.tipo === 'T' ? esc(String(d.ent || '').slice(0, 2) + (String(d.ent || '').slice(3, 5) !== '00' ? ':' + String(d.ent || '').slice(3, 5) : 'h')) : d.tipo === 'F' ? 'F' : d.tipo === 'FER' ? 'V' : '·';
+          const tt = `${DIAS_SEMANA[diaSemanaIso(d.data)]} ${dataBr(d.data)}: ${d.tipo === 'T' ? d.ent + '–' + d.sai : d.tipo === 'F' ? 'folga' : d.tipo === 'FER' ? 'férias' : 'sem escala'}${d.feriado ? ' · feriado: ' + d.feriado : ''}${d.ajuste ? ' · alterado' : ''}`;
+          return `<td class="md"><button type="button" class="mc ${cl}${h}${a}" data-dm="${esc(c.matricula)}" data-dd="${d.data}" title="${esc(tt)}">${tx}</button></td>`;
+        }).join('') +
+        `<td class="mh">${minParaHm(M.horas)}</td><td class="ms">${M.semanas.map((s, i) => `<button type="button" class="dot2 d-${s.val ? s.val.status : 'SEM'}" data-sv="${esc(c.matricula)}" data-si="${i}" title="Semana de ${ddmm(s.ini)}: ${s.val ? ROT[s.val.status] : 'férias ou sem escala'}"></button>`).join('')}</td></tr>`;
+    });
+    gi++;
+  });
+  m.innerHTML = `<section class="card">
+    <div class="sw2"><button type="button" class="btn sm" data-mm="-1" aria-label="Mês anterior">‹</button>
+      <label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês<input type="month" data-mes value="${esc(S.mes)}" style="width:auto"></label>
+      <button type="button" class="btn sm" data-mm="1" aria-label="Próximo mês">›</button><b style="color:var(--b8)">${esc(nomeMes(S.mes))}</b>
+      ${nErro ? `<span class="pill p-ERRO">${nErro} colaborador(es) com semana fora das regras</span>` : ''}</div>
+    <div class="vt">${VISOES.concat([['todos', 'Todos']]).map(([k]) => { const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length; return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`; }).join('')}</div>
+    <div class="filt"><label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
+      <label class="f">Buscar<input data-f="q" value="${esc(f.q)}" placeholder="Nome, matrícula, função ou ponto"></label></div>
+    <div class="acts"><span class="hint">Clique num dia para trocar só aquela data (trabalho, folga ou horário). Clique no nome para mudar o padrão semanal. Número = hora de entrada, <b>F</b> = folga, <b>V</b> = férias, borda vermelha = feriado, ponto amarelo = dia alterado.</span><span class="sp"></span>
+      <button type="button" class="btn sm" data-mx>${ic('xls')}Excel do mês</button>
+      <button type="button" class="btn sm" data-mp="fichas">${ic('pdf')}PDF do mês por colaborador</button>
+      <button type="button" class="btn sm" data-mp="quadro">${ic('pdf')}PDF quadro do mês</button></div>
+    <div class="ovf mw"><table class="mt"><thead><tr><th class="mn">Colaborador</th>${datas.map(d => { const fs = ferAll(d); return `<th class="${diaSemanaIso(d) === 6 ? 'dom' : ''}${fs.length ? ' fer' : ''}" title="${esc(fs.map(x => x.descricao + ' (' + x.revenda + ')').join(', '))}">${+d.slice(8)}<small>${DIAS_CURTO[diaSemanaIso(d)].charAt(0)}</small></th>`; }).join('')}<th>Horas</th><th>Semanas</th></tr></thead>
+      <tbody>${corpo || `<tr><td colspan="${datas.length + 3}" class="empty">Ninguém nesta visão.</td></tr>`}</tbody></table></div></section>`;
+  m.querySelector('[data-mes]').onchange = e => { if (e.target.value) { S.mes = e.target.value; vMes(m); } };
+  m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; vMes(m); };
+  m.querySelector('input[data-f=q]').oninput = e => { f.q = e.target.value; clearTimeout(S.tq); S.tq = setTimeout(() => { vMes(m); const i = m.querySelector('input[data-f=q]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  m.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.mm) { const p = S.mes.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1 + +b.dataset.mm, 1)); S.mes = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'); vMes(m); }
+    else if (b.dataset.vis) { f.vis = b.dataset.vis; vMes(m); }
+    else if (b.dataset.ed) abrirEditor(b.dataset.ed);
+    else if (b.dataset.dm) abrirDia(b.dataset.dm, b.dataset.dd, () => vMes(m));
+    else if (b.dataset.sv) { const c = S.cols.find(x => x.matricula === b.dataset.sv), s = mesColab(c).semanas[+b.dataset.si]; toast(s.val ? `<b>${esc(c.nome)}</b> · semana de ${ddmm(s.ini)}: ${esc(ROT[s.val.status])}${s.val.msgs.filter(x => x.nivel !== 'info').length ? '<br>' + s.val.msgs.filter(x => x.nivel !== 'info').map(x => esc(x.texto)).join('<br>') : ''}` : 'Semana com férias ou sem escala: não é conferida.', s.val && s.val.status === 'ERRO'); }
+    else if (b.hasAttribute('data-mx')) ocupado(b, () => excelMes(L));
+    else if (b.dataset.mp) ocupado(b, async () => { if (!L.length) throw new Error('Ninguém na lista.'); const r = await call('exportPdf', { matriculas: L.map(c => c.matricula), modo: b.dataset.mp, mes: S.mes }); baixar(r.base64, r.nome, 'application/pdf'); toast(`PDF gerado: <b>${esc(r.nome)}</b>`); });
+  };
+}
+/** Troca de um dia específico. */
+function abrirDia(mat, data, depois) {
+  const c = S.cols.find(x => x.matricula === mat); if (!c) return;
+  const aj = ajustesDe(mat), d = diaEfetivo(c.escala, data, feriasDe(mat), feriadosDe(c.revenda), aj);
+  const pad = c.escala && c.escala.dias[diaSemanaIso(data)] && c.escala.dias[diaSemanaIso(data)].tipo === 'T' ? c.escala.dias[diaSemanaIso(data)] : (c.escala && c.escala.dias.find(x => x.tipo === 'T')) || { ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO };
+  const st = { tipo: d.tipo === 'T' ? 'T' : 'F', ent: d.tipo === 'T' ? d.ent : pad.ent, sai: d.tipo === 'T' ? d.sai : pad.sai, int: d.tipo === 'T' ? +d.int : +pad.int };
+  const titulo = `${DIAS_SEMANA[diaSemanaIso(data)]}, ${dataBr(data)}`;
+  if (d.tipo === 'FER') return toast(`${esc(c.nome)} está de férias em ${dataBr(data)}. Para mudar, edite as férias clicando no nome.`);
+  abrirModal(`<div class="mdl-h"><div><h2>${esc(titulo)}</h2><small>${esc(c.nome)} · ${esc(c.funcao)}${d.feriado ? ' · Feriado: ' + esc(d.feriado) : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><div class="tgl" style="max-width:260px"><button type="button" class="t" data-dt="T">Trabalho</button><button type="button" class="f" data-dt="F">Folga</button></div>
+      <div class="row2" id="dia-h"><label class="f">Entrada<input type="time" data-dk="ent"></label><label class="f">Saída<input type="time" data-dk="sai"></label>
+        <label class="f">Intervalo<select data-dk="int">${INTS.map(v => `<option value="${v}">${v ? minParaHm(v) : 'sem'}</option>`).join('')}</select></label></div>
+      <p class="hint">Vale só para este dia. O padrão semanal não muda.${d.ajuste ? ' Este dia já foi alterado.' : ''}</p>
+      <div id="dia-val"></div></div>
+    <div class="mdl-f">${d.ajuste ? '<button type="button" class="btn" data-dpad>Voltar ao padrão</button>' : ''}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-dsalvar>Salvar dia</button></div>`, true);
+  const box = modal.querySelector('.mdl');
+  const desenha = () => {
+    box.querySelectorAll('[data-dt]').forEach(b => b.classList.toggle('on', b.dataset.dt === st.tipo));
+    $('#dia-h').style.display = st.tipo === 'T' ? '' : 'none';
+    box.querySelector('[data-dk=ent]').value = st.ent || ''; box.querySelector('[data-dk=sai]').value = st.sai || ''; box.querySelector('[data-dk=int]').value = String(st.int || 0);
+    valida();
+  };
+  const valida = () => {
+    const aj2 = Object.assign({}, aj, { [data]: { tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int } });
+    const sem = semanaEfetiva(c.escala, segundaDaSemana(data), feriasDe(mat), feriadosDe(c.revenda), aj2), v = validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg });
+    $('#dia-val').innerHTML = v ? '<p class="hint" style="margin-bottom:6px">Como fica a semana de ' + ddmm(sem[0].data) + ':</p>' + caixaVal(v) : '<p class="hint">Semana com férias ou sem escala: não é conferida.</p>';
+  };
+  box.addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) { st.tipo = b.dataset.dt; desenha(); } });
+  box.addEventListener('input', e => { const k = e.target.dataset.dk; if (!k) return; st[k] = k === 'int' ? +e.target.value : e.target.value; valida(); });
+  const fim = r => { S.ajustes = S.ajustes.filter(a => !(a.matricula === mat && a.data === data)); if (r) S.ajustes.push(r); revalida(); fecharModal(true); depois && depois(); };
+  box.querySelector('[data-dsalvar]').onclick = ev => ocupado(ev.currentTarget, async () => { fim(await call('salvarAjuste', { matricula: mat, data, tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int })); toast('Dia salvo.'); });
+  const bp = box.querySelector('[data-dpad]'); if (bp) bp.onclick = () => ocupado(bp, async () => { await call('salvarAjuste', { matricula: mat, data, tipo: '' }); fim(null); toast('Dia voltou ao padrão.'); });
+  desenha();
+}
+async function excelMes(list) {
+  if (!list.length) throw new Error('Ninguém na lista.');
+  const X = await loadXLSX(), datas = diasDoMes(S.mes);
+  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo', ...datas.map(d => DIAS_CURTO[diaSemanaIso(d)] + ' ' + ddmm(d) + (S.feriados.some(f => f.data === d) ? ' (feriado)' : '')), 'Horas no mês', 'Semanas fora das regras'];
+  const R = ordenar(list).map(c => { const M = mesColab(c); return [codigoMatricula(c.matricula), c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo,
+    ...M.dias.map(d => d.tipo === 'T' ? `${d.ent}–${d.sai}${d.feriado ? ' FERIADO' : ''}` : d.tipo === 'F' ? 'FOLGA' : d.tipo === 'FER' ? 'FÉRIAS' : ''), minParaHm(M.horas),
+    M.semanas.filter(s => s.val && s.val.status === 'ERRO').map(s => ddmm(s.ini)).join(', ')]; });
+  const ws = X.utils.aoa_to_sheet([H, ...R]);
+  ws['!cols'] = H.map((h, i) => ({ wch: i === 1 ? 32 : i >= 6 && i < 6 + datas.length ? 13 : 16 }));
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Escala do mês');
+  X.writeFile(wb, `Escala_${S.mes}_${list.length}_colab.xlsx`);
 }
 
 /* ================= exportação ================= */
@@ -718,8 +836,12 @@ function vCadastro(m) {
       <label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label></div>
     <div class="vt" style="padding-top:0">${[['arm', 'Armazém'], ['ent', 'Entrega']].map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaSetor(c.setor) === k).length}</i></button>`).join('')}</div>
     <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
-    <div class="pts"><b>Feriados de ${esc(C.rev)}</b><div class="ck">${feriadosDe(C.rev).filter(f => f.data >= isoMaisDias(hoje(), -30)).sort((a, b) => a.data.localeCompare(b.data)).map(f => `<label style="cursor:default">${dataBr(f.data)} · ${esc(f.descricao)} <button type="button" class="xp" data-delh="${esc(f.id)}" aria-label="Remover feriado">×</button></label>`).join('') || '<span class="hint">Nenhum feriado cadastrado.</span>'}</div>
-      <form class="addp" data-addh><input type="date" name="data" aria-label="Data do feriado" style="width:auto"><input name="descricao" placeholder="Nome do feriado (ex.: Padroeira)" maxlength="60"><button class="btn sm" type="submit">Adicionar</button></form></div>
+    <div class="pts"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Feriados de ${esc(C.rev)}</b><span class="hint">(próximos)</span><span class="sp" style="flex:1"></span>
+        <label class="btn sm" for="fer-file">${ic('up')}Importar planilha de feriados</label><input type="file" id="fer-file" accept=".xlsx,.xls,.csv" hidden></div>
+      <div class="ck">${feriadosDe(C.rev).filter(f => f.data >= isoMaisDias(hoje(), -30)).sort((a, b) => a.data.localeCompare(b.data)).map(f => `<label style="cursor:default" title="${esc([f.tipo, f.validacao, f.obs, f.origem === 'importado' ? 'importado' : 'cadastrado à mão'].filter(Boolean).join(' · '))}">${dataBr(f.data)} · ${esc(f.descricao)}${f.tipo ? ' <i class="hint">' + esc(f.tipo) + '</i>' : ''}${/sem valida/i.test(f.validacao || '') ? ' <span class="tg th">sem validação</span>' : ''}${feriadoConta(f) ? '' : ' <span class="tg">fora do alerta</span>'} <button type="button" class="xp" data-delh="${esc(f.id)}" aria-label="Remover feriado">×</button></label>`).join('') || '<span class="hint">Nenhum feriado cadastrado.</span>'}</div>
+      <form class="addp" data-addh style="max-width:none;flex-wrap:wrap"><input type="date" name="data" aria-label="Data do feriado" style="width:auto"><input name="descricao" placeholder="Nome do feriado (ex.: Padroeira)" maxlength="80" style="flex:1 1 200px">
+        <select name="tipo" style="width:auto"><option>Municipal</option><option>Estadual</option><option>Nacional</option><option>Ponto facultativo</option></select>
+        <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="conta" checked style="width:auto"> conta no alerta</label><button class="btn sm" type="submit">Adicionar</button></form></div>
     ${C.area === 'ent' ? `<div class="pts"><b>Pontos de apoio de ${esc(C.rev)}</b><div class="ck">${pontosRev(C.rev).map(p => `<label style="cursor:default">${esc(p)} <button type="button" class="xp" data-delp="${esc(p)}" aria-label="Remover ${esc(p)}">×</button></label>`).join('') || '<span class="hint">Nenhum ponto cadastrado: todos ficam na Sede.</span>'}</div>
       <form class="addp" data-addp><input placeholder="Novo ponto de apoio (ex.: Irará)" maxlength="40"><button class="btn sm" type="submit">Adicionar</button></form></div>` : ''}
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
@@ -760,10 +882,47 @@ function vCadastro(m) {
   fh.onsubmit = e => {
     e.preventDefault(); const fd = Object.fromEntries(new FormData(fh));
     if (!fd.data || !fd.descricao.trim()) return toast('Informe a data e o nome do feriado.', true);
-    ocupado(fh.querySelector('button'), async () => { const f = await call('salvarFeriado', { revenda: C.rev, data: fd.data, descricao: fd.descricao }); S.feriados.push(f); revalida(); toast('Feriado cadastrado.'); vCadastro(m); });
+    ocupado(fh.querySelector('button'), async () => { const f = await call('salvarFeriado', { revenda: C.rev, data: fd.data, descricao: fd.descricao, tipo: fd.tipo, contaAlerta: fd.conta ? 'S' : 'N' }); S.feriados.push(f); revalida(); toast('Feriado cadastrado.'); vCadastro(m); });
   };
+  m.querySelector('#fer-file').onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { previaFeriados(await lerFeriados(fl), C.rev, () => vCadastro(m)); } catch (err) { toast(esc(err.message), true); } };
   const fa = m.querySelector('[data-addp]');
   if (fa) fa.onsubmit = e => { e.preventDefault(); const v = fa.querySelector('input').value.trim(); if (!v) return; if (pontosRev(C.rev).some(p => nrm(p) === nrm(v)) || nrm(v) === 'sede') return toast('Esse ponto já existe.', true); salvaPontos(C.rev, pontosRev(C.rev).concat(v), m); };
+}
+/** Lê a planilha de feriados: cabeçalho Data | Dia da semana | Feriado | Tipo | Validação | Conta no alerta | Observação. */
+async function lerFeriados(file) {
+  const X = await loadXLSX(), wb = X.read(await file.arrayBuffer(), { type: 'array' });
+  for (const n of wb.SheetNames) {
+    const A = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: true });
+    const hi = A.slice(0, 30).findIndex(r => { const H = r.map(nrm); return H.includes('data') && H.includes('feriado'); });
+    if (hi < 0) continue;
+    const H = A[hi].map(nrm), col = k => H.indexOf(k);
+    const titulo = A.slice(0, hi).flat().map(String).find(x => /feriados/i.test(x)) || '';
+    const mt = titulo.match(/feriados\s*[-–—]\s*(.+?)\s*(\(|$)/i), cod = (titulo.match(/\(([A-Z]{2})\)/) || [])[1];
+    const paraIso = v => {
+      if (typeof v === 'number') { const d = X.SSF.parse_date_code(v); return d ? d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0') : ''; }
+      const s = String(v).trim(); let k = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (k) return k[0];
+      k = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); if (k) { const y = k[3].length === 2 ? '20' + k[3] : k[3]; return y + '-' + k[2].padStart(2, '0') + '-' + k[1].padStart(2, '0'); }
+      return '';
+    };
+    const itens = A.slice(hi + 1).map(r => ({ data: paraIso(r[col('data')]), descricao: String(r[col('feriado')] || '').trim(), tipo: col('tipo') >= 0 ? String(r[col('tipo')]).trim() : '',
+      validacao: col('validacao') >= 0 ? String(r[col('validacao')]).trim() : '', contaAlerta: col('conta no alerta') >= 0 ? String(r[col('conta no alerta')]).trim() : 'Sim', obs: col('observacao') >= 0 ? String(r[col('observacao')]).trim() : '' }))
+      .filter(x => x.data && x.descricao);
+    return { itens, revenda: (cod && COD_REV[cod]) || (mt ? mt[1].trim() : ''), arquivo: file.name };
+  }
+  throw new Error('Não achei as colunas Data e Feriado na planilha.');
+}
+function previaFeriados(P, revAtual, depois) {
+  if (!P.itens.length) return toast('Nenhum feriado com data na planilha.', true);
+  const revs = uniq(S.cols.map(c => c.revenda)), rev = revs.find(r => nrm(r) === nrm(P.revenda)) || revAtual;
+  abrirModal(`<div class="mdl-h"><div><h2>Importar feriados</h2><small>${esc(P.arquivo)} · ${P.itens.length} datas</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><label class="f">Unidade<select id="fer-rev">${revs.map(r => `<option ${r === rev ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
+      <div class="ovf" style="max-height:44vh"><table class="tb"><tr><th>Data</th><th>Feriado</th><th>Tipo</th><th>Validação</th><th>Alerta</th></tr>${P.itens.map(f => `<tr><td>${dataBr(f.data)}</td><td>${esc(f.descricao)}</td><td>${esc(f.tipo)}</td><td>${esc(f.validacao)}</td><td>${/^n/i.test(f.contaAlerta) ? 'Não' : 'Sim'}</td></tr>`).join('')}</table></div>
+      <p class="hint">Datas novas são incluídas e as que já existem são atualizadas. Feriados cadastrados à mão em outras datas continuam.</p></div>
+    <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-fimp>Importar ${P.itens.length} feriados</button></div>`);
+  modal.querySelector('[data-fimp]').onclick = ev => ocupado(ev.currentTarget, async () => {
+    const r = await call('importarFeriados', { revenda: $('#fer-rev').value, itens: P.itens });
+    fecharModal(true); await carregar(); toast(`Feriados importados: <b>${r.novos}</b> novos, ${r.atualizados} atualizados.`); depois && depois();
+  });
 }
 async function salvaPontos(rev, lista, m) {
   let o = {}; try { o = JSON.parse(S.cfg.PONTOS_APOIO || '{}'); } catch (e) { o = {}; }

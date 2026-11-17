@@ -20,7 +20,7 @@ const CSS_PDF = 'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;colo
   '.msg{font-size:10px;color:#44526b;margin:2px 0}.leg{font-size:9.5px;color:#44526b;margin-top:10px;border-top:1px solid #dbe2ee;padding-top:6px}' +
   '.ass td{border:0;padding-top:46px;text-align:center;font-size:11px;width:50%}.ass span{display:block;border-top:1px solid #0c1a33;margin:0 18px;padding-top:4px}' +
   '.q th{background:#0b2a6b;color:#fff;font-size:8px;padding:4px 3px;border:1px solid #0b2a6b}.q td{font-size:8px;padding:3px;border:1px solid #dbe2ee;text-align:center}' +
-  '.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
+  '.qm th,.qm td{font-size:6.5px;padding:2px 1px}.qm td.n{font-size:7px;min-width:120px}.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
 
 function textoDia_(d) {
   const c = calcDia(d);
@@ -35,11 +35,11 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
   } else {
     const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
     const val = validarEscala(esc, { tele: tele, cfg: cfg });
-    const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
+    const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
       const sd = sem ? sem[i] : null, rot = nome + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
       if (sd && sd.tipo === 'FER') return '<tr class="f"><td class="d">' + rot + '</td><td colspan="5" style="background:#ece6fd;color:#6d3fd8">FÉRIAS</td></tr>';
-      const d = esc.dias[i] || { tipo: 'F' }, t = d.tipo === 'T' ? textoDia_(d) : null;
+      const d = sd ? (sd.tipo === 'T' ? { tipo: 'T', ent: sd.ent, sai: sd.sai, int: sd.int } : { tipo: 'F' }) : (esc.dias[i] || { tipo: 'F' }), t = d.tipo === 'T' ? textoDia_(d) : null;
       return t ? '<tr><td class="d">' + rot + '</td><td>Trabalho</td><td>' + h_(t.ent) + '</td><td>' + h_(t.sai) + '</td><td>' + t.int + '</td><td><b>' + t.horas + '</b></td></tr>'
         : '<tr class="f"><td class="d">' + rot + '</td><td colspan="5">FOLGA</td></tr>';
     }).join('') + (sem ? avisosSemana(sem).map(function (a) { return '<tr><td colspan="6" style="color:#9a5800;font-size:10px;text-align:left">⚑ ' + h_(a) + '</td></tr>'; }).join('') : '');
@@ -80,11 +80,11 @@ function quadroPdf_(cols, esc, cfg, ctx) {
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         (function () {
-          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
+          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
           return DIAS_CURTO.map(function (_, i) {
             if (sem && sem[i].tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8;font-weight:bold">FÉRIAS</td>';
             if (!e || (sem && sem[i].tipo === 'N')) return '<td>—</td>';
-            const d = dias[i] || { tipo: 'F' }, fer = sem && sem[i].feriado;
+            const d = sem ? sem[i] : (dias[i] || { tipo: 'F' }), fer = sem && sem[i].feriado;
             return d.tipo === 'T' ? '<td' + (fer ? ' style="background:#fde6e3"' : '') + '>' + h_(d.ent) + '<br>' + h_(d.sai) + (fer ? '<br><b>feriado</b>' : '') + '</td>' : '<td class="f">FOLGA</td>';
           }).join('');
         })() +
@@ -113,19 +113,88 @@ function exportPdf_(u, d) {
     .sort(ordemVisao_);
   if (!cols.length) throw new Error('Nenhum colaborador disponível.');
   let ctx = null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || ''))) {
-    ctx = { semana: segundaDaSemana(d.semana), ferias: {}, feriados: {} };
+  const temSemana = /^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')), temMes = /^\d{4}-\d{2}$/.test(String(d.mes || ''));
+  if (temSemana || temMes) {
+    ctx = { semana: temSemana ? segundaDaSemana(d.semana) : '', mes: temMes ? d.mes : '', ferias: {}, feriados: {}, ajustes: {} };
     ler_('Ferias').forEach(function (f) { (ctx.ferias[f.matricula] = ctx.ferias[f.matricula] || []).push(f); });
     ler_('Feriados').forEach(function (f) { (ctx.feriados[f.revenda] = ctx.feriados[f.revenda] || []).push(f); });
+    ler_('Ajustes').forEach(function (a) { (ctx.ajustes[a.matricula] = ctx.ajustes[a.matricula] || {})[a.data] = a; });
   }
-  const corpo = d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg, ctx)
+  const corpo = temMes ? (d.modo === 'quadro' ? quadroMesPdf_(cols, esc, cfg, ctx) : cols.map(function (c, i) { return fichaMesPdf_(c, esc[c.matricula], cfg, i === cols.length - 1, ctx); }).join(''))
+    : d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg, ctx)
     : cols.map(function (c, i) { return fichaPdf_(c, esc[c.matricula], cfg, i === cols.length - 1, ctx); }).join('');
   const html = '<html><head><meta charset="utf-8"><style>' + CSS_PDF + '</style></head><body>' + corpo + '</body></html>';
   const pdf = Utilities.newBlob(html, 'text/html', 'escala.html').getAs('application/pdf');
   const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-  const nome = cols.length === 1 && d.modo !== 'quadro'
+  const nome = temMes ? 'Escala_' + d.mes + '_' + (cols.length === 1 && d.modo !== 'quadro' ? slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) : (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab') + '.pdf'
+    : cols.length === 1 && d.modo !== 'quadro'
     ? 'Escala_' + slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) + '.pdf'
     : 'Escalas_5x2_' + (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab_' + hoje + '.pdf';
   log_(u, cols.length === 1 ? cols[0].matricula : '', 'exportou PDF', (d.modo || 'fichas') + ' · ' + cols.length);
   return { nome: nome, base64: Utilities.base64Encode(pdf.getBytes()) };
+}
+
+/* ---------------- PDF do mês ---------------- */
+const MESES_ = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function nomeMes_(ym) { const p = ym.split('-'); return MESES_[+p[1] - 1] + ' de ' + p[0]; }
+function diasMesColab_(c, e, ctx) {
+  const esc = e ? { vigencia: e.vigencia, dias: parse_(e.dias, []) } : null;
+  return diasDoMes(ctx.mes).map(function (dt) { return diaEfetivo(esc, dt, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]); });
+}
+function fichaMesPdf_(c, e, cfg, ultima, ctx) {
+  const dias = diasMesColab_(c, e, ctx), cel = {};
+  dias.forEach(function (d) { cel[d.data] = d; });
+  const ini = segundaDaSemana(dias[0].data), fim = dias[dias.length - 1].data;
+  let linhas = '', total = 0, avisos = [];
+  for (let s = ini; s <= fim; s = isoMaisDias(s, 7)) {
+    linhas += '<tr>' + [0, 1, 2, 3, 4, 5, 6].map(function (i) {
+      const dt = isoMaisDias(s, i), d = cel[dt];
+      if (!d) return '<td style="background:#f6f8fc"></td>';
+      const dia = '<b>' + (+dt.slice(8)) + '</b>' + (d.feriado ? ' <span style="color:#b42318;font-size:8px">' + h_(d.feriado) + '</span>' : '');
+      if (d.tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8">' + dia + '<br>FÉRIAS</td>';
+      if (d.tipo === 'N') return '<td>' + dia + '<br>—</td>';
+      if (d.tipo === 'F') return '<td style="background:#fdf0d8;color:#9a5800">' + dia + '<br>FOLGA' + (d.ajuste ? ' *' : '') + '</td>';
+      const cd = calcDia(d); if (cd) total += cd.liquido;
+      if (d.feriado && d.feriadoConta) avisos.push(dt);
+      return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + dia + '<br>' + h_(d.ent) + '–' + h_(d.sai) + (d.ajuste ? ' *' : '') + '</td>';
+    }).join('') + '</tr>';
+  }
+  return '<div class="pg' + (ultima ? ' ult' : '') + '">' +
+    '<div class="top"><span>' + h_(nomeMes_(ctx.mes)) + '</span><b>' + h_(cfg.EMPRESA) + ' · Escala do mês</b></div>' +
+    '<table class="inf" style="margin-top:10px"><tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
+    '<tr><td class="k">Função</td><td>' + h_(c.funcao) + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">' + (areaSetor(c.setor) === 'arm' ? 'Turno' : 'Sede / ponto') + '</td><td>' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td></tr></table>' +
+    '<table class="esc" style="margin-top:10px"><tr>' + DIAS_SEMANA.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>' + linhas + '</table>' +
+    '<p class="tot">Horas no mês: <b>' + minParaHm(total) + '</b>' + (avisos.length ? ' &nbsp; <span class="st ALERTA">Feriado trabalhado: ' + avisos.map(function (x) { return x.split('-').reverse().slice(0, 2).join('/'); }).join(', ') + '</span>' : '') + '</p>' +
+    '<p class="leg">* dia alterado em relação ao padrão semanal. Escala 5x2 conforme a EC nº 141/2026 e a CLT; feriado trabalhado exige folga compensatória na semana ou pagamento em dobro (Lei 605/49).</p>' +
+    '<table class="ass"><tr><td><span>Colaborador</span></td><td><span>Supervisor</span></td></tr></table></div>';
+}
+function quadroMesPdf_(cols, esc, cfg, ctx) {
+  const datas = diasDoMes(ctx.mes), ini = DIAS_CURTO.map(function (d) { return d.charAt(0); });
+  const ferAll = {}; Object.keys(ctx.feriados).forEach(function (r) { ctx.feriados[r].forEach(function (f) { ferAll[f.data] = true; }); });
+  const grupos = {}, ordem = [];
+  cols.forEach(function (c) {
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
+    grupos[k].push(c);
+  });
+  let rows = '';
+  ordem.forEach(function (g) {
+    rows += '<tr class="g"><td colspan="' + (datas.length + 2) + '">' + h_(g) + ' (' + grupos[g].length + ')</td></tr>';
+    grupos[g].forEach(function (c) {
+      const dias = diasMesColab_(c, esc[c.matricula], ctx);
+      let tot = 0;
+      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + ' · ' + h_(c.funcao) + '</td>' + dias.map(function (d) {
+        if (d.tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8">V</td>';
+        if (d.tipo === 'N') return '<td>·</td>';
+        if (d.tipo === 'F') return '<td class="f">F</td>';
+        const cd = calcDia(d); if (cd) tot += cd.liquido;
+        return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + h_(String(d.ent).slice(0, 2)) + '</td>';
+      }).join('') + '<td><b>' + minParaHm(tot) + '</b></td></tr>';
+    });
+  });
+  return '<div class="pg ult"><div class="top"><span>' + h_(nomeMes_(ctx.mes)) + '</span><b>' + h_(cfg.EMPRESA) + ' · Quadro de escalas do mês</b></div>' +
+    '<table class="q qm" style="margin-top:8px"><tr><th>Colaborador</th>' + datas.map(function (dt) {
+      return '<th' + (ferAll[dt] ? ' style="background:#b42318"' : '') + '>' + (+dt.slice(8)) + '<br>' + ini[diaSemanaIso(dt)] + '</th>';
+    }).join('') + '<th>Horas</th></tr>' + rows + '</table>' +
+    '<p style="font-size:8px;color:#44526b">Número = hora de entrada · F = folga · V = férias · vermelho = feriado. Cada colaborador tem a ficha do mês com os horários completos.</p></div>';
 }

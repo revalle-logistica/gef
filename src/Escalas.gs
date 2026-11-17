@@ -163,16 +163,55 @@ function removerFerias_(u, d) {
     return true;
   });
 }
+function feriadoLimpo_(d) {
+  const data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 80);
+  if (!desc) throw new Error('Informe o nome do feriado de ' + dataBr_(data) + '.');
+  return { data: data, descricao: desc, tipo: String(d.tipo || '').trim().slice(0, 20), validacao: String(d.validacao || '').trim().slice(0, 40),
+    contaAlerta: /^n/i.test(String(d.contaAlerta || 'S').trim()) ? 'N' : 'S', obs: String(d.obs || '').trim().slice(0, 120) };
+}
 function salvarFeriado_(u, d) {
-  const rev = String(d.revenda || '').trim(), data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 60);
+  const rev = String(d.revenda || '').trim(), f0 = feriadoLimpo_(d);
   if (!rev) throw new Error('Informe a unidade.');
-  if (!desc) throw new Error('Informe o nome do feriado.');
   return comLock_(function () {
-    if (ler_('Feriados').some(function (f) { return f.revenda === rev && f.data === data; })) throw new Error('Já existe feriado nessa data para ' + rev + '.');
-    const f = { id: Utilities.getUuid(), revenda: rev, data: data, descricao: desc, criadoPor: u.nome, criadoEm: agora_() };
+    if (ler_('Feriados').some(function (f) { return f.revenda === rev && f.data === f0.data; })) throw new Error('Já existe feriado nessa data para ' + rev + '.');
+    const f = Object.assign({ id: Utilities.getUuid(), revenda: rev, criadoPor: u.nome, criadoEm: agora_(), origem: 'manual' }, f0);
     gravarLinha_('Feriados', f);
-    log_(u, '', 'cadastrou feriado', rev + ' ' + data + ' ' + desc);
-    return { id: f.id, revenda: rev, data: data, descricao: desc };
+    log_(u, '', 'cadastrou feriado', rev + ' ' + f.data + ' ' + f.descricao);
+    return { id: f.id, revenda: rev, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta, obs: f.obs, origem: f.origem };
+  });
+}
+/** Importa a planilha de feriados de uma unidade: inclui datas novas e atualiza as que já existem. */
+function importarFeriados_(u, d) {
+  const rev = String(d.revenda || '').trim(), itens = (d.itens || []).map(feriadoLimpo_);
+  if (!rev) throw new Error('Informe a unidade.');
+  if (!itens.length) throw new Error('Nenhum feriado na planilha.');
+  return comLock_(function () {
+    const lst = ler_('Feriados'), res = { novos: 0, atualizados: 0 }, quando = agora_();
+    itens.forEach(function (it) {
+      const f = lst.filter(function (x) { return x.revenda === rev && x.data === it.data; })[0];
+      if (f) { Object.assign(f, it); f.origem = 'importado'; res.atualizados++; }
+      else { lst.push(Object.assign({ id: Utilities.getUuid(), revenda: rev, criadoPor: u.nome, criadoEm: quando, origem: 'importado' }, it)); res.novos++; }
+    });
+    gravarTudo_('Feriados', lst);
+    log_(u, '', 'importou feriados', rev + ' · ' + JSON.stringify(res));
+    return res;
+  });
+}
+/** Troca só um dia do colaborador (trabalho/folga/horário). tipo vazio = volta ao padrão. */
+function salvarAjuste_(u, d) {
+  const c = achaColab_(u, d.matricula), data = dataOk_(d.data, 'dia'), tipo = String(d.tipo || '');
+  if (tipo && tipo !== 'T' && tipo !== 'F') throw new Error('Tipo de dia inválido.');
+  if (tipo === 'T' && (hmParaMin(d.ent) == null || hmParaMin(d.sai) == null)) throw new Error('Informe entrada e saída.');
+  return comLock_(function () {
+    const lst = ler_('Ajustes').filter(function (a) { return !(a.matricula === c.matricula && a.data === data); });
+    let novo = null;
+    if (tipo) {
+      novo = { matricula: c.matricula, data: data, tipo: tipo, ent: tipo === 'T' ? d.ent : '', sai: tipo === 'T' ? d.sai : '', int: tipo === 'T' ? Math.max(0, parseInt(d.int, 10) || 0) : '', por: u.nome, em: agora_() };
+      lst.push(novo);
+    }
+    gravarTudo_('Ajustes', lst);
+    log_(u, c.matricula, tipo ? 'ajustou dia' : 'voltou dia ao padrão', data + (tipo ? ' · ' + tipo + (tipo === 'T' ? ' ' + d.ent + '-' + d.sai : '') : ''));
+    return novo ? { matricula: novo.matricula, data: data, tipo: tipo, ent: novo.ent, sai: novo.sai, int: +novo.int || 0 } : null;
   });
 }
 function removerFeriado_(u, d) {

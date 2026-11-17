@@ -94,5 +94,12 @@ tests/regras.test.js
 
 ## Férias e feriados
 - **Férias:** cadastradas por colaborador, no editor da escala, com início e fim. Quem está de férias aparece como FÉRIAS na semana e não conta na cobertura do dia.
-- **Feriados:** cadastrados por unidade (revenda), na tela Cadastro. Quem tem trabalho num feriado recebe o alerta "folga compensatória na semana ou pagamento em dobro" (Lei 605/49).
+- **Feriados:** cadastrados por unidade (revenda), na tela Cadastro. Dá para cadastrar à mão (com tipo e a opção "conta no alerta") ou **importar a planilha** com as colunas Data, Dia da semana, Feriado, Tipo, Validação, Conta no alerta e Observação. A unidade é lida do título "Feriados — Alagoinhas (AL)". Datas novas são incluídas e as que já existem são atualizadas. Quem tem trabalho num feriado recebe o alerta "folga compensatória na semana ou pagamento em dobro" (Lei 605/49).
 - A lista de escalas, o painel, o Excel e os PDFs mostram a **semana escolhida**, com as datas.
+
+## Visão do mês
+Na aba **Mês**, o supervisor escolhe o mês e vê a grade de cada colaborador, dia a dia: padrão semanal, trocas feitas em datas específicas, férias e feriados.
+- Clicar num dia permite trocar **só aquela data** (trabalho, folga ou horário). A troca é conferida na hora contra as regras da semana.
+- Clicar no nome abre o padrão semanal.
+- Cada semana do mês ganha um ponto de status (dentro das regras, com alerta ou com erro).
+- Dá para exportar o **Excel do mês**, o **PDF do mês por colaborador** (em formato de calendário) e o **PDF quadro do mês**.

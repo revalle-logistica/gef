@@ -15,7 +15,8 @@ const ABAS = {
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm'],
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
-  Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm'],
+  Feriados: ['id', 'revenda', 'data', 'descricao', 'criadoPor', 'criadoEm', 'tipo', 'validacao', 'contaAlerta', 'obs', 'origem'],
+  Ajustes: ['matricula', 'data', 'tipo', 'ent', 'sai', 'int', 'por', 'em'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -66,7 +67,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, segundaDaSemana, semanaEfetiva, avisosSemana].map(function (f) { return f.toString(); }).join('\n');
+    [hmParaMin, minParaHm, calcDia, parametrosRegra, validarEscala, semanaModelo, normTxt, turnoTag, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -93,6 +94,8 @@ function rotas_() {
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
   salvarFeriado: { f: salvarFeriado_, admin: true },
+  importarFeriados: { f: importarFeriados_, admin: true },
+  salvarAjuste: { f: salvarAjuste_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true },
   salvarConfig: { f: salvarConfig_, admin: true }
@@ -212,8 +215,10 @@ function carregar_(u) {
   });
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
-  const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao }; });
-  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados };
+  const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
+  const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
+  const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
+  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes };
   if (u.perfil === 'ADMIN') {
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
@@ -553,16 +558,55 @@ function removerFerias_(u, d) {
     return true;
   });
 }
+function feriadoLimpo_(d) {
+  const data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 80);
+  if (!desc) throw new Error('Informe o nome do feriado de ' + dataBr_(data) + '.');
+  return { data: data, descricao: desc, tipo: String(d.tipo || '').trim().slice(0, 20), validacao: String(d.validacao || '').trim().slice(0, 40),
+    contaAlerta: /^n/i.test(String(d.contaAlerta || 'S').trim()) ? 'N' : 'S', obs: String(d.obs || '').trim().slice(0, 120) };
+}
 function salvarFeriado_(u, d) {
-  const rev = String(d.revenda || '').trim(), data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 60);
+  const rev = String(d.revenda || '').trim(), f0 = feriadoLimpo_(d);
   if (!rev) throw new Error('Informe a unidade.');
-  if (!desc) throw new Error('Informe o nome do feriado.');
   return comLock_(function () {
-    if (ler_('Feriados').some(function (f) { return f.revenda === rev && f.data === data; })) throw new Error('Já existe feriado nessa data para ' + rev + '.');
-    const f = { id: Utilities.getUuid(), revenda: rev, data: data, descricao: desc, criadoPor: u.nome, criadoEm: agora_() };
+    if (ler_('Feriados').some(function (f) { return f.revenda === rev && f.data === f0.data; })) throw new Error('Já existe feriado nessa data para ' + rev + '.');
+    const f = Object.assign({ id: Utilities.getUuid(), revenda: rev, criadoPor: u.nome, criadoEm: agora_(), origem: 'manual' }, f0);
     gravarLinha_('Feriados', f);
-    log_(u, '', 'cadastrou feriado', rev + ' ' + data + ' ' + desc);
-    return { id: f.id, revenda: rev, data: data, descricao: desc };
+    log_(u, '', 'cadastrou feriado', rev + ' ' + f.data + ' ' + f.descricao);
+    return { id: f.id, revenda: rev, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta, obs: f.obs, origem: f.origem };
+  });
+}
+/** Importa a planilha de feriados de uma unidade: inclui datas novas e atualiza as que já existem. */
+function importarFeriados_(u, d) {
+  const rev = String(d.revenda || '').trim(), itens = (d.itens || []).map(feriadoLimpo_);
+  if (!rev) throw new Error('Informe a unidade.');
+  if (!itens.length) throw new Error('Nenhum feriado na planilha.');
+  return comLock_(function () {
+    const lst = ler_('Feriados'), res = { novos: 0, atualizados: 0 }, quando = agora_();
+    itens.forEach(function (it) {
+      const f = lst.filter(function (x) { return x.revenda === rev && x.data === it.data; })[0];
+      if (f) { Object.assign(f, it); f.origem = 'importado'; res.atualizados++; }
+      else { lst.push(Object.assign({ id: Utilities.getUuid(), revenda: rev, criadoPor: u.nome, criadoEm: quando, origem: 'importado' }, it)); res.novos++; }
+    });
+    gravarTudo_('Feriados', lst);
+    log_(u, '', 'importou feriados', rev + ' · ' + JSON.stringify(res));
+    return res;
+  });
+}
+/** Troca só um dia do colaborador (trabalho/folga/horário). tipo vazio = volta ao padrão. */
+function salvarAjuste_(u, d) {
+  const c = achaColab_(u, d.matricula), data = dataOk_(d.data, 'dia'), tipo = String(d.tipo || '');
+  if (tipo && tipo !== 'T' && tipo !== 'F') throw new Error('Tipo de dia inválido.');
+  if (tipo === 'T' && (hmParaMin(d.ent) == null || hmParaMin(d.sai) == null)) throw new Error('Informe entrada e saída.');
+  return comLock_(function () {
+    const lst = ler_('Ajustes').filter(function (a) { return !(a.matricula === c.matricula && a.data === data); });
+    let novo = null;
+    if (tipo) {
+      novo = { matricula: c.matricula, data: data, tipo: tipo, ent: tipo === 'T' ? d.ent : '', sai: tipo === 'T' ? d.sai : '', int: tipo === 'T' ? Math.max(0, parseInt(d.int, 10) || 0) : '', por: u.nome, em: agora_() };
+      lst.push(novo);
+    }
+    gravarTudo_('Ajustes', lst);
+    log_(u, c.matricula, tipo ? 'ajustou dia' : 'voltou dia ao padrão', data + (tipo ? ' · ' + tipo + (tipo === 'T' ? ' ' + d.ent + '-' + d.sai : '') : ''));
+    return novo ? { matricula: novo.matricula, data: data, tipo: tipo, ent: novo.ent, sai: novo.sai, int: +novo.int || 0 } : null;
   });
 }
 function removerFeriado_(u, d) {
@@ -653,7 +697,7 @@ const CSS_PDF = 'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;colo
   '.msg{font-size:10px;color:#44526b;margin:2px 0}.leg{font-size:9.5px;color:#44526b;margin-top:10px;border-top:1px solid #dbe2ee;padding-top:6px}' +
   '.ass td{border:0;padding-top:46px;text-align:center;font-size:11px;width:50%}.ass span{display:block;border-top:1px solid #0c1a33;margin:0 18px;padding-top:4px}' +
   '.q th{background:#0b2a6b;color:#fff;font-size:8px;padding:4px 3px;border:1px solid #0b2a6b}.q td{font-size:8px;padding:3px;border:1px solid #dbe2ee;text-align:center}' +
-  '.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
+  '.qm th,.qm td{font-size:6.5px;padding:2px 1px}.qm td.n{font-size:7px;min-width:120px}.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
 
 function textoDia_(d) {
   const c = calcDia(d);
@@ -668,11 +712,11 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
   } else {
     const esc = { vigencia: e.vigencia, dias: parse_(e.dias, []) };
     const val = validarEscala(esc, { tele: tele, cfg: cfg });
-    const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
+    const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
       const sd = sem ? sem[i] : null, rot = nome + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
       if (sd && sd.tipo === 'FER') return '<tr class="f"><td class="d">' + rot + '</td><td colspan="5" style="background:#ece6fd;color:#6d3fd8">FÉRIAS</td></tr>';
-      const d = esc.dias[i] || { tipo: 'F' }, t = d.tipo === 'T' ? textoDia_(d) : null;
+      const d = sd ? (sd.tipo === 'T' ? { tipo: 'T', ent: sd.ent, sai: sd.sai, int: sd.int } : { tipo: 'F' }) : (esc.dias[i] || { tipo: 'F' }), t = d.tipo === 'T' ? textoDia_(d) : null;
       return t ? '<tr><td class="d">' + rot + '</td><td>Trabalho</td><td>' + h_(t.ent) + '</td><td>' + h_(t.sai) + '</td><td>' + t.int + '</td><td><b>' + t.horas + '</b></td></tr>'
         : '<tr class="f"><td class="d">' + rot + '</td><td colspan="5">FOLGA</td></tr>';
     }).join('') + (sem ? avisosSemana(sem).map(function (a) { return '<tr><td colspan="6" style="color:#9a5800;font-size:10px;text-align:left">⚑ ' + h_(a) + '</td></tr>'; }).join('') : '');
@@ -713,11 +757,11 @@ function quadroPdf_(cols, esc, cfg, ctx) {
       const val = e ? validarEscala({ vigencia: e.vigencia, dias: dias }, { tele: c.teleatendimento === 'S', cfg: cfg }) : null;
       rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + '</td><td class="n">' + h_(c.funcao) + '</td><td class="n">' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td>' +
         (function () {
-          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda]) : null;
+          const sem = ctx && ctx.semana ? semanaEfetiva(e ? { vigencia: e.vigencia, dias: dias } : null, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
           return DIAS_CURTO.map(function (_, i) {
             if (sem && sem[i].tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8;font-weight:bold">FÉRIAS</td>';
             if (!e || (sem && sem[i].tipo === 'N')) return '<td>—</td>';
-            const d = dias[i] || { tipo: 'F' }, fer = sem && sem[i].feriado;
+            const d = sem ? sem[i] : (dias[i] || { tipo: 'F' }), fer = sem && sem[i].feriado;
             return d.tipo === 'T' ? '<td' + (fer ? ' style="background:#fde6e3"' : '') + '>' + h_(d.ent) + '<br>' + h_(d.sai) + (fer ? '<br><b>feriado</b>' : '') + '</td>' : '<td class="f">FOLGA</td>';
           }).join('');
         })() +
@@ -746,21 +790,90 @@ function exportPdf_(u, d) {
     .sort(ordemVisao_);
   if (!cols.length) throw new Error('Nenhum colaborador disponível.');
   let ctx = null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || ''))) {
-    ctx = { semana: segundaDaSemana(d.semana), ferias: {}, feriados: {} };
+  const temSemana = /^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')), temMes = /^\d{4}-\d{2}$/.test(String(d.mes || ''));
+  if (temSemana || temMes) {
+    ctx = { semana: temSemana ? segundaDaSemana(d.semana) : '', mes: temMes ? d.mes : '', ferias: {}, feriados: {}, ajustes: {} };
     ler_('Ferias').forEach(function (f) { (ctx.ferias[f.matricula] = ctx.ferias[f.matricula] || []).push(f); });
     ler_('Feriados').forEach(function (f) { (ctx.feriados[f.revenda] = ctx.feriados[f.revenda] || []).push(f); });
+    ler_('Ajustes').forEach(function (a) { (ctx.ajustes[a.matricula] = ctx.ajustes[a.matricula] || {})[a.data] = a; });
   }
-  const corpo = d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg, ctx)
+  const corpo = temMes ? (d.modo === 'quadro' ? quadroMesPdf_(cols, esc, cfg, ctx) : cols.map(function (c, i) { return fichaMesPdf_(c, esc[c.matricula], cfg, i === cols.length - 1, ctx); }).join(''))
+    : d.modo === 'quadro' ? quadroPdf_(cols, esc, cfg, ctx)
     : cols.map(function (c, i) { return fichaPdf_(c, esc[c.matricula], cfg, i === cols.length - 1, ctx); }).join('');
   const html = '<html><head><meta charset="utf-8"><style>' + CSS_PDF + '</style></head><body>' + corpo + '</body></html>';
   const pdf = Utilities.newBlob(html, 'text/html', 'escala.html').getAs('application/pdf');
   const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-  const nome = cols.length === 1 && d.modo !== 'quadro'
+  const nome = temMes ? 'Escala_' + d.mes + '_' + (cols.length === 1 && d.modo !== 'quadro' ? slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) : (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab') + '.pdf'
+    : cols.length === 1 && d.modo !== 'quadro'
     ? 'Escala_' + slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) + '.pdf'
     : 'Escalas_5x2_' + (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab_' + hoje + '.pdf';
   log_(u, cols.length === 1 ? cols[0].matricula : '', 'exportou PDF', (d.modo || 'fichas') + ' · ' + cols.length);
   return { nome: nome, base64: Utilities.base64Encode(pdf.getBytes()) };
+}
+
+/* ---------------- PDF do mês ---------------- */
+const MESES_ = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function nomeMes_(ym) { const p = ym.split('-'); return MESES_[+p[1] - 1] + ' de ' + p[0]; }
+function diasMesColab_(c, e, ctx) {
+  const esc = e ? { vigencia: e.vigencia, dias: parse_(e.dias, []) } : null;
+  return diasDoMes(ctx.mes).map(function (dt) { return diaEfetivo(esc, dt, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]); });
+}
+function fichaMesPdf_(c, e, cfg, ultima, ctx) {
+  const dias = diasMesColab_(c, e, ctx), cel = {};
+  dias.forEach(function (d) { cel[d.data] = d; });
+  const ini = segundaDaSemana(dias[0].data), fim = dias[dias.length - 1].data;
+  let linhas = '', total = 0, avisos = [];
+  for (let s = ini; s <= fim; s = isoMaisDias(s, 7)) {
+    linhas += '<tr>' + [0, 1, 2, 3, 4, 5, 6].map(function (i) {
+      const dt = isoMaisDias(s, i), d = cel[dt];
+      if (!d) return '<td style="background:#f6f8fc"></td>';
+      const dia = '<b>' + (+dt.slice(8)) + '</b>' + (d.feriado ? ' <span style="color:#b42318;font-size:8px">' + h_(d.feriado) + '</span>' : '');
+      if (d.tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8">' + dia + '<br>FÉRIAS</td>';
+      if (d.tipo === 'N') return '<td>' + dia + '<br>—</td>';
+      if (d.tipo === 'F') return '<td style="background:#fdf0d8;color:#9a5800">' + dia + '<br>FOLGA' + (d.ajuste ? ' *' : '') + '</td>';
+      const cd = calcDia(d); if (cd) total += cd.liquido;
+      if (d.feriado && d.feriadoConta) avisos.push(dt);
+      return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + dia + '<br>' + h_(d.ent) + '–' + h_(d.sai) + (d.ajuste ? ' *' : '') + '</td>';
+    }).join('') + '</tr>';
+  }
+  return '<div class="pg' + (ultima ? ' ult' : '') + '">' +
+    '<div class="top"><span>' + h_(nomeMes_(ctx.mes)) + '</span><b>' + h_(cfg.EMPRESA) + ' · Escala do mês</b></div>' +
+    '<table class="inf" style="margin-top:10px"><tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
+    '<tr><td class="k">Função</td><td>' + h_(c.funcao) + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">' + (areaSetor(c.setor) === 'arm' ? 'Turno' : 'Sede / ponto') + '</td><td>' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td></tr></table>' +
+    '<table class="esc" style="margin-top:10px"><tr>' + DIAS_SEMANA.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>' + linhas + '</table>' +
+    '<p class="tot">Horas no mês: <b>' + minParaHm(total) + '</b>' + (avisos.length ? ' &nbsp; <span class="st ALERTA">Feriado trabalhado: ' + avisos.map(function (x) { return x.split('-').reverse().slice(0, 2).join('/'); }).join(', ') + '</span>' : '') + '</p>' +
+    '<p class="leg">* dia alterado em relação ao padrão semanal. Escala 5x2 conforme a EC nº 141/2026 e a CLT; feriado trabalhado exige folga compensatória na semana ou pagamento em dobro (Lei 605/49).</p>' +
+    '<table class="ass"><tr><td><span>Colaborador</span></td><td><span>Supervisor</span></td></tr></table></div>';
+}
+function quadroMesPdf_(cols, esc, cfg, ctx) {
+  const datas = diasDoMes(ctx.mes), ini = DIAS_CURTO.map(function (d) { return d.charAt(0); });
+  const ferAll = {}; Object.keys(ctx.feriados).forEach(function (r) { ctx.feriados[r].forEach(function (f) { ferAll[f.data] = true; }); });
+  const grupos = {}, ordem = [];
+  cols.forEach(function (c) {
+    const v = visaoColaborador(c), k = c.revenda + ' · ' + v.areaNome + (v.area === 'adm' ? '' : ' · ' + v.grupo);
+    if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
+    grupos[k].push(c);
+  });
+  let rows = '';
+  ordem.forEach(function (g) {
+    rows += '<tr class="g"><td colspan="' + (datas.length + 2) + '">' + h_(g) + ' (' + grupos[g].length + ')</td></tr>';
+    grupos[g].forEach(function (c) {
+      const dias = diasMesColab_(c, esc[c.matricula], ctx);
+      let tot = 0;
+      rows += '<tr><td class="n"><b>' + h_(c.nome) + '</b><br>' + h_(codigoMatricula(c.matricula)) + ' · ' + h_(c.funcao) + '</td>' + dias.map(function (d) {
+        if (d.tipo === 'FER') return '<td style="background:#ece6fd;color:#6d3fd8">V</td>';
+        if (d.tipo === 'N') return '<td>·</td>';
+        if (d.tipo === 'F') return '<td class="f">F</td>';
+        const cd = calcDia(d); if (cd) tot += cd.liquido;
+        return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + h_(String(d.ent).slice(0, 2)) + '</td>';
+      }).join('') + '<td><b>' + minParaHm(tot) + '</b></td></tr>';
+    });
+  });
+  return '<div class="pg ult"><div class="top"><span>' + h_(nomeMes_(ctx.mes)) + '</span><b>' + h_(cfg.EMPRESA) + ' · Quadro de escalas do mês</b></div>' +
+    '<table class="q qm" style="margin-top:8px"><tr><th>Colaborador</th>' + datas.map(function (dt) {
+      return '<th' + (ferAll[dt] ? ' style="background:#b42318"' : '') + '>' + (+dt.slice(8)) + '<br>' + ini[diaSemanaIso(dt)] + '</th>';
+    }).join('') + '<th>Horas</th></tr>' + rows + '</table>' +
+    '<p style="font-size:8px;color:#44526b">Número = hora de entrada · F = folga · V = férias · vermelho = feriado. Cada colaborador tem a ficha do mês com os horários completos.</p></div>';
 }
 
 
@@ -960,38 +1073,62 @@ function visaoColaborador(c) {
 /** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
 function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }
 
-/* ---------------- semana com férias e feriados ---------------- */
+/* ---------------- dias reais: padrão + ajustes do dia + férias + feriados ---------------- */
 function isoMaisDias(iso, n) {
   var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
   return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
 }
-/** Segunda-feira da semana que contém a data (ISO yyyy-mm-dd). */
-function segundaDaSemana(iso) {
-  var p = String(iso).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])), dow = (d.getUTCDay() + 6) % 7;
-  return isoMaisDias(iso, -dow);
-}
-/**
- * Dias reais de uma semana para um colaborador.
- * esc = escala-padrão {vigencia, dias}; ferias = [{inicio, fim}]; feriados = [{data, descricao}] da revenda.
- * Retorna 7 itens {data, tipo:'T'|'F'|'FER'|'N', ent, sai, int, feriado} ('N' = sem escala vigente).
- */
-function semanaEfetiva(esc, segunda, ferias, feriados) {
-  var out = [];
-  for (var i = 0; i < 7; i++) {
-    var data = isoMaisDias(segunda, i), base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[i] || { tipo: 'F' }) : null;
-    var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
-    var emFerias = (ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; });
-    var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '' };
-    if (emFerias) o.tipo = 'FER';
-    else if (!base) o.tipo = 'N';
-    else { o.tipo = base.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = base.int; } }
-    out.push(o);
-  }
+/** 0 = segunda ... 6 = domingo */
+function diaSemanaIso(iso) { var p = String(iso).split('-'); return (new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() + 6) % 7; }
+function segundaDaSemana(iso) { return isoMaisDias(iso, -diaSemanaIso(iso)); }
+/** Datas ISO de um mês "AAAA-MM". */
+function diasDoMes(ym) {
+  var p = String(ym).split('-'), n = new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(), out = [];
+  for (var i = 1; i <= n; i++) out.push(p[0] + '-' + p[1] + '-' + String(i).padStart(2, '0'));
   return out;
 }
-/** Avisos da semana real (feriado trabalhado). */
+/** Feriado conta no alerta, a não ser que "Conta no alerta" seja Não. */
+function feriadoConta(f) { return !/^n/i.test(String(f && f.contaAlerta != null ? f.contaAlerta : 'S').trim()); }
+/**
+ * Um dia real do colaborador.
+ * esc = padrão semanal {vigencia, dias}; ferias = [{inicio, fim}]; feriados = [{data, descricao, contaAlerta}];
+ * ajustes = {"AAAA-MM-DD": {tipo:'T'|'F', ent, sai, int}} (troca só daquele dia).
+ * tipo: 'T' trabalho, 'F' folga, 'FER' férias, 'N' sem escala vigente.
+ */
+function diaEfetivo(esc, data, ferias, feriados, ajustes) {
+  var fer = (feriados || []).filter(function (f) { return f.data === data; })[0];
+  var o = { data: data, feriado: fer ? (fer.descricao || 'Feriado') : '', feriadoConta: fer ? feriadoConta(fer) : false, ajuste: false };
+  if ((ferias || []).some(function (f) { return f.inicio <= data && data <= f.fim; })) { o.tipo = 'FER'; return o; }
+  var aj = ajustes && ajustes[data];
+  if (aj) { o.ajuste = true; o.tipo = aj.tipo === 'T' ? 'T' : 'F'; if (o.tipo === 'T') { o.ent = aj.ent; o.sai = aj.sai; o.int = +aj.int || 0; } return o; }
+  var base = esc && esc.vigencia && data >= esc.vigencia ? (esc.dias[diaSemanaIso(data)] || { tipo: 'F' }) : null;
+  if (!base) { o.tipo = 'N'; return o; }
+  o.tipo = base.tipo === 'T' ? 'T' : 'F';
+  if (o.tipo === 'T') { o.ent = base.ent; o.sai = base.sai; o.int = +base.int || 0; }
+  return o;
+}
+function semanaEfetiva(esc, segunda, ferias, feriados, ajustes) {
+  var out = [];
+  for (var i = 0; i < 7; i++) out.push(diaEfetivo(esc, isoMaisDias(segunda, i), ferias, feriados, ajustes));
+  return out;
+}
+/** Avisos da semana real (feriado trabalhado que conta no alerta). */
 function avisosSemana(sem) {
-  return sem.filter(function (d) { return d.tipo === 'T' && d.feriado; }).map(function (d) {
+  return sem.filter(function (d) { return d.tipo === 'T' && d.feriado && d.feriadoConta; }).map(function (d) {
     return 'Trabalha no feriado de ' + d.data.split('-').reverse().slice(0, 2).join('/') + ' (' + d.feriado + '): garantir folga compensatória na semana ou pagar em dobro (Lei 605/49).';
   });
+}
+/**
+ * Confere uma semana real (já com ajustes) contra as regras. Semanas com férias ou sem escala não são
+ * conferidas (retorna null). Feriado trabalhado entra como alerta.
+ */
+function validarSemanaReal(sem, ctx) {
+  if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
+  var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
+  var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg });
+  v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
+    .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));
+  var e = v.msgs.some(function (m) { return m.nivel === 'erro'; }), a = v.msgs.some(function (m) { return m.nivel === 'alerta'; });
+  v.status = e ? 'ERRO' : a ? 'ALERTA' : 'OK';
+  return v;
 }
