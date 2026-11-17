@@ -92,6 +92,7 @@ function rotas_() {
   removerFerias: { f: removerFerias_ },
   salvarFeriado: { f: salvarFeriado_, admin: true },
   importarFeriados: { f: importarFeriados_, admin: true },
+  importarFerias: { f: importarFerias_, admin: true },
   salvarAjuste: { f: salvarAjuste_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true },

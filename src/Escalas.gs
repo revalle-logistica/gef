@@ -163,6 +163,29 @@ function removerFerias_(u, d) {
     return true;
   });
 }
+/** Importa a planilha de programação de férias do DP: inclui os períodos novos, ignora os já cadastrados e avisa os que se sobrepõem. */
+function importarFerias_(u, d) {
+  const itens = d.itens || [];
+  if (!itens.length) throw new Error('Nenhum período de férias com data na planilha.');
+  const cols = {}; ler_('Colaboradores').forEach(function (c) { if (c.ativo !== 'N') cols[c.matricula] = c; });
+  return comLock_(function () {
+    const lst = ler_('Ferias'), res = { novos: 0, iguais: 0, conflitos: [] }, quando = agora_();
+    itens.forEach(function (it) {
+      const c = cols[String(it.matricula)];
+      if (!c) { res.conflitos.push(it.matricula + ': colaborador não encontrado'); return; }
+      const ini = dataOk_(it.inicio, 'início'), fim = dataOk_(it.fim, 'fim');
+      if (fim < ini) { res.conflitos.push(c.nome + ': fim antes do início'); return; }
+      if (lst.some(function (f) { return f.matricula === c.matricula && f.inicio === ini && f.fim === fim; })) { res.iguais++; return; }
+      const choque = lst.filter(function (f) { return f.matricula === c.matricula && f.inicio <= fim && ini <= f.fim; })[0];
+      if (choque) { res.conflitos.push(c.nome + ': choca com ' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim)); return; }
+      lst.push({ id: Utilities.getUuid(), matricula: c.matricula, inicio: ini, fim: fim, obs: String(it.obs || '').trim().slice(0, 120), criadoPor: u.nome, criadoEm: quando });
+      res.novos++;
+    });
+    if (res.novos) gravarTudo_('Ferias', lst);
+    log_(u, '', 'importou férias', JSON.stringify({ novos: res.novos, iguais: res.iguais, conflitos: res.conflitos.length }));
+    return res;
+  });
+}
 function feriadoLimpo_(d) {
   const data = dataOk_(d.data, 'feriado'), desc = String(d.descricao || '').trim().slice(0, 80);
   if (!desc) throw new Error('Informe o nome do feriado de ' + dataBr_(data) + '.');

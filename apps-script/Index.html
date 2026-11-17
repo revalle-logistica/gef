@@ -1090,7 +1090,7 @@ function vCadastro(m) {
   const hj = hoje(), nomeDe = {}; doRev.forEach(c => { nomeDe[c.matricula] = c.nome; });
   const ferRev = S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= isoMaisDias(hj, -30) && (!q || nrm(nomeDe[f.matricula] + ' ' + f.matricula).includes(q))).sort((a, b) => a.inicio.localeCompare(b.inicio) || nomeDe[a.matricula].localeCompare(nomeDe[b.matricula]));
   const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length], ['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length], ['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]];
-  const ferHtml = `<div class="pts" style="padding-top:14px"><b>Férias de ${esc(C.rev)}</b><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
+  const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span><label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden></div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
       <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador">${selOpts(doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)).map(c => [c.matricula, c.nome + ' · ' + c.funcao]), '', '— colaborador —')}</select><input type="date" name="inicio" aria-label="Início" style="width:auto"><input type="date" name="fim" aria-label="Fim" style="width:auto"><input name="obs" placeholder="Obs. (opcional)" maxlength="120" style="flex:1 1 140px"><button class="btn sm" type="submit">Adicionar</button></form></div>`;
   m.innerHTML = `<section class="card">
@@ -1154,6 +1154,8 @@ function vCadastro(m) {
     if (!fd.data || !fd.descricao.trim()) return toast('Informe a data e o nome do feriado.', true);
     ocupado(fh.querySelector('button'), async () => { const f = await call('salvarFeriado', { revenda: C.rev, data: fd.data, descricao: fd.descricao, tipo: fd.tipo, contaAlerta: fd.conta ? 'S' : 'N' }); S.feriados.push(f); revalida(); toast('Feriado cadastrado.'); vCadastro(m); });
   };
+  const fp = m.querySelector('#ferias-file');
+  if (fp) fp.onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { previaFerias(await lerFerias(fl), C.rev, () => vCadastro(m)); } catch (err) { toast(esc(err.message), true); } };
   const ff = m.querySelector('#fer-file');
   if (ff) ff.onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { previaFeriados(await lerFeriados(fl), C.rev, () => vCadastro(m)); } catch (err) { toast(esc(err.message), true); } };
   const fv = m.querySelector('[data-addf]');
@@ -1200,6 +1202,67 @@ function previaFeriados(P, revAtual, depois) {
     const r = await call('importarFeriados', { revenda: $('#fer-rev').value, itens: P.itens });
     fecharModal(true); await carregar(); toast(`Feriados importados: <b>${r.novos}</b> novos, ${r.atualizados} atualizados.`); depois && depois();
   });
+}
+/** Planilha "Programação de férias" do DP: uma linha por período aquisitivo, com até 2 períodos de gozo (Início + Dias). */
+async function lerFerias(file) {
+  const X = await loadXLSX(), wb = X.read(await file.arrayBuffer(), { type: 'array' });
+  const nomes = wb.SheetNames.slice().sort((a, b) => (/programa..o de f.rias/i.test(nrm(b)) ? 1 : 0) - (/programa..o de f.rias/i.test(nrm(a)) ? 1 : 0));
+  const paraIso = v => {
+    if (typeof v === 'number') { const d = X.SSF.parse_date_code(v); return d ? d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0') : ''; }
+    const s = String(v).trim(); let k = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (k) return k[0];
+    k = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); if (k) { const y = k[3].length === 2 ? '20' + k[3] : k[3]; return y + '-' + k[2].padStart(2, '0') + '-' + k[1].padStart(2, '0'); }
+    return '';
+  };
+  for (const n of nomes) {
+    const A = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: true });
+    const hi = A.slice(0, 30).findIndex(r => { const H = r.map(nrm); return H.includes('codigo') && H.includes('empregado') && H.includes('inicio'); });
+    if (hi < 0) continue;
+    const H = A[hi].map(nrm), ci = H.indexOf('codigo'), cn = H.indexOf('empregado'), co = H.findIndex(h => /^observa/.test(h));
+    // cada "Início" de gozo com o "Dias" e o "Fim" que vêm logo depois dele
+    const blocos = H.map((h, i) => h === 'inicio' ? i : -1).filter(i => i >= 0).map(i => {
+      const ate = H.findIndex((h, j) => j > i && h === 'inicio'), lim = ate < 0 ? H.length : ate, acha = k => { const j = H.findIndex((h, x) => x > i && x < lim && h === k); return j; };
+      return { ini: i, dias: acha('dias'), fim: acha('fim') };
+    });
+    const titulo = A.slice(0, hi).flat().map(String).join(' '), cod = (titulo.match(/\(([A-Z]{2})\)/) || [])[1];
+    const itens = [];
+    A.slice(hi + 1).forEach(r => {
+      const codigo = String(r[ci] == null ? '' : r[ci]).trim(), nome = String(r[cn] || '').trim();
+      if (!codigo && !nome) return;
+      blocos.forEach(b => {
+        const ini = paraIso(r[b.ini]); if (!ini) return;
+        const dias = b.dias >= 0 ? parseInt(r[b.dias], 10) : 0;
+        const fim = dias > 0 ? isoMaisDias(ini, dias - 1) : (b.fim >= 0 ? paraIso(r[b.fim]) : '');
+        if (fim) itens.push({ codigo, nome, inicio: ini, fim, dias: dias || (Math.round((Date.parse(fim) - Date.parse(ini)) / 864e5) + 1), obs: co >= 0 ? String(r[co] || '').trim() : '' });
+      });
+    });
+    return { itens, revenda: (cod && COD_REV[cod]) || '', arquivo: file.name };
+  }
+  throw new Error('Não achei a aba de programação (colunas Código, Empregado e Início).');
+}
+function previaFerias(P, revAtual, depois) {
+  if (!P.itens.length) return toast('A planilha não tem nenhum período de férias com data de início preenchida.', true);
+  const revs = uniq(S.cols.map(c => c.revenda));
+  let rev = revs.find(r => nrm(r) === nrm(P.revenda)) || revAtual;
+  const casa = () => { const doRev = S.cols.filter(c => c.revenda === rev);
+    return P.itens.map(it => { const c = doRev.find(x => codigoMatricula(x.matricula) === it.codigo) || doRev.find(x => nrm(x.nome) === nrm(it.nome));
+      const ja = c && S.ferias.some(f => f.matricula === c.matricula && f.inicio === it.inicio && f.fim === it.fim);
+      return Object.assign({}, it, { c, ja }); }); };
+  const desenha = () => {
+    const L = casa(), ok = L.filter(x => x.c && !x.ja), nf = L.filter(x => !x.c), ja = L.filter(x => x.ja);
+    abrirModal(`<div class="mdl-h"><div><h2>Importar programação de férias</h2><small>${esc(P.arquivo)} · ${L.length} períodos com data</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><label class="f">Unidade<select id="fe-rev">${revs.map(r => `<option ${r === rev ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
+      <div class="ovf" style="max-height:44vh"><table class="tb"><tr><th>Cód.</th><th>Colaborador</th><th>Início</th><th>Fim</th><th>Dias</th><th></th></tr>${L.map(x => `<tr${x.c && !x.ja ? '' : ' style="opacity:.55"'}><td>${esc(x.codigo)}</td><td>${esc(x.c ? x.c.nome : x.nome)}</td><td>${dataBr(x.inicio)}</td><td>${dataBr(x.fim)}</td><td>${x.dias}</td><td>${!x.c ? '<span class="tg th">não encontrado</span>' : x.ja ? '<span class="tg">já cadastrado</span>' : ''}</td></tr>`).join('')}</table></div>
+      <p class="hint">Só entram as linhas com <b>Início</b> preenchido (1º e 2º período de gozo). O fim é Início + Dias − 1. ${nf.length ? `<b>${nf.length}</b> não foram achados nesta unidade (código ou nome diferente).` : ''} ${ja.length ? `${ja.length} já estavam cadastrados e serão ignorados.` : ''}</p></div>
+    <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-feimp ${ok.length ? '' : 'disabled'}>Importar ${ok.length} período${ok.length === 1 ? '' : 's'}</button></div>`);
+    modal.querySelector('#fe-rev').onchange = e => { rev = e.target.value; desenha(); };
+    modal.querySelector('[data-feimp]').onclick = ev => ocupado(ev.currentTarget, async () => {
+      const r = await call('importarFerias', { itens: ok.map(x => ({ matricula: x.c.matricula, inicio: x.inicio, fim: x.fim, obs: x.obs })) });
+      fecharModal(true); S.cad.rev = rev; await carregar();
+      toast(`Férias importadas: <b>${r.novos}</b> novas${r.iguais ? `, ${r.iguais} já existiam` : ''}.${r.conflitos.length ? '<br>Não entraram: ' + r.conflitos.map(esc).join('; ') : ''}`, !!r.conflitos.length);
+      depois && depois();
+    });
+  };
+  desenha();
 }
 async function salvaPontos(rev, lista, m) {
   let o = {}; try { o = JSON.parse(S.cfg.PONTOS_APOIO || '{}'); } catch (e) { o = {}; }
