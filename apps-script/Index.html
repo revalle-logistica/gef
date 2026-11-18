@@ -685,7 +685,7 @@ function leInt(el) { const v = intMin(el.value); el.classList.toggle('bad', v ==
 function vigPadrao() { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; return h > i ? h : i; }
 function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, S.cfg.PADRAO_ENTRADA, S.cfg.PADRAO_SAIDA, S.cfg.PADRAO_INTERVALO) }; }
 function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
-const domFixo = () => SN(S.cfg.DOMINGO_FOLGA);
+const domFixo = () => false;
 
 /** Último dia de um período de n meses a partir de iso (ex.: 01/03 + 2 meses = 30/04). */
 function maisMeses(iso, n) { const p = iso.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1 + n, +p[2])); return isoMaisDias(d.toISOString().slice(0, 10), -1); }
@@ -887,15 +887,16 @@ function salvarEditor(bt) {
 function modalLote() {
   const a = alvo();
   if (!a.lista.length) return toast('Nenhum colaborador na lista.', true);
-  S.lote = { vig: vigPadrao(), ate: '', folga2: 5, ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO, lista: a.lista };
+  S.lote = { vig: vigPadrao(), ate: '', folga1: 6, folga2: 5, ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO, lista: a.lista };
   const jaTem = a.lista.filter(c => c.escala).length, tele = a.lista.filter(c => c.tele).length;
   abrirModal(`<div class="mdl-h"><div><h2>Horário em lote</h2><small>${a.lista.length} colaboradores ${a.tipo}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
     <div class="mdl-b">
-      <p class="hint">Todos recebem a mesma semana: folga no domingo e em mais um dia, com o mesmo horário nos 5 dias de trabalho. Depois dá para ajustar um a um.</p>
+      <p class="hint">Todos recebem a mesma semana: 2 folgas (o domingo pode ser dia de trabalho), com o mesmo horário nos 5 dias de trabalho. Depois dá para ajustar um a um.</p>
       <div class="row2">
         <label class="f">Vale de<input type="date" data-l="vig" value="${esc(S.lote.vig)}"></label>
         <label class="f">Até <span class="hint">(em branco = sem fim)</span><input type="date" data-l="ate" value=""></label>
-        <label class="f">2ª folga da semana<select data-l="folga2">${DIAS_SEMANA.slice(0, 6).map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <label class="f">1ª folga<select data-l="folga1">${DIAS_SEMANA.map((d, i) => `<option value="${i}" ${i === 6 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <label class="f">2ª folga<select data-l="folga2">${DIAS_SEMANA.map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
         <label class="f">Entrada<input type="time" data-l="ent" value="${esc(S.lote.ent)}"></label>
         <label class="f">Saída<input type="time" data-l="sai" value="${esc(S.lote.sai)}"></label>
         <label class="f">Intervalo${campoInt('data-l="int"', S.lote.int)}</label>
@@ -908,19 +909,19 @@ function modalLote() {
     <div class="mdl-f"><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-aplicar>Aplicar em ${a.lista.length}</button></div>`);
   const box = modal.querySelector('.mdl');
   const upd = () => {
-    const L = S.lote, e = { vigencia: L.vig, dias: semanaModelo(L.folga2, L.ent, L.sai, L.int) };
+    const L = S.lote, e = { vigencia: L.vig, dias: semanaModelo(L.folga2, L.ent, L.sai, L.int, L.folga1) };
     $('#lt-atech').innerHTML = '<span class="hint">Vale por:</span>' + [[0, 'Sem data final'], [1, '1 mês'], [2, '2 meses'], [3, '3 meses'], [6, '6 meses']].map(([n, l]) => `<button type="button" class="chip" data-lmeses="${n}" aria-pressed="${n ? L.ate === maisMeses(L.vig, n) : !L.ate}">${l}</button>`).join('');
     $('#lt-sem').innerHTML = semana(e);
     const v = validarEscala(e, { tele: false, cfg: S.cfg, entrega: L.lista.length > 0 && L.lista.every(ehEntregaCampo) });
     $('#lt-val').innerHTML = caixaVal(v);
     box.querySelector('[data-aplicar]').disabled = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   };
-  box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.lote.int = v; } else S.lote[k] = k === 'folga2' ? +ev.target.value : ev.target.value; upd(); });
+  box.addEventListener('input', ev => { const k = ev.target.dataset.l; if (!k) return; if (k === 'int') { const v = leInt(ev.target); if (v == null) return; S.lote.int = v; } else S.lote[k] = (k === 'folga2' || k === 'folga1') ? +ev.target.value : ev.target.value; upd(); });
   box.addEventListener('click', ev => { const b = ev.target.closest('[data-lmeses]'); if (!b) return; const n = +b.dataset.lmeses; S.lote.ate = n ? maisMeses(S.lote.vig, n) : ''; box.querySelector('[data-l=ate]').value = S.lote.ate; upd(); });
   box.querySelector('[data-aplicar]').onclick = ev => ocupado(ev.currentTarget, async () => {
     const L = S.lote;
     if (L.ate && L.ate < L.vig) { toast('A data final não pode ser antes do início.', true); return; }
-    const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, ate: L.ate, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
+    const r = await call('salvarLote', { matriculas: L.lista.map(c => c.matricula), vigencia: L.vig, ate: L.ate, folga1: L.folga1, folga2: L.folga2, ent: L.ent, sai: L.sai, int: L.int });
     fecharModal(true); await carregar();
     if (r.falhas.length) {
       abrirModal(`<div class="mdl-h"><div><h2>${r.salvos} salvos · ${r.falhas.length} não salvos</h2><small>Ajuste estes individualmente</small></div><button type="button" class="x" data-x>×</button></div>
@@ -1668,7 +1669,7 @@ function vRegras(m) {
   const P = parametrosRegra(c, hoje() < c.DATA_INICIO_5X2 ? c.DATA_INICIO_5X2 : hoje());
   const cards = [
     ['5 dias + 2 folgas', '5x2', 'Toda semana: 5 dias de trabalho e 2 de folga.'],
-    ['Domingo', SN(c.DOMINGO_FOLGA) ? 'Folga' : 'Livre', SN(c.DOMINGO_FOLGA) ? 'Domingo é sempre uma das folgas (regra da empresa).' : 'Domingo pode ser dia de trabalho.'],
+    ['Domingo', 'Livre', 'Domingo pode ser dia de trabalho; o descanso cai num domingo ao menos 1 vez a cada 3 semanas.'],
     ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(c.DATA_INICIO_5X2)} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
     ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${minParaHm(minutosCfg(c.DIARIO_MAX_TRANSICAO))}. Depois: ${minParaHm(minutosCfg(c.DIARIO_MAX_FINAL))}.`],
     ['Motorista e ajudante de entrega', minParaHm(minutosCfg(c.DIARIO_MAX_ENTREGA)), 'Jornada diária máxima para motoristas e ajudantes do setor Entrega.'],
@@ -1681,7 +1682,7 @@ function vRegras(m) {
       <p>Base: Emenda Constitucional nº 141/2026 (fim da 6x1), em vigor a partir de ${dataBr(c.DATA_INICIO_5X2)}, e a CLT. Escalas com erro ficam em vermelho${SN(c.BLOQUEAR_ERRO) ? ' e não podem ser salvas' : ''}. Regimes diferentes previstos em acordo ou convenção coletiva devem ser confirmados com o DP.</p></section>
     <div class="rg">${cards.map(([t, v, p]) => `<div class="rc"><b>${t}</b><span class="v">${esc(v)}</span><p>${esc(p)}</p></div>`).join('')}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>Parâmetros (administrador)</h3><button type="button" class="btn sm pr" data-cfg>Salvar parâmetros</button></div>
-      <div class="card-b row2">${Object.keys(c).filter(k => !['PONTOS_APOIO', 'DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'FUNCOES_GRUPO', 'VOLUME_FERIAS'].includes(k)).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
+      <div class="card-b row2">${Object.keys(c).filter(k => !['PONTOS_APOIO', 'DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'FUNCOES_GRUPO', 'VOLUME_FERIAS', 'DOMINGO_FOLGA'].includes(k)).map(k => `<label class="f">${esc(k.replace(/_/g, ' '))}<input data-k="${esc(k)}" value="${esc(c[k])}"></label>`).join('')}</div>
       <p class="hint" style="padding:0 16px 14px">Datas no formato AAAA-MM-DD, horários em HH:MM, S/N para sim ou não.</p></section>${cartoesParam()}` : ''}`;
   if (adm) ligaCartoesParam(m);
   const b = m.querySelector('[data-cfg]');

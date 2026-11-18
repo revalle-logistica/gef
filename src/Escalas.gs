@@ -76,13 +76,13 @@ function removerPeriodo_(u, d) {
   });
 }
 
-/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga2, ent, sai, int} */
+/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga1?, folga2, ent, sai, int} */
 function salvarLote_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
   return comLock_(function () {
     const cfg = cfg_(), vig = vigenciaOk_(d.vigencia), ate = ateOk_(d.ate, vig);
-    const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int));
+    const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int, d.folga1));
     const cols = {};
     ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
     const todas = ler_('Escalas');
@@ -95,7 +95,7 @@ function salvarLote_(u, d) {
       else res.falhas.push({ matricula: m, nome: c.nome, motivo: r.val.msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }).join(' ') });
     });
     gravarTudo_('Escalas', todas);
-    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
+    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folgas ' + DIAS_CURTO[d.folga1 === undefined || d.folga1 === '' ? 6 : +d.folga1] + '/' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
     return res;
   });
 }

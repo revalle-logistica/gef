@@ -36,10 +36,17 @@ test('na fase de 40h, 8h24/dia dá erro', () => {
   assert.match(erros(r), /máximo diário/);
 });
 
-test('domingo trabalhado dá erro', () => {
+test('domingo trabalhado é permitido (só aviso de revezamento)', () => {
   const d = semanaModelo(2, '07:00', '15:00', 60); d[6] = { tipo: 'T', ent: '07:00', sai: '15:00', int: 60 }; d[5] = { tipo: 'F' };
   const r = v(d);
-  assert.match(erros(r), /Domingo/);
+  assert.doesNotMatch(erros(r), /Domingo/);
+  assert.ok(r.msgs.some(m => m.nivel === 'info' && /domingo/i.test(m.texto || m.msg || '')));
+});
+
+test('lote com folgas segunda e terça (domingo trabalhado)', () => {
+  const d = semanaModelo(1, '07:00', '15:00', 60, 0);
+  assert.strictEqual(d.map(x => x.tipo).join(''), 'FFTTTTT');
+  assert.strictEqual(erros(v(d)), '');
 });
 
 test('6 dias de trabalho dá erro', () => {

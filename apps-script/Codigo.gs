@@ -541,13 +541,13 @@ function removerPeriodo_(u, d) {
   });
 }
 
-/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga2, ent, sai, int} */
+/** Aplica um mesmo horário a vários colaboradores. d = {matriculas, vigencia, ate?, folga1?, folga2, ent, sai, int} */
 function salvarLote_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
   return comLock_(function () {
     const cfg = cfg_(), vig = vigenciaOk_(d.vigencia), ate = ateOk_(d.ate, vig);
-    const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int));
+    const dias = limpaDias_(semanaModelo(+d.folga2, d.ent, d.sai, d.int, d.folga1));
     const cols = {};
     ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
     const todas = ler_('Escalas');
@@ -560,7 +560,7 @@ function salvarLote_(u, d) {
       else res.falhas.push({ matricula: m, nome: c.nome, motivo: r.val.msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }).join(' ') });
     });
     gravarTudo_('Escalas', todas);
-    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folga ' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
+    log_(u, '', 'escala em lote', res.salvos + ' salvos · ' + res.falhas.length + ' não salvos · ' + vig + (ate ? ' a ' + ate : '') + ' · folgas ' + DIAS_CURTO[d.folga1 === undefined || d.folga1 === '' ? 6 : +d.folga1] + '/' + DIAS_CURTO[+d.folga2] + ' ' + d.ent + '-' + d.sai);
     return res;
   });
 }
@@ -1660,8 +1660,8 @@ function validarEscala(esc, ctx) {
 
   if (dias.length === 7 && (trab !== 5 || folgas !== 2))
     add('erro', 'A escala 5x2 precisa de 5 dias de trabalho e 2 folgas. Hoje: ' + trab + ' de trabalho e ' + folgas + ' de folga.');
-  if (String(cfg.DOMINGO_FOLGA || 'S').toUpperCase() === 'S' && dias[6] && dias[6].tipo === 'T')
-    add('erro', 'Domingo é folga fixa (regra da empresa).');
+  if (dias[6] && dias[6].tipo === 'T')
+    add('info', 'Trabalha no domingo: o descanso precisa cair num domingo pelo menos 1 vez a cada 3 semanas (Lei 10.101/2000, art. 6º). O DP confere o revezamento.');
 
   var limite = tele ? Math.min(P.semanal, (+cfg.TELE_SEMANAL || 30) * 60) : P.semanal;
   if (total > limite) add('erro', 'Total semanal de ' + minParaHm(total) + ' passa do limite de ' + minParaHm(limite) + (tele ? ' (teleatendimento).' : ' (' + P.fase + ').'));
@@ -1690,11 +1690,12 @@ function validarEscala(esc, ctx) {
   };
 }
 
-/** Monta uma semana padrão: folga no domingo + 1 dia escolhido (0 = segunda ... 5 = sábado). */
-function semanaModelo(folga2, ent, sai, int) {
+/** Monta uma semana padrão com 2 folgas (0 = segunda ... 6 = domingo). A 1ª folga é o domingo se não for informada. */
+function semanaModelo(folga2, ent, sai, int, folga1) {
+  var f1 = (folga1 === undefined || folga1 === null || folga1 === '') ? 6 : +folga1;
   var dias = [];
   for (var i = 0; i < 7; i++) {
-    dias.push(i === 6 || i === +folga2 ? { tipo: 'F' } : { tipo: 'T', ent: ent, sai: sai, int: +int });
+    dias.push(i === f1 || i === +folga2 ? { tipo: 'F' } : { tipo: 'T', ent: ent, sai: sai, int: +int });
   }
   return dias;
 }

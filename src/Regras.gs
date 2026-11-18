@@ -107,8 +107,8 @@ function validarEscala(esc, ctx) {
 
   if (dias.length === 7 && (trab !== 5 || folgas !== 2))
     add('erro', 'A escala 5x2 precisa de 5 dias de trabalho e 2 folgas. Hoje: ' + trab + ' de trabalho e ' + folgas + ' de folga.');
-  if (String(cfg.DOMINGO_FOLGA || 'S').toUpperCase() === 'S' && dias[6] && dias[6].tipo === 'T')
-    add('erro', 'Domingo é folga fixa (regra da empresa).');
+  if (dias[6] && dias[6].tipo === 'T')
+    add('info', 'Trabalha no domingo: o descanso precisa cair num domingo pelo menos 1 vez a cada 3 semanas (Lei 10.101/2000, art. 6º). O DP confere o revezamento.');
 
   var limite = tele ? Math.min(P.semanal, (+cfg.TELE_SEMANAL || 30) * 60) : P.semanal;
   if (total > limite) add('erro', 'Total semanal de ' + minParaHm(total) + ' passa do limite de ' + minParaHm(limite) + (tele ? ' (teleatendimento).' : ' (' + P.fase + ').'));
@@ -137,11 +137,12 @@ function validarEscala(esc, ctx) {
   };
 }
 
-/** Monta uma semana padrão: folga no domingo + 1 dia escolhido (0 = segunda ... 5 = sábado). */
-function semanaModelo(folga2, ent, sai, int) {
+/** Monta uma semana padrão com 2 folgas (0 = segunda ... 6 = domingo). A 1ª folga é o domingo se não for informada. */
+function semanaModelo(folga2, ent, sai, int, folga1) {
+  var f1 = (folga1 === undefined || folga1 === null || folga1 === '') ? 6 : +folga1;
   var dias = [];
   for (var i = 0; i < 7; i++) {
-    dias.push(i === 6 || i === +folga2 ? { tipo: 'F' } : { tipo: 'T', ent: ent, sai: sai, int: +int });
+    dias.push(i === f1 || i === +folga2 ? { tipo: 'F' } : { tipo: 'T', ent: ent, sai: sai, int: +int });
   }
   return dias;
 }
