@@ -110,7 +110,7 @@ function qlpCard(r, k) {
     const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
     const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
       (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.parte.length ? `\nSó parte: ${x.parte.map(qlpNm).join(', ')}` : '');
-    return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
+    return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.parte.length ? `<small class="qp">${x.parte.length} só parte</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
   }).join('')}</tr>`).join('');
   const cnt = t => [0, 1, 2, 3, 4, 5, 6].map(i => k.P.filter(c => c.sem[i] && c.sem[i].tipo === t).length);
   const trab = cnt('T'), ns = cnt('N'), fer = cnt('FER');
