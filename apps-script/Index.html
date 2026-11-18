@@ -402,7 +402,7 @@ function telaLogin(msg, aba) {
   aba = aba || 'in';
   const up = aba === 'up';
   root.innerHTML = `<div class="lg"><div class="lg-c">
-    <div class="lg-h"><span class="logo">R</span><div><b>Gestão de Férias e Escala</b><small>Revalle · férias e escalas dos colaboradores</small></div></div>
+    <div class="lg-h"><span class="logo">R</span><div><b>GEF</b><small>Gestão de Férias e Escala · Revalle</small></div></div>
     <div class="lg-t"><button type="button" data-aba="in" aria-pressed="${!up}">Entrar</button><button type="button" data-aba="up" aria-pressed="${up}">Criar acesso</button></div>
     <form class="lg-f" id="lgf" novalidate>
       <div id="lgmsg">${msg ? `<div class="msgbox ${msg.ok ? 'ok' : 'er'}">${esc(msg.t)}</div>` : ''}</div>
@@ -478,7 +478,7 @@ function render() {
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
   root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
-    <div class="br"><b>Gestão de Férias e Escala</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
+    <div class="br"><b>GEF · Gestão de Férias e Escala</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
     <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}${k === 'cadastro' && nPendCad() ? `<em>${nPendCad()}</em>` : ''}</button>`).join('')}</nav>
     <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : ''}</span>
       <button class="btn sm" type="button" data-a="senha" title="Trocar senha" aria-label="Trocar senha">${ic('key')}</button>
@@ -1793,7 +1793,7 @@ async function telaMinha(tk) {
 (async function iniciar() {
   const lk = new URLSearchParams(location.search).get('e');
   if (lk) { document.title = 'Minha escala · Revalle'; return telaMinha(lk); }
-  document.title = 'Gestão de Férias e Escala · Revalle';
+  document.title = 'GEF - Gestão de Férias e Escala';
   const t = ls.get('tk');
   if (t) { S.token = t; try { await carregar(); return; } catch (e) { S.token = null; ls.set('tk', null); } }
   telaLogin();

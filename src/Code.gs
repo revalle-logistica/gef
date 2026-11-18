@@ -30,7 +30,7 @@ const ABAS = {
 
 const CFG_PADRAO = [
   ['EMPRESA', 'Revalle', 'Nome no cabeçalho dos PDFs'],
-  ['LINK_SISTEMA', 'https://revalle-logistica.github.io/escala-5x2/', 'Link enviado no e-mail de aprovação'],
+  ['LINK_SISTEMA', 'https://revalle-logistica.github.io/gef/', 'Link enviado no e-mail de aprovação'],
   ['TURNOS_ARMAZEM', 'Turno 1,Turno 2,Turno 3,Administrativo', 'Opções de turno do armazém (separadas por vírgula)'],
   ['TIPOS_MOTORISTA', 'Rota,Puxador', 'Opções de tipo de motorista (separadas por vírgula)'],
   ['PONTOS_APOIO', '{}', 'Pontos de apoio por revenda (editados na tela Cadastro)'],
@@ -67,7 +67,7 @@ const TZ = 'America/Bahia';
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Index').evaluate();
   if (e && e.parameter && e.parameter.raw) return ContentService.createTextOutput(t.getContent()).setMimeType(ContentService.MimeType.TEXT);
-  return t.setTitle('Gestão de Férias e Escala · Revalle').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.setTitle('GEF - Gestão de Férias e Escala').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 function doPost(e) {
   let r;

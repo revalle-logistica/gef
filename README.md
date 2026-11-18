@@ -1,6 +1,6 @@
 # Escala 5x2 · Revalle
 
-**No ar:** https://revalle-logistica.github.io/escala-5x2/
+**No ar:** https://revalle-logistica.github.io/gef/
 O projeto Apps Script se chama "Escala 5x2" e fica na conta Log Agreste. A base de dados é a planilha "Escala 5x2 – Base do sistema", no Drive da mesma conta.
 
 Sistema web para os supervisores montarem a escala semanal 5x2 de cada colaborador (5 dias de trabalho e 2 folgas, com domingo de folga), conferindo as regras da nova jornada. O sistema roda em **Google Apps Script**, com a página publicada no **GitHub Pages**, e os dados ficam numa **Planilha Google** da sua conta. Não é preciso importar nem juntar arquivos dos supervisores: todo mundo grava na mesma base.
@@ -53,7 +53,7 @@ Nas próximas versões, cole os dois arquivos de novo e use **Implantar → Gere
 ### 2. GitHub Pages
 1. No `index.html`, troque `COLE_AQUI_O_LINK_EXEC` pelo link `/exec`.
 2. Em Settings → Pages, escolha **Deploy from a branch → main → / (root)**.
-3. O link para os supervisores fica `https://revalle-logistica.github.io/escala-5x2/`.
+3. O link para os supervisores fica `https://revalle-logistica.github.io/gef/`.
 
 ### 3. Primeiro acesso
 Abra o link e clique em **Criar acesso**. Esse primeiro cadastro já entra como **administrador**. A planilha *Escala 5x2 – Base do sistema* é criada sozinha no seu Drive.
