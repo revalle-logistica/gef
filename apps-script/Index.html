@@ -1166,7 +1166,8 @@ function vPainel(m) {
 function cor(v, mx) { const a = mx && v ? 0.12 + 0.78 * v / mx : 0; return `background:${a ? `rgba(20,70,200,${a.toFixed(2)})` : 'var(--sunk)'};color:${a > 0.5 ? '#fff' : '#0c1a33'}`; }
 
 /* ================= importar relatório do DP ================= */
-// Relatório "Relação de Empregados" do sistema de folha: blocos por "Departamento: 201 - ARMAZEM - AL".
+// Relatório "Relação de Empregados" do sistema de folha: blocos por "Departamento: 201 - ARMAZEM - AL"
+// (no modelo "Profissional II" o bloco vem como "Centro de Custo: 201 - ARMAZEM - AL").
 // Só Armazém e Entrega entram; a revenda vem da sigla no fim do departamento.
 const COD_REV_PADRAO = { AL: 'Alagoinhas', SE: 'Serrinha', PA: 'Paulo Afonso', RP: 'Ribeira do Pombal', JZ: 'Juazeiro', BF: 'Bonfim', PE: 'Petrolina', PT: 'Petrolina', BR: 'Beira Rio' };
 const SIT = { 1: 'Trabalhando', 2: 'Afastado', 3: 'Acidente de trabalho', 4: 'Serviço militar', 5: 'Licença maternidade', 6: 'Doença', 7: 'Licença sem vencimento', 8: 'Demitido', 9: 'Férias', 17: 'Acidente de trabalho', 18: 'Doença', 24: 'Afastado' };
@@ -1196,7 +1197,8 @@ function revDoArquivo(nome) {
  */
 function lerRelacaoDP(A, nomeArq) {
   const linhas = A.map(r => r.map(x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim()));
-  const iDep = linhas.findIndex(L => L.some(x => /^departamento\b/i.test(x)));
+  const ehDep = x => /^(departamento|centro de custos?)\b/i.test(x);
+  const iDep = linhas.findIndex(L => L.some(ehDep));
   if (iDep < 0) return null;
   // empresa no cabeçalho (ex.: "REVENDA REVALLE AGRESTE DA BAHIA LTDA" -> AGRESTE)
   const emp = linhas.slice(0, iDep).flat().find(x => /ltda?\b|revenda/i.test(x)) || '';
@@ -1208,9 +1210,9 @@ function lerRelacaoDP(A, nomeArq) {
   linhas.slice(iDep).forEach(L => {
     const v = L.filter(Boolean);
     if (!v.length) return;
-    const di = v.findIndex(x => /^departamento\b/i.test(x));
+    const di = v.findIndex(ehDep);
     if (di >= 0) {
-      dep = v[di].replace(/^departamento\s*:?\s*/i, '') || v[di + 1] || '';
+      dep = v[di].replace(/^(departamento|centro de custos?)\s*:?\s*/i, '') || v[di + 1] || '';
       const m = dep.match(/^\s*\d+\s*-\s*(.+?)\s*-\s*([A-Za-z]{2})\s*$/);
       const a = areaDepto(dep);
       setor = a === 'arm' ? 'Armazém' : a === 'ent' ? 'Entrega' : a === 'adm' ? 'Administrativo · ' + titulo(nomeDepto(dep)) : a === 'prop' ? PREFIXO_DEPTO + titulo(nomeDepto(dep)) : '';
@@ -1218,6 +1220,8 @@ function lerRelacaoDP(A, nomeArq) {
       return;
     }
     const cod = v[0].replace(/\.0+$/, '');
+    // "Profissional II" traz o código do cargo antes do nome: 52 | NOME | 25 | MANOBRISTA | ...
+    if (v.length > 3 && /^\d+$/.test(v[2]) && /[a-zà-ú]/i.test(v[3])) v.splice(2, 1);
     if (!/^\d+$/.test(cod) || v.length < 3 || !/[a-zà-ú]/i.test(v[1]) || !/[a-zà-ú]/i.test(v[2])) return;
     if (!setor) { const k = dep || 'Sem departamento'; ign[k] = (ign[k] || 0) + 1; return; }
     const id = v.findIndex(ehData), adm = id >= 0 ? v[id] : '';
@@ -1273,7 +1277,7 @@ async function lerArquivo(file) {
   }
   if (r) return r;
   const amostra = abas.flatMap(a => a.valores.map(l => l.map(x => String(x == null ? '' : x).trim()).filter(Boolean).join(' | ')).filter(Boolean).slice(0, 8).map(l => a.nome + ': ' + l.slice(0, 160)));
-  return { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (linhas "Departamento:" com os colaboradores abaixo).', amostra, via };
+  return { nome: file.name, erro: 'Não reconheci o relatório "Relação de Empregados" (linhas "Departamento:" ou "Centro de Custo:" com os colaboradores abaixo).', amostra, via };
 }
 function blocoMudancas(muds) {
   if (!muds.length) return '';
