@@ -2417,6 +2417,12 @@ const QLP_GL = { entrega: 'Ponto de apoio', pux: 'Grupo', arm: 'Turno' };
 const QLP_TODOS = { entrega: 'Todos os pontos', pux: 'Todos os grupos', arm: 'Todos os turnos', adm: 'Todos' };
 const qlpGrpTxt = (area, g) => g === '*' ? QLP_TODOS[area] || 'Todos' : g;
 const qlpFnTxt = f => f === '*' ? 'Todas as funções' : f;
+/** Opções de ponto/turno/grupo: as cadastradas (pontos de apoio da revenda, turnos das Regras) + as que já existem nas pessoas. */
+function qlpGrupos(rev, area, extra) {
+  const pts = pontosRev(rev), cad = area === 'entrega' ? ['Sede'].concat(pts) : area === 'pux' ? ['Puxadores da sede'].concat(pts.map(p => 'Residentes · ' + p)) : area === 'arm' ? lstCfg('TURNOS_ARMAZEM') : [];
+  const das = S.cols.filter(c => c.revenda === rev && c.vis.area === area).map(c => c.vis.grupo);
+  return uniq(cad.concat(das, extra || []).filter(Boolean));
+}
 function qlpPessoas(r) {
   return S.cols.filter(c => c.revenda === r.revenda && c.vis.area === r.area && (r.grupo === '*' || c.vis.grupo === r.grupo) && (r.funcao === '*' || c.vis.funcao === r.funcao));
 }
@@ -2468,7 +2474,7 @@ function vQlp(m) {
   const doRev = S.cols.filter(c => c.revenda === Q.rev);
   if (!Q.vis) Q.vis = S.f.vis && S.f.vis !== 'todos' ? S.f.vis : 'entrega';
   const R = S.qlp.filter(r => r.revenda === Q.rev && r.area === Q.vis);
-  const grs = uniq(doRev.filter(c => c.vis.area === Q.vis).map(c => c.vis.grupo).concat(R.map(r => r.grupo).filter(g => g !== '*')));
+  const grs = qlpGrupos(Q.rev, Q.vis, R.map(r => r.grupo).filter(g => g !== '*'));
   if (Q.grp && !grs.includes(Q.grp)) Q.grp = '';
   const RV = R.filter(r => !Q.grp || r.grupo === Q.grp || r.grupo === '*')
     .sort((a, b) => (a.grupo + a.funcao).localeCompare(b.grupo + b.funcao, 'pt'));
@@ -2557,8 +2563,8 @@ function qlpEditor(r, base) {
   const desenha = () => {
     const pool = S.cols.filter(c => c.revenda === ed.revenda && c.vis.area === ed.area), gl = QLP_GL[ed.area];
     if (!gl) ed.grupo = '*';
-    const grs = uniq(pool.map(c => c.vis.grupo).concat(ed.grupo !== '*' ? [ed.grupo] : []));
-    const fns = uniq(pool.filter(c => ed.grupo === '*' || c.vis.grupo === ed.grupo).map(c => c.vis.funcao).concat(ed.funcao && ed.funcao !== '*' ? [ed.funcao] : []));
+    const grs = qlpGrupos(ed.revenda, ed.area, ed.grupo !== '*' ? [ed.grupo] : []);
+    const fns = uniq(pool.map(c => c.vis.funcao).concat(ed.funcao && ed.funcao !== '*' ? [ed.funcao] : []));
     const n = pool.filter(c => (ed.grupo === '*' || c.vis.grupo === ed.grupo) && (!ed.funcao || ed.funcao === '*' || c.vis.funcao === ed.funcao)).length;
     const num = (v, a) => `<input type="number" min="0" max="999" inputmode="numeric" value="${+v || 0}" ${a}>`;
     w.innerHTML = `<div class="qe-g">
