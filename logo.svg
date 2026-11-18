@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#0b2a6b"/>
+<circle cx="392" cy="128" r="46" fill="#f59e0b"/>
+<g stroke="#f59e0b" stroke-width="12" stroke-linecap="round"><path d="M392 52v6"/><path d="M468 128h-6"/><path d="M446 74l-4 4"/><path d="M446 182l-4-4"/><path d="M338 74l4 4"/></g>
+<text x="80" y="232" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="112" fill="#fff" letter-spacing="-3">GEF</text>
+<g fill="#fff"><rect x="80" y="282" width="56" height="56" rx="14"/><rect x="146" y="282" width="56" height="56" rx="14"/><rect x="212" y="282" width="56" height="56" rx="14"/><rect x="278" y="282" width="56" height="56" rx="14"/><rect x="344" y="282" width="56" height="56" rx="14"/>
+<rect x="410" y="282" width="22" height="56" rx="11" fill="#f59e0b"/>
+<rect x="80" y="350" width="56" height="56" rx="14" opacity=".35"/><rect x="146" y="350" width="56" height="56" rx="14" opacity=".35"/><rect x="212" y="350" width="56" height="56" rx="14"/><rect x="278" y="350" width="56" height="56" rx="14"/><rect x="344" y="350" width="56" height="56" rx="14"/></g></svg>

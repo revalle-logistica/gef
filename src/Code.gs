@@ -67,7 +67,7 @@ const TZ = 'America/Bahia';
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Index').evaluate();
   if (e && e.parameter && e.parameter.raw) return ContentService.createTextOutput(t.getContent()).setMimeType(ContentService.MimeType.TEXT);
-  return t.setTitle('GEF - Gestão de Férias e Escala').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.setTitle('GEF - Gestão de Férias e Escala').setFaviconUrl('https://revalle-logistica.github.io/gef/favicon-32.png').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 function doPost(e) {
   let r;
