@@ -29,14 +29,14 @@ function qlpJanelas(c) {
   return j;
 }
 function qlpFaixaAbs(f, i) { const de = hmParaMin(f.de); let ate = hmParaMin(f.ate); if (ate <= de) ate += 1440; return [i * 1440 + de, i * 1440 + ate]; }
-/** Cobertura de uma faixa num dia: o menor número de pessoas trabalhando em qualquer momento da faixa. */
+/** Cobertura de uma faixa num dia: conta quem trabalha mais da metade da faixa. */
 function qlpCobre(P, f, i) {
-  const [a, b] = qlpFaixaAbs(f, i), J = P.map(c => [c, qlpJanelas(c)]);
-  let min = Infinity;
-  for (let t = a; t < b; t += 15) { const n = J.filter(([, j]) => j.some(([s, e]) => s <= t && t < e)).length; if (n < min) min = n; }
-  const todo = [], parte = [];
-  J.forEach(([c, j]) => { if (j.some(([s, e]) => s <= a && b <= e)) todo.push(c); else if (j.some(([s, e]) => s < b && a < e)) parte.push(c); });
-  return { n: min === Infinity ? 0 : min, todo, parte };
+  const [a, b] = qlpFaixaAbs(f, i), dur = b - a, todo = [], maior = [], menor = [];
+  P.forEach(c => {
+    const m = qlpJanelas(c).reduce((s, [x, y]) => s + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
+    if (m >= dur) todo.push(c); else if (m * 2 > dur) maior.push(c); else if (m > 0) menor.push(c);
+  });
+  return { n: todo.length + maior.length, todo, maior, menor, parte: maior.concat(menor) };
 }
 function qlpNec(r, fi, i) {
   const data = isoMaisDias(S.semana, i), x = (r.excecoes || []).find(e => e.data === data);
@@ -88,7 +88,7 @@ function vQlp(m) {
       <div class="qk-b"><b>${sobra}</b><span>${sobra === 1 ? 'pessoa sobrando' : 'pessoas sobrando'}<small>soma das faixas acima</small></span></div></div>` : ''}
     <div class="qls">${calc.map(([r, k]) => qlpCard(r, k)).join('') || `<div class="empty">Nenhuma necessidade cadastrada para ${esc(VIS_CURTO[Q.vis])} em ${esc(Q.rev)}.<br>Clique em <b>+ Nova necessidade</b> para informar quantas pessoas precisam trabalhar em cada faixa de horário.</div>`}
     ${semNec.size ? `<div class="qsem"><b>Sem necessidade cadastrada:</b> ${[...semNec].map(([k, n]) => { const [g, f] = k.split('|'); return `<button type="button" class="chip" data-qn="${esc(k)}">+ ${esc(f)}${gl ? ' · ' + esc(g) : ''} <i>${n}</i></button>`; }).join('')}</div>` : ''}
-    <p class="hint" style="margin:14px 2px 0">Confronto com a escala real da semana: folgas, férias, ajustes do dia e virada da noite. Em cada faixa vale o <b>menor</b> número de pessoas trabalhando ao mesmo tempo. O intervalo de refeição não entra porque a escala não registra o horário dele.${S.user.perfil === 'ADMIN' ? '' : ' Contam só os colaboradores vinculados a você.'}</p></div></section>`;
+    <p class="hint" style="margin:14px 2px 0">Confronto com a escala real da semana: folgas, férias, ajustes do dia e virada da noite. Conta como cobrindo a faixa quem trabalha <b>mais da metade</b> dela (passe o mouse na célula para ver quem cobre tudo, a maior parte ou só metade ou menos). O intervalo de refeição não entra porque a escala não registra o horário dele.${S.user.perfil === 'ADMIN' ? '' : ' Contam só os colaboradores vinculados a você.'}</p></div></section>`;
   ligaSemana(m, () => vQlp(m));
   m.querySelectorAll('[data-qv]').forEach(b => { b.onclick = () => { Q.vis = b.dataset.qv; Q.grp = ''; vQlp(m); }; });
   m.querySelectorAll('[data-qf]').forEach(s => { s.onchange = () => { Q[s.dataset.qf] = s.value; if (s.dataset.qf === 'rev') Q.grp = ''; vQlp(m); }; });
@@ -109,8 +109,8 @@ function qlpCard(r, k) {
   const linhas = r.faixas.map((f, fi) => `<tr><th class="fx">${esc(f.de)}–${esc(f.ate)}</th>${k.cel[fi].map((x, i) => {
     const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
     const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
-      (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.parte.length ? `\nSó parte: ${x.parte.map(qlpNm).join(', ')}` : '');
-    return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.parte.length ? `<small class="qp">${x.parte.length} só parte</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
+      (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.maior.length ? `\nMaior parte (conta): ${x.maior.map(qlpNm).join(', ')}` : '') + (x.menor.length ? `\nMetade ou menos (não conta): ${x.menor.map(qlpNm).join(', ')}` : '');
+    return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.menor.length ? `<small class="qp">+${x.menor.length} metade ou menos</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
   }).join('')}</tr>`).join('');
   const cnt = t => [0, 1, 2, 3, 4, 5, 6].map(i => k.P.filter(c => c.sem[i] && c.sem[i].tipo === t).length);
   const trab = cnt('T'), ns = cnt('N'), fer = cnt('FER');
