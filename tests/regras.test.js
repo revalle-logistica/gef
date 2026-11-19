@@ -8,7 +8,7 @@ const path = require('path');
 const ctxVm = {};
 vm.createContext(ctxVm);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'Regras.gs'), 'utf8'), ctxVm);
-const { validarEscala, semanaModelo, calcDia } = ctxVm;
+const { validarEscala, semanaModelo, calcDia, assinaturaEscala, situacaoLiberacao } = ctxVm;
 
 const cfg = {
   DATA_INICIO_5X2: '2026-12-15', LIMITE_SEMANAL_TRANSICAO: '42', DATA_40H: '2027-12-15',
@@ -153,4 +153,16 @@ test('escala por período: data a data, sobreposição e volta ao padrão anteri
   assert.strictEqual(ctxVm.diaEfetivo(so, '2027-01-01', [], [], {}).antes, '2027-01-04');
   // formato antigo continua valendo
   assert.strictEqual(ctxVm.diaEfetivo({ vigencia: '2026-12-14', dias: A }, '2027-05-04', [], [], {}).tipo, 'T');
+});
+
+test('assinatura e situação da liberação para o DP', () => {
+  const e = { periodos: [{ vigencia: '2026-12-14', ate: '', dias: semanaModelo(5, '07:00', '15:20', 60) }] };
+  const a = assinaturaEscala(e);
+  assert.ok(a);
+  assert.strictEqual(situacaoLiberacao(null, null), 'SEM');
+  assert.strictEqual(situacaoLiberacao(e, null), 'NAO');
+  assert.strictEqual(situacaoLiberacao(e, { assinatura: a }), 'OK');
+  const e2 = JSON.parse(JSON.stringify(e)); e2.periodos[0].dias[0].ent = '08:00';
+  assert.notStrictEqual(assinaturaEscala(e2), a);
+  assert.strictEqual(situacaoLiberacao(e2, { assinatura: a }), 'PEND');
 });

@@ -482,3 +482,44 @@ function configurarSincronizacao() {
   const r = sincFerias_('configuração');
   Logger.log('Sincronização ligada. ' + JSON.stringify(r));
 }
+
+/* ---------------- liberação da escala para o DP ---------------- */
+/** Supervisor (ou admin) libera para o DP a escala como está agora. Escalas com erro não são liberadas. */
+function liberarDP_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  if (!mats.length) throw new Error('Escolha quem liberar.');
+  return comLock_(function () {
+    const cols = {}; ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
+    const esc = escalasPorMatricula_(), regs = ler_('Escalas'), stEsc = {};
+    regs.forEach(function (r) { if (r.status === 'ERRO') stEsc[r.matricula] = 'ERRO'; });
+    const libs = ler_('LiberacoesDP'), idx = {}; libs.forEach(function (l, i) { idx[l.matricula] = i; });
+    const quando = agora_(), res = { liberados: 0, comErro: 0, semEscala: 0 };
+    mats.forEach(function (m) {
+      const c = cols[m]; if (!c || c.ativo === 'N' || !podeVer_(u, c)) return;
+      if (!esc[m]) { res.semEscala++; return; }
+      if (stEsc[m]) { res.comErro++; return; }
+      const o = idx[m] != null ? libs[idx[m]] : null, ass = assinaturaEscala(esc[m]);
+      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '' };
+      if (o) libs[idx[m]] = novo; else { idx[m] = libs.length; libs.push(novo); }
+      res.liberados++;
+    });
+    if (res.liberados) { gravarTudo_('LiberacoesDP', libs); log_(u, '', 'liberarDP', res.liberados + ' escala(s)'); }
+    res.libs = {}; mats.forEach(function (m) { const o = idx[m] != null ? libs[idx[m]] : null; if (o) res.libs[m] = { assinatura: o.assinatura, por: o.liberadoPor, em: o.liberadoEm, visto: o.vistoAssinatura, vistoPor: o.vistoPor, vistoEm: o.vistoEm }; });
+    return res;
+  });
+}
+/** DP (ou admin) marca que viu a versão atual da escala: some o aviso de alteração. */
+function vistoDP_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  return comLock_(function () {
+    const esc = escalasPorMatricula_(), libs = ler_('LiberacoesDP'), quando = agora_(), out = {};
+    let n = 0;
+    libs.forEach(function (l) {
+      if (mats.indexOf(l.matricula) < 0 || !esc[l.matricula]) return;
+      l.vistoAssinatura = assinaturaEscala(esc[l.matricula]); l.vistoPor = u.nome; l.vistoEm = quando; n++;
+      out[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm };
+    });
+    if (n) gravarTudo_('LiberacoesDP', libs);
+    return { vistos: n, libs: out };
+  });
+}

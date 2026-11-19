@@ -28,6 +28,7 @@ const ABAS = {
     'iniAq', 'fimAq', 'prazo', 'direito', 'abono', 'gozados', 'saldo', 'origem', 'ano', 'sugestao', 'plano', 'conf', 'por', 'em',
     'acomp', 'acompPor', 'acompEm', 'fonte', 'editadoGestao'],
   QLP: ['id', 'revenda', 'area', 'grupo', 'funcao', 'faixas', 'excecoes', 'obs', 'por', 'em'],
+  LiberacoesDP: ['matricula', 'assinatura', 'liberadoPor', 'liberadoEm', 'vistoAssinatura', 'vistoPor', 'vistoEm'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -85,7 +86,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    [assinaturaEscala, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -108,6 +109,8 @@ function rotas_() {
   aprovarUsuario: { f: aprovarUsuario_, admin: true },
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
+  liberarDP: { f: liberarDP_ },
+  vistoDP: { f: vistoDP_, admin: true, dp: true },
   importar: { f: importar_, admin: true, dp: true },
   atualizarDoDP: { f: atualizarDoDP_, admin: true, dp: true },
   sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true, dp: true },
@@ -245,7 +248,7 @@ function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
 /** Administrador e DP veem todos os colaboradores. */
 function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
 /** Ações de escala/férias/QLP que o DP não faz (ele só consulta). */
-var SO_ADMIN_SUP_ = { salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
+var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
   if (veTudo_(u)) return true;
   return !!c.supervisor && c.supervisor === u.id;
@@ -286,6 +289,8 @@ function carregar_(u) {
   const vis = {}; cols.forEach(function (c) { vis[c.matricula] = true; });
   const comLink = {}; ler_('Links').forEach(function (l) { if (l.ativo === 'S' && vis[l.matricula]) comLink[l.matricula] = { token: l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso }; });
   cols.forEach(function (c) { c.link = comLink[c.matricula] || null; c.temLink = !!c.link; });
+  const libs = {}; ler_('LiberacoesDP').forEach(function (l) { if (vis[l.matricula]) libs[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm }; });
+  cols.forEach(function (c) { c.lib = libs[c.matricula] || null; });
   const ferias = ler_('Ferias').filter(function (f) { return vis[f.matricula]; }).map(function (f) { return { id: f.id, matricula: f.matricula, inicio: f.inicio, fim: f.fim, obs: f.obs }; });
   const feriados = ler_('Feriados').map(function (f) { return { id: f.id, revenda: f.revenda, data: f.data, descricao: f.descricao, tipo: f.tipo, validacao: f.validacao, contaAlerta: f.contaAlerta || 'S', obs: f.obs, origem: f.origem }; });
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
@@ -951,6 +956,47 @@ function configurarSincronizacao() {
   ScriptApp.newTrigger('sincFeriasAuto').timeBased().everyHours(1).create();
   const r = sincFerias_('configuração');
   Logger.log('Sincronização ligada. ' + JSON.stringify(r));
+}
+
+/* ---------------- liberação da escala para o DP ---------------- */
+/** Supervisor (ou admin) libera para o DP a escala como está agora. Escalas com erro não são liberadas. */
+function liberarDP_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  if (!mats.length) throw new Error('Escolha quem liberar.');
+  return comLock_(function () {
+    const cols = {}; ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
+    const esc = escalasPorMatricula_(), regs = ler_('Escalas'), stEsc = {};
+    regs.forEach(function (r) { if (r.status === 'ERRO') stEsc[r.matricula] = 'ERRO'; });
+    const libs = ler_('LiberacoesDP'), idx = {}; libs.forEach(function (l, i) { idx[l.matricula] = i; });
+    const quando = agora_(), res = { liberados: 0, comErro: 0, semEscala: 0 };
+    mats.forEach(function (m) {
+      const c = cols[m]; if (!c || c.ativo === 'N' || !podeVer_(u, c)) return;
+      if (!esc[m]) { res.semEscala++; return; }
+      if (stEsc[m]) { res.comErro++; return; }
+      const o = idx[m] != null ? libs[idx[m]] : null, ass = assinaturaEscala(esc[m]);
+      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '' };
+      if (o) libs[idx[m]] = novo; else { idx[m] = libs.length; libs.push(novo); }
+      res.liberados++;
+    });
+    if (res.liberados) { gravarTudo_('LiberacoesDP', libs); log_(u, '', 'liberarDP', res.liberados + ' escala(s)'); }
+    res.libs = {}; mats.forEach(function (m) { const o = idx[m] != null ? libs[idx[m]] : null; if (o) res.libs[m] = { assinatura: o.assinatura, por: o.liberadoPor, em: o.liberadoEm, visto: o.vistoAssinatura, vistoPor: o.vistoPor, vistoEm: o.vistoEm }; });
+    return res;
+  });
+}
+/** DP (ou admin) marca que viu a versão atual da escala: some o aviso de alteração. */
+function vistoDP_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  return comLock_(function () {
+    const esc = escalasPorMatricula_(), libs = ler_('LiberacoesDP'), quando = agora_(), out = {};
+    let n = 0;
+    libs.forEach(function (l) {
+      if (mats.indexOf(l.matricula) < 0 || !esc[l.matricula]) return;
+      l.vistoAssinatura = assinaturaEscala(esc[l.matricula]); l.vistoPor = u.nome; l.vistoEm = quando; n++;
+      out[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm };
+    });
+    if (n) gravarTudo_('LiberacoesDP', libs);
+    return { vistos: n, libs: out };
+  });
 }
 
 
@@ -1696,6 +1742,24 @@ function validarEscala(esc, ctx) {
     status: temErro ? 'ERRO' : temAlerta ? 'ALERTA' : 'OK',
     total: total, limite: limite, trabalho: trab, folgas: folgas, msgs: msgs
   };
+}
+
+/** Assinatura curta da escala (todos os períodos): muda sempre que o supervisor altera algo. */
+function assinaturaEscala(esc) {
+  if (!esc) return '';
+  var t = (esc.periodos || [esc]).map(function (p) {
+    return [p.vigencia, p.ate || '', (p.dias || []).map(function (d) { return d && d.tipo === 'T' ? [d.ent, d.sai, +d.int || 0].join('-') : 'F'; }).join(',')].join('|');
+  }).sort().join(';');
+  var h = 2166136261;
+  for (var i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
+}
+
+/** Situação da liberação para o DP: SEM (sem escala), NAO (não liberada), OK (liberada e igual), PEND (alterada depois de liberar). */
+function situacaoLiberacao(esc, lib) {
+  if (!esc) return 'SEM';
+  if (!lib || !lib.assinatura) return 'NAO';
+  return assinaturaEscala(esc) === lib.assinatura ? 'OK' : 'PEND';
 }
 
 /** Monta uma semana padrão com 2 folgas (0 = segunda ... 6 = domingo). A 1ª folga é o domingo se não for informada. */

@@ -137,6 +137,24 @@ function validarEscala(esc, ctx) {
   };
 }
 
+/** Assinatura curta da escala (todos os períodos): muda sempre que o supervisor altera algo. */
+function assinaturaEscala(esc) {
+  if (!esc) return '';
+  var t = (esc.periodos || [esc]).map(function (p) {
+    return [p.vigencia, p.ate || '', (p.dias || []).map(function (d) { return d && d.tipo === 'T' ? [d.ent, d.sai, +d.int || 0].join('-') : 'F'; }).join(',')].join('|');
+  }).sort().join(';');
+  var h = 2166136261;
+  for (var i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
+}
+
+/** Situação da liberação para o DP: SEM (sem escala), NAO (não liberada), OK (liberada e igual), PEND (alterada depois de liberar). */
+function situacaoLiberacao(esc, lib) {
+  if (!esc) return 'SEM';
+  if (!lib || !lib.assinatura) return 'NAO';
+  return assinaturaEscala(esc) === lib.assinatura ? 'OK' : 'PEND';
+}
+
 /** Monta uma semana padrão com 2 folgas (0 = segunda ... 6 = domingo). A 1ª folga é o domingo se não for informada. */
 function semanaModelo(folga2, ent, sai, int, folga1) {
   var f1 = (folga1 === undefined || folga1 === null || folga1 === '') ? 6 : +folga1;

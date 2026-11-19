@@ -341,6 +341,11 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .rs-m th:first-child, .rs-m td:first-child { text-align: left; }
 .rs-m tr.tt td { font-weight: 700; background: var(--sunk); }
 .rs-l td { text-align: left; }
+
+/* liberação para o DP */
+.stc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.pill.lib { font-size: 11px; padding: 2px 8px; }
+.p-NOVA { background: #e0e9ff; color: #1446c8; }
 </style>
 
 </head>
@@ -369,6 +374,40 @@ const dh = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (
 const hoje = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const SN = v => String(v || '').toUpperCase() === 'S';
 const ROT = { OK: 'Dentro das regras', ALERTA: 'Com alerta', ERRO: 'Com erro', SEM: 'Sem escala' };
+/** Liberação para o DP. Supervisor/admin: NAO, OK, PEND (alterada, reenviar). DP: NAO, NOVA, ALT (alterada desde que viu), VISTA. */
+function libSt(c) {
+  const s = situacaoLiberacao(c.escala, c.lib);
+  if (!soLer() || s === 'SEM' || s === 'NAO') return s;
+  const cur = assinaturaEscala(c.escala);
+  if (!c.lib.visto) return 'NOVA';
+  return cur !== c.lib.visto ? 'ALT' : 'VISTA';
+}
+const LIB_TXT = { NAO: 'Não liberada ao DP', OK: 'Liberada ao DP', PEND: 'Alterada · reenviar ao DP', NOVA: 'Nova liberação', ALT: 'Alterada', VISTA: 'Vista pelo DP' };
+const LIB_CLS = { NAO: 'SEM', OK: 'OK', PEND: 'ALERTA', NOVA: 'NOVA', ALT: 'ALERTA', VISTA: 'OK' };
+function libPill(c) {
+  const k = libSt(c); if (k === 'SEM') return '';
+  const l = c.lib, tt = l ? `Liberada por ${l.por} em ${dh(l.em)}${l.vistoEm ? ' · vista pelo DP em ' + dh(l.vistoEm) : ''}` : 'O supervisor ainda não liberou esta escala para o DP';
+  const extra = soLer() && situacaoLiberacao(c.escala, c.lib) === 'PEND' ? ' · aguarda reenvio' : '';
+  return `<span class="pill lib p-${LIB_CLS[k]}" title="${esc(tt)}">${LIB_TXT[k]}${extra}</span>`;
+}
+const podeLiberar = c => c.escala && !(c.val && c.val.status === 'ERRO') && ['NAO', 'PEND'].includes(situacaoLiberacao(c.escala, c.lib));
+const pedeVisto = c => ['NOVA', 'ALT'].includes(libSt(c));
+async function liberarDP(lista) {
+  const L = lista.filter(podeLiberar);
+  if (!L.length) return toast('Nada para liberar: as escalas já estão liberadas, têm erro ou não existem.', true);
+  const erro = lista.filter(c => c.escala && c.val && c.val.status === 'ERRO').length;
+  if (!confirm(`Liberar para o DP a escala de ${L.length} colaborador(es)?${erro ? `\n\n${erro} com erro ficam de fora (corrija e libere depois).` : ''}`)) return;
+  const r = await call('liberarDP', { matriculas: L.map(c => c.matricula) });
+  S.cols.forEach(c => { if (r.libs[c.matricula]) c.lib = r.libs[c.matricula]; });
+  toast(`${r.liberados} escala(s) liberada(s) para o DP.${r.comErro ? ' ' + r.comErro + ' com erro ficaram de fora.' : ''}`);
+}
+async function vistoDP(lista) {
+  const L = lista.filter(pedeVisto);
+  if (!L.length) return toast('Nenhuma escala nova ou alterada nesta lista.', true);
+  const r = await call('vistoDP', { matriculas: L.map(c => c.matricula) });
+  S.cols.forEach(c => { if (r.libs[c.matricula]) c.lib = r.libs[c.matricula]; });
+  toast(`${r.vistos} marcada(s) como vista(s).`);
+}
 const st = c => c.val ? c.val.status : 'SEM';
 const IC = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
@@ -559,7 +598,7 @@ function filtrados(ignSt, ignVis) {
   const f = S.f, q = nrm(f.q);
   return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
     (ignVis || ((!f.fn || c.vis.funcao === f.fn) && (!f.grp || c.vis.grupo === f.grp))) &&
-    (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
+    (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (ignSt || !f.lib || libSt(c) === f.lib) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
 function ordenar(L) { return L.slice().sort((a, b) => (S.f.rev ? 0 : a.revenda.localeCompare(b.revenda, 'pt')) || a.vis.ordem.localeCompare(b.vis.ordem) || a.vis.fordem.localeCompare(b.vis.fordem) || a.nome.localeCompare(b.nome, 'pt')); }
@@ -601,7 +640,7 @@ function vEscalas(m) {
     const t = e.target.closest('button, [data-chip]');
     if (!t) return;
     if (t.dataset.vis) { if (f.vis !== t.dataset.vis) { f.fn = ''; f.grp = ''; } f.vis = t.dataset.vis; lista(); }
-    else if (t.dataset.ac === 'limpaf') { f.rev = ''; f.fn = ''; f.grp = ''; f.st = ''; f.tele = ''; f.ext = ''; f.q = ''; const qi = m.querySelector('[data-f=q]'); if (qi) qi.value = ''; lista(); }
+    else if (t.dataset.ac === 'limpaf') { f.rev = ''; f.fn = ''; f.grp = ''; f.st = ''; f.lib = ''; f.tele = ''; f.ext = ''; f.q = ''; const qi = m.querySelector('[data-f=q]'); if (qi) qi.value = ''; lista(); }
     else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else if (k === 'ferias' || k === 'feriado') f.ext = f.ext === k ? '' : k; else f.st = k; lista(); }
     else if (t.dataset.link) abrirLink(t.dataset.link);
     else if (t.dataset.ed) abrirEditor(t.dataset.ed);
@@ -609,6 +648,8 @@ function vEscalas(m) {
     else if (t.dataset.ac === 'todos') { const L = filtrados(); const all = L.every(c => S.sel.has(c.matricula)); L.forEach(c => all ? S.sel.delete(c.matricula) : S.sel.add(c.matricula)); lista(); }
     else if (t.dataset.ac === 'limpar') { S.sel.clear(); lista(); }
     else if (t.dataset.ac === 'lote') modalLote();
+    else if (t.dataset.ac === 'liberar') ocupado(t, async () => { await liberarDP(alvo().lista); lista(); });
+    else if (t.dataset.ac === 'visto') ocupado(t, async () => { await vistoDP(alvo().lista); lista(); });
     else if (t.dataset.ac === 'xls') ocupado(t, () => excelLote(alvo().lista));
     else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', S.semana));
     else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
@@ -616,7 +657,7 @@ function vEscalas(m) {
   m.onchange = e => {
     const k = e.target.dataset.ff;
     if (k === 'rev') { f.rev = e.target.value; f.fn = ''; f.grp = ''; lista(); return; }
-    if (k === 'sit') { const v = e.target.value; f.st = ''; f.tele = ''; f.ext = ''; if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; lista(); return; }
+    if (k === 'sit') { const v = e.target.value; f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; lista(); return; }
     if (k) { f[k] = e.target.value; lista(); return; } const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
   lista();
 }
@@ -633,13 +674,13 @@ function lista() {
   const fns = uniq(pool.filter(c => !f.grp || c.vis.grupo === f.grp).map(c => c.vis.funcao)), grs = uniq(pool.filter(c => !f.fn || c.vis.funcao === f.fn).map(c => c.vis.grupo));
   if (f.fn && !fns.includes(f.fn)) f.fn = ''; if (f.grp && !grs.includes(f.grp)) f.grp = '';
   const revs = uniq(S.cols.map(c => c.revenda)), n = k => base.filter(c => st(c) === k).length;
-  const sitV = f.tele ? 'tele' : f.ext || f.st || '';
+  const sitV = f.tele ? 'tele' : f.lib ? 'lib:' + f.lib : f.ext || f.st || '';
   const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' (' + q + ')' : ''}</option>`;
   const ativo = f.rev || f.fn || f.grp || sitV || f.q;
   $('#fbar').innerHTML = (revs.length > 1 ? `<select data-ff="rev" class="${f.rev ? 'on' : ''}" aria-label="Revenda">${opts(revs, f.rev, 'Todas as revendas')}</select>` : '') +
     `<select data-ff="fn" class="${f.fn ? 'on' : ''}" aria-label="Função">${opts(fns, f.fn || '', 'Todas as funções')}</select>` +
     (gLbl ? `<select data-ff="grp" class="${f.grp ? 'on' : ''}" aria-label="${gLbl}">${opts(grs, f.grp || '', gLbl === 'Turno' ? 'Todos os turnos' : gLbl === 'Grupo' ? 'Todos os grupos' : 'Todos os pontos de apoio')}</select>` : '') +
-    `<select data-ff="sit" class="${sitV ? 'on' : ''}" aria-label="Situação">${so('', 'Todas as situações', base.length)}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup></select>` +
+    `<select data-ff="sit" class="${sitV ? 'on' : ''}" aria-label="Situação">${so('', 'Todas as situações', base.length)}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA', 'NAO'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select>` +
     (ativo ? '<button type="button" class="fx-lk" data-ac="limpaf">✕ Limpar filtros</button>' : '') +
     `<span class="cnt"><b>${L.length}</b> de ${tudo.length} colaboradores</span>`;
   grupoSel = {};
@@ -659,7 +700,8 @@ function acoes() {
   $('#acts').innerHTML = `<button type="button" class="btn sm" data-ac="todos">${ns ? 'Desmarcar' : 'Marcar todos'}</button>
     ${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b><button type="button" class="fx-lk" data-ac="limpar">limpar</button>` : `<span class="hint">ações valem para os ${a.lista.length} da lista</span>`}
     <span class="sp"></span>
-    ${soLer() ? '' : `<button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote</button>`}
+    ${soLer() ? (() => { const n = a.lista.filter(pedeVisto).length; return `<button type="button" class="btn sm ${n ? 'dk' : ''}" data-ac="visto" ${n ? '' : 'disabled'} title="Some o aviso de nova/alterada">✓ Marcar como visto${n ? ' (' + n + ')' : ''}</button>`; })()
+      : `<button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote</button>${(() => { const n = a.lista.filter(podeLiberar).length; return `<button type="button" class="btn sm ${n ? 'pr' : ''}" data-ac="liberar" ${n ? '' : 'disabled'} title="Envia para o DP a escala como está agora">➜ Liberar para o DP${n ? ' (' + n + ')' : ''}</button>`; })()}`}
     <button type="button" class="btn sm" data-ac="xls" title="Baixar em Excel">${ic('xls')}Excel</button>
     <button type="button" class="btn sm" data-ac="pdf" title="Uma ficha em PDF por colaborador">${ic('pdf')}Fichas</button>
     <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro</button>`;
@@ -688,7 +730,7 @@ function linhaHtml(c) {
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}${c.escala && c.escala.ate ? `<small class="ate${c.escala.ate <= isoMaisDias(S.semana, 13) ? ' vence' : ''}" title="Este período da escala vale até ${dataBr(c.escala.ate)}">até ${dataBr(c.escala.ate).slice(0, 5)}</small>` : ''}</div>
-    <div><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span></div>
+    <div class="stc"><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span>${libPill(c)}</div>
     <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
 }
 
@@ -765,7 +807,7 @@ function desenhaEditor() {
       <div id="ed-lnk"></div>
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button><button type="button" class="btn" data-lnk>📲 Link p/ colaborador</button>
-      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button>${soLer() ? '<span class="hint">Perfil DP: só consulta.</span>' : '<button type="button" class="btn pr" data-salvar>Salvar escala</button>'}</div>`);
+      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button>${soLer() ? `${pedeVisto(c) ? '<button type="button" class="btn pr" data-visto>✓ Marcar como visto</button>' : ''}<span class="hint">Perfil DP: só consulta.</span>` : `<button type="button" class="btn" data-salvar>Salvar escala</button><button type="button" class="btn pr" data-salvar="lib" title="Salva e já envia ao DP">Salvar e liberar ao DP</button>`}</div>`);
   const box = modal.querySelector('.mdl');
   box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); periodosEd(); };
   box.querySelector('#ed-ate').onchange = ev => { S.ed.e.ate = ev.target.value; S.ed.sujo = true; periodosEd(); };
@@ -808,7 +850,8 @@ function desenhaEditor() {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: ref.ent, sai: ref.sai, int: +ref.int }; }); S.ed.sujo = true; redesenhaDias();
     } else if (b.hasAttribute('data-padrao')) {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
-    } else if (b.hasAttribute('data-salvar')) { if (modal.querySelector('input.int.bad')) return toast('Confira o intervalo em vermelho (use horas:minutos, ex.: 1:12).', true); salvarEditor(b); }
+    } else if (b.hasAttribute('data-salvar')) { if (modal.querySelector('input.int.bad')) return toast('Confira o intervalo em vermelho (use horas:minutos, ex.: 1:12).', true); salvarEditor(b, b.dataset.salvar === 'lib'); }
+    else if (b.hasAttribute('data-visto')) ocupado(b, async () => { await vistoDP([S.ed.c]); fecharModal(true); render(); });
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
     else if (acaoLink(b, S.ed.c)) { /* link do colaborador */ }
     else if (b.hasAttribute('data-pdf')) {
@@ -891,18 +934,22 @@ function caixaVal(v) {
 function atualizaVal() {
   const v = validarEscala(S.ed.e, { tele: S.ed.tele, cfg: S.cfg, entrega: ehEntregaCampo(S.ed.c) });
   $('#ed-val').innerHTML = caixaVal(v);
-  const b = modal.querySelector('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
-  if (!b) return;
-  b.disabled = bloq; b.title = bloq ? 'Corrija os itens em vermelho para salvar' : '';
+  const bs = modal.querySelectorAll('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
+  bs.forEach(b => { b.disabled = bloq || (b.dataset.salvar === 'lib' && v.status === 'ERRO'); b.title = bloq ? 'Corrija os itens em vermelho para salvar' : b.dataset.salvar === 'lib' && v.status === 'ERRO' ? 'Escala com erro não pode ser liberada ao DP' : ''; });
 }
-function salvarEditor(bt) {
+function salvarEditor(bt, liberar) {
   const { c, e } = S.ed;
   ocupado(bt, async () => {
     if (S.ed.tele !== c.tele) { await call('setTele', { matricula: c.matricula, valor: S.ed.tele }); c.tele = S.ed.tele; }
     if (e.ate && e.ate < e.vigencia) { toast('A data final não pode ser antes do início.', true); return; }
     const r = await call('salvarEscala', { matricula: c.matricula, vigencia: e.vigencia, ate: e.ate || '', vigOrig: S.ed.vigOrig, dias: e.dias });
     c.escala = r.escala; revalida();
-    fecharModal(true); toast(`Escala de <b>${esc(c.nome)}</b> salva.`); render();
+    if (liberar) {
+      const l = await call('liberarDP', { matriculas: [c.matricula] }); if (l.libs[c.matricula]) c.lib = l.libs[c.matricula];
+      fecharModal(true); toast(l.liberados ? `Escala de <b>${esc(c.nome)}</b> salva e liberada para o DP.` : `Escala salva, mas não liberada (está com erro).`, !l.liberados); return render();
+    }
+    const pend = situacaoLiberacao(c.escala, c.lib) === 'PEND';
+    fecharModal(true); toast(pend ? `Escala de <b>${esc(c.nome)}</b> salva. Ela já tinha sido liberada: <b>reenvie ao DP</b>.` : `Escala de <b>${esc(c.nome)}</b> salva.`, pend); render();
   });
 }
 
@@ -1223,8 +1270,8 @@ function vRelacao(m) {
       <div class="filt"><label class="f">Buscar<input data-r="q" value="${esc(R.q)}" placeholder="Nome, matrícula ou cargo"></label>
         <label class="f">Situação<select data-r="sit">${selOpts([['trab', 'Trabalhando'], ['ferias', 'De férias hoje'], ['afast', 'Afastado'], ['novos', 'Admitidos em 30 dias'], ['semesc', 'Sem escala']].concat(vt ? [['semsup', 'Sem supervisor']] : []), R.sit, 'Todas')}</select></label>
         ${vt ? `<label class="f">Supervisor<select data-r="sup">${selOpts([['-', '— sem supervisor —']].concat(sups.map(x => [x.id, x.nome])), R.sup, 'Todos')}</select></label>` : ''}</div>
-      <div class="ovf"><table class="tb rs-l"><tr><th>Matr.</th><th>Nome</th><th>Cargo</th><th>Revenda</th><th>Área</th>${vt ? '<th>Supervisor</th>' : ''}<th>Situação</th><th>Admissão</th><th>Escala</th></tr>
-        ${L.slice(0, 400).map(c => `<tr><td>${esc(codigoMatricula(c.matricula))}</td><td><button type="button" class="lk" data-ed="${esc(c.matricula)}">${esc(c.nome)}</button></td><td>${esc(c.funcao)}</td><td>${esc(c.revenda)}</td><td>${esc(areaRel(c))}</td>${vt ? `<td>${esc(nomeSup(c.supervisor) || '—')}</td>` : ''}<td>${sitRel(c) === 'trab' ? 'Trabalhando' : sitRel(c) === 'ferias' ? 'De férias' : esc(c.situacao)}</td><td>${esc(c.admissao || '')}</td><td>${c.escala ? `<span class="pill p-${c.val ? c.val.status : 'OK'}">${c.val ? ({ OK: 'OK', ALERTA: 'Alerta', ERRO: 'Erro' })[c.val.status] || c.val.status : 'OK'}</span>` : '<span class="hint">sem escala</span>'}</td></tr>`).join('') || `<tr><td colspan="9" class="empty">Ninguém com esses filtros.</td></tr>`}</table></div>
+      <div class="ovf"><table class="tb rs-l"><tr><th>Matr.</th><th>Nome</th><th>Cargo</th><th>Revenda</th><th>Área</th>${vt ? '<th>Supervisor</th>' : ''}<th>Situação</th><th>Admissão</th><th>Escala</th><th>DP</th></tr>
+        ${L.slice(0, 400).map(c => `<tr><td>${esc(codigoMatricula(c.matricula))}</td><td><button type="button" class="lk" data-ed="${esc(c.matricula)}">${esc(c.nome)}</button></td><td>${esc(c.funcao)}</td><td>${esc(c.revenda)}</td><td>${esc(areaRel(c))}</td>${vt ? `<td>${esc(nomeSup(c.supervisor) || '—')}</td>` : ''}<td>${sitRel(c) === 'trab' ? 'Trabalhando' : sitRel(c) === 'ferias' ? 'De férias' : esc(c.situacao)}</td><td>${esc(c.admissao || '')}</td><td>${c.escala ? `<span class="pill p-${c.val ? c.val.status : 'OK'}">${c.val ? ({ OK: 'OK', ALERTA: 'Alerta', ERRO: 'Erro' })[c.val.status] || c.val.status : 'OK'}</span>` : '<span class="hint">sem escala</span>'}</td><td>${libPill(c)}</td></tr>`).join('') || `<tr><td colspan="10" class="empty">Ninguém com esses filtros.</td></tr>`}</table></div>
       ${L.length > 400 ? '<p class="hint" style="padding:8px 16px">Mostrando 400. Baixe o Excel para ver todos.</p>' : ''}</section>`;
   m.querySelectorAll('[data-r]').forEach(el => {
     const k2 = el.dataset.r;
