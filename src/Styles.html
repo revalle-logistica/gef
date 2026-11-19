@@ -315,4 +315,20 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .per span{font-weight:700;font-size:13px}.per small{color:var(--mut);font-size:11.5px}.per.on{border-color:var(--ac);background:var(--acs)}.per.novo{border-style:dashed;color:var(--ac);font-weight:700;justify-content:center}
 .msgbox .pn{font-weight:700;color:var(--ac)}.hr small.ate{display:block;font-size:11px;color:var(--mut);font-weight:600}.hr small.ate.vence{color:var(--er)}
 .qtb td small.qp{display:block;font-size:10.5px;color:var(--al);font-weight:700;white-space:nowrap}
+
+/* perfil DP: só consulta escalas e férias */
+.so-ler [data-dsalvar], .so-ler [data-dpad], .so-ler [data-perdel], .so-ler [data-pernovo], .so-ler [data-fxa], .so-ler [data-fxlote], .so-ler [data-fxmig],
+.so-ler [data-addf], .so-ler [data-delf], .so-ler [data-addp], .so-ler [data-delp], .so-ler [data-fxrep] { display: none !important; }
+.so-ler .fx-acf { pointer-events: none; opacity: .6; }
+/* relação de colaboradores */
+.rs-k { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.rs-k > div { background: var(--sunk); border-radius: 12px; padding: 12px 14px; }
+.rs-k b { display: block; font-size: 26px; line-height: 1.1; color: #0b2a6b; }
+.rs-k small { color: var(--mut); font-size: 12px; }
+.rs-k .al b { color: #b45309; }
+.rs-m { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rs-m th, .rs-m td { padding: 6px 8px; border-bottom: 1px solid var(--line, #dbe2ee); text-align: right; white-space: nowrap; }
+.rs-m th:first-child, .rs-m td:first-child { text-align: left; }
+.rs-m tr.tt td { font-weight: 700; background: var(--sunk); }
+.rs-l td { text-align: left; }
 </style>

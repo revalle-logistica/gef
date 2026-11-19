@@ -325,6 +325,22 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .per span{font-weight:700;font-size:13px}.per small{color:var(--mut);font-size:11.5px}.per.on{border-color:var(--ac);background:var(--acs)}.per.novo{border-style:dashed;color:var(--ac);font-weight:700;justify-content:center}
 .msgbox .pn{font-weight:700;color:var(--ac)}.hr small.ate{display:block;font-size:11px;color:var(--mut);font-weight:600}.hr small.ate.vence{color:var(--er)}
 .qtb td small.qp{display:block;font-size:10.5px;color:var(--al);font-weight:700;white-space:nowrap}
+
+/* perfil DP: só consulta escalas e férias */
+.so-ler [data-dsalvar], .so-ler [data-dpad], .so-ler [data-perdel], .so-ler [data-pernovo], .so-ler [data-fxa], .so-ler [data-fxlote], .so-ler [data-fxmig],
+.so-ler [data-addf], .so-ler [data-delf], .so-ler [data-addp], .so-ler [data-delp], .so-ler [data-fxrep] { display: none !important; }
+.so-ler .fx-acf { pointer-events: none; opacity: .6; }
+/* relação de colaboradores */
+.rs-k { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.rs-k > div { background: var(--sunk); border-radius: 12px; padding: 12px 14px; }
+.rs-k b { display: block; font-size: 26px; line-height: 1.1; color: #0b2a6b; }
+.rs-k small { color: var(--mut); font-size: 12px; }
+.rs-k .al b { color: #b45309; }
+.rs-m { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rs-m th, .rs-m td { padding: 6px 8px; border-bottom: 1px solid var(--line, #dbe2ee); text-align: right; white-space: nowrap; }
+.rs-m th:first-child, .rs-m td:first-child { text-align: left; }
+.rs-m tr.tt td { font-weight: 700; background: var(--sunk); }
+.rs-l td { text-align: left; }
 </style>
 
 </head>
@@ -340,7 +356,8 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
   f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
   imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], ajustes: [], semana: '', mes: '',
-  cad: { aba: 'col', rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() } };
+  cad: { aba: 'col', rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() },
+  rel: { rev: '', area: '', sit: '', sup: '', q: '' } };
 const $ = s => document.querySelector(s);
 const root = document.getElementById('root'), modal = document.getElementById('modal');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -366,7 +383,8 @@ const IC = {
   pdf: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 14h6M9 17h4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
   wand: '<path d="M15 4V2M15 10V8M11 6h2M17 6h2M4 20L14 10"/>',
-  ref: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'
+  ref: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
 };
 const ic = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 const ls = {
@@ -475,23 +493,27 @@ function periodoDaSemana(c) {
 function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { periodoDaSemana(c); c.vis = visaoColaborador(c); if (GF[nrm(c.funcao)]) c.vis.funcao = GF[nrm(c.funcao)]; c.aj = ajustesDe(c.matricula); c.sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), c.aj); c.avisos = avisosSemana(c.sem); c.semVal = validarSemanaReal(c.sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }); c.val = c.escala ? validarEscala(c.escala, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null; });  atualizaVisoesExtra(); }
 
 /* ================= casca ================= */
+/** Administrador e DP veem todos os colaboradores; o DP só consulta escalas e férias. */
+const veTudo = () => S.user && (S.user.perfil === 'ADMIN' || S.user.perfil === 'DP');
+const soLer = () => S.user && S.user.perfil === 'DP';
 function render() {
-  const adm = S.user.perfil === 'ADMIN';
-  const tabs = [['escalas', 'cal', 'Escalas'], ['qlp', 'users', 'QLP'], ['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel']]
+  const adm = S.user.perfil === 'ADMIN', dp = soLer();
+  document.body.classList.toggle('so-ler', dp);
+  const tabs = [['escalas', 'cal', 'Escalas']].concat(dp ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel'], ['relacao', 'list', 'Colaboradores']])
     .concat([['cadastro', 'users', 'Cadastro']])
-    .concat(adm ? [['importar', 'up', 'Importar DP'], ['usuarios', 'key', 'Usuários']] : [])
+    .concat(adm || dp ? [['importar', 'up', 'Importar DP']] : []).concat(adm ? [['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
   root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
     <div class="br"><b>GEF · Gestão de Férias e Escala</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
     <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}${k === 'cadastro' && nPendCad() ? `<em>${nPendCad()}</em>` : ''}</button>`).join('')}</nav>
-    <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : ''}</span>
+    <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : dp ? ' · DP' : ''}</span>
       <button class="btn sm" type="button" data-a="senha" title="Trocar senha" aria-label="Trocar senha">${ic('key')}</button>
       <button class="btn sm" type="button" data-a="sair">Sair</button></div></div></header><main id="main"></main>`;
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -564,7 +586,7 @@ function vEscalas(m) {
   const revs = uniq(S.cols.map(c => c.revenda));
   if (f.rev && !revs.includes(f.rev)) f.rev = '';
   if (!S.cols.length) {
-    m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você. O administrador faz o vínculo na tela Cadastro.'}</p></div>`;
+    m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${veTudo() ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você. O administrador faz o vínculo na tela Cadastro.'}</p></div>`;
     return;
   }
   m.innerHTML = `<section class="card">
@@ -637,7 +659,7 @@ function acoes() {
   $('#acts').innerHTML = `<button type="button" class="btn sm" data-ac="todos">${ns ? 'Desmarcar' : 'Marcar todos'}</button>
     ${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b><button type="button" class="fx-lk" data-ac="limpar">limpar</button>` : `<span class="hint">ações valem para os ${a.lista.length} da lista</span>`}
     <span class="sp"></span>
-    <button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote</button>
+    ${soLer() ? '' : `<button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote</button>`}
     <button type="button" class="btn sm" data-ac="xls" title="Baixar em Excel">${ic('xls')}Excel</button>
     <button type="button" class="btn sm" data-ac="pdf" title="Uma ficha em PDF por colaborador">${ic('pdf')}Fichas</button>
     <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro</button>`;
@@ -743,7 +765,7 @@ function desenhaEditor() {
       <div id="ed-lnk"></div>
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button><button type="button" class="btn" data-lnk>📲 Link p/ colaborador</button>
-      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-salvar>Salvar escala</button></div>`);
+      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button>${soLer() ? '<span class="hint">Perfil DP: só consulta.</span>' : '<button type="button" class="btn pr" data-salvar>Salvar escala</button>'}</div>`);
   const box = modal.querySelector('.mdl');
   box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); periodosEd(); };
   box.querySelector('#ed-ate').onchange = ev => { S.ed.e.ate = ev.target.value; S.ed.sujo = true; periodosEd(); };
@@ -870,6 +892,7 @@ function atualizaVal() {
   const v = validarEscala(S.ed.e, { tele: S.ed.tele, cfg: S.cfg, entrega: ehEntregaCampo(S.ed.c) });
   $('#ed-val').innerHTML = caixaVal(v);
   const b = modal.querySelector('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
+  if (!b) return;
   b.disabled = bloq; b.title = bloq ? 'Corrija os itens em vermelho para salvar' : '';
 }
 function salvarEditor(bt) {
@@ -949,7 +972,7 @@ function mesColab(c) {
 function vMes(m) {
   const f = S.f, revs = uniq(S.cols.map(c => c.revenda));
   if (f.rev && !revs.includes(f.rev)) f.rev = '';
-  if (!S.cols.length) { m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${S.user.perfil === 'ADMIN' ? 'Importe o relatório do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você.'}</p></div>`; return; }
+  if (!S.cols.length) { m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${veTudo() ? 'Importe o relatório do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você.'}</p></div>`; return; }
   const datas = diasDoMes(S.mes), L = ordenar(filtrados(true));
   const ferAll = d => S.feriados.filter(x => x.data === d && (!f.rev || x.revenda === f.rev));
   const tudo = filtrados(true, true);
@@ -1165,6 +1188,63 @@ function vPainel(m) {
 }
 function cor(v, mx) { const a = mx && v ? 0.12 + 0.78 * v / mx : 0; return `background:${a ? `rgba(20,70,200,${a.toFixed(2)})` : 'var(--sunk)'};color:${a > 0.5 ? '#fff' : '#0c1a33'}`; }
 
+/* ================= relação de colaboradores (resumo) ================= */
+const brIso = d => { const m = String(d || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : /^\d{4}-\d{2}-\d{2}/.test(String(d || '')) ? String(d).slice(0, 10) : ''; };
+function sitRel(c) {
+  const hj = hoje();
+  if (S.ferias.some(f => f.matricula === c.matricula && f.inicio <= hj && f.fim >= hj)) return 'ferias';
+  return !c.situacao || /trabalhando/i.test(c.situacao) ? 'trab' : 'afast';
+}
+const SIT_REL = { trab: 'Trabalhando', ferias: 'De férias hoje', afast: 'Afastado' };
+const areaRel = c => (c.vis && c.vis.areaNome) || c.setor || '—';
+function vRelacao(m) {
+  const R = S.rel, vt = veTudo(), hj = hoje(), d30 = isoMaisDias(hj, -30);
+  const todos = S.cols, revs = uniq(todos.map(c => c.revenda)), areas = uniq(todos.map(areaRel));
+  const base = todos.filter(c => (!R.rev || c.revenda === R.rev) && (!R.area || areaRel(c) === R.area));
+  const q = nrm(R.q);
+  const L = base.filter(c => (!R.sit || (R.sit === 'novos' ? brIso(c.admissao) >= d30 : R.sit === 'semsup' ? !c.supervisor : R.sit === 'semesc' ? !c.escala : sitRel(c) === R.sit)) &&
+    (!R.sup || (R.sup === '-' ? !c.supervisor : c.supervisor === R.sup)) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao).includes(q)))
+    .sort((a, b) => a.revenda.localeCompare(b.revenda) || areaRel(a).localeCompare(areaRel(b)) || a.nome.localeCompare(b.nome));
+  const n = f => base.filter(f).length;
+  const k = [['', 'Ativos', base.length], ['trab', 'Trabalhando', n(c => sitRel(c) === 'trab')], ['ferias', 'De férias hoje', n(c => sitRel(c) === 'ferias')], ['afast', 'Afastados', n(c => sitRel(c) === 'afast')],
+    ['novos', 'Admitidos em 30 dias', n(c => brIso(c.admissao) >= d30)]].concat(vt ? [['semsup', 'Sem supervisor', n(c => !c.supervisor)]] : []).concat([['semesc', 'Sem escala', n(c => !c.escala)]]);
+  const revsT = uniq(base.map(c => c.revenda)), areasT = uniq(base.map(areaRel));
+  const cel = (rv, ar) => base.filter(c => (!rv || c.revenda === rv) && (!ar || areaRel(c) === ar)).length;
+  const sups = vt ? S.sups.filter(s => s.perfil !== 'DP') : [];
+  m.innerHTML = `<section class="hero"><h2>Relação de colaboradores</h2><p>Resumo de quem está ativo no sistema${vt ? '' : ' (vinculados a você)'}. Clique num número para filtrar a lista.</p></section>
+    <section class="card"><div class="card-b" style="display:grid;gap:14px">
+      <div class="filt" style="padding:0"><label class="f">Revenda<select data-r="rev">${opts(revs, R.rev, 'Todas')}</select></label><label class="f">Área<select data-r="area">${opts(areas, R.area, 'Todas')}</select></label></div>
+      <div class="rs-k">${k.map(([s, t, v]) => `<div data-rk="${s}" style="cursor:pointer;${R.sit === s ? 'outline:2px solid #1446c8' : ''}" class="${(s === 'semsup' || s === 'semesc' || s === 'afast') && v ? 'al' : ''}"><b>${v}</b><small>${t}</small></div>`).join('')}</div>
+      <div class="ovf"><table class="rs-m"><tr><th>Revenda</th>${areasT.map(a => `<th>${esc(a)}</th>`).join('')}<th>Total</th></tr>
+        ${revsT.map(rv => `<tr><td><b>${esc(rv)}</b></td>${areasT.map(a => `<td>${cel(rv, a) || '–'}</td>`).join('')}<td><b>${cel(rv, '')}</b></td></tr>`).join('')}
+        <tr class="tt"><td>Total</td>${areasT.map(a => `<td>${cel('', a)}</td>`).join('')}<td>${base.length}</td></tr></table></div>
+    </div></section>
+    <section class="card"><div class="card-h"><h3>Lista <span class="hint">${L.length}</span></h3><button type="button" class="btn sm" data-rxls>${ic('xls')}Excel</button></div>
+      <div class="filt"><label class="f">Buscar<input data-r="q" value="${esc(R.q)}" placeholder="Nome, matrícula ou cargo"></label>
+        <label class="f">Situação<select data-r="sit">${selOpts([['trab', 'Trabalhando'], ['ferias', 'De férias hoje'], ['afast', 'Afastado'], ['novos', 'Admitidos em 30 dias'], ['semesc', 'Sem escala']].concat(vt ? [['semsup', 'Sem supervisor']] : []), R.sit, 'Todas')}</select></label>
+        ${vt ? `<label class="f">Supervisor<select data-r="sup">${selOpts([['-', '— sem supervisor —']].concat(sups.map(x => [x.id, x.nome])), R.sup, 'Todos')}</select></label>` : ''}</div>
+      <div class="ovf"><table class="tb rs-l"><tr><th>Matr.</th><th>Nome</th><th>Cargo</th><th>Revenda</th><th>Área</th>${vt ? '<th>Supervisor</th>' : ''}<th>Situação</th><th>Admissão</th><th>Escala</th></tr>
+        ${L.slice(0, 400).map(c => `<tr><td>${esc(codigoMatricula(c.matricula))}</td><td><button type="button" class="lk" data-ed="${esc(c.matricula)}">${esc(c.nome)}</button></td><td>${esc(c.funcao)}</td><td>${esc(c.revenda)}</td><td>${esc(areaRel(c))}</td>${vt ? `<td>${esc(nomeSup(c.supervisor) || '—')}</td>` : ''}<td>${sitRel(c) === 'trab' ? 'Trabalhando' : sitRel(c) === 'ferias' ? 'De férias' : esc(c.situacao)}</td><td>${esc(c.admissao || '')}</td><td>${c.escala ? `<span class="pill p-${c.val ? c.val.status : 'OK'}">${c.val ? ({ OK: 'OK', ALERTA: 'Alerta', ERRO: 'Erro' })[c.val.status] || c.val.status : 'OK'}</span>` : '<span class="hint">sem escala</span>'}</td></tr>`).join('') || `<tr><td colspan="9" class="empty">Ninguém com esses filtros.</td></tr>`}</table></div>
+      ${L.length > 400 ? '<p class="hint" style="padding:8px 16px">Mostrando 400. Baixe o Excel para ver todos.</p>' : ''}</section>`;
+  m.querySelectorAll('[data-r]').forEach(el => {
+    const k2 = el.dataset.r;
+    if (k2 === 'q') el.oninput = e => { R.q = e.target.value; clearTimeout(R.t); R.t = setTimeout(() => { vRelacao(m); const i = m.querySelector('[data-r=q]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 300); };
+    else el.onchange = e => { R[k2] = e.target.value; vRelacao(m); };
+  });
+  m.onclick = e => {
+    const kk = e.target.closest('[data-rk]'); if (kk) { R.sit = R.sit === kk.dataset.rk ? '' : kk.dataset.rk; return vRelacao(m); }
+    const ed = e.target.closest('[data-ed]'); if (ed) return abrirEditor(ed.dataset.ed);
+    const x = e.target.closest('[data-rxls]'); if (x) ocupado(x, async () => {
+      const X = await loadXLSX();
+      const H = ['Matrícula', 'Nome', 'Cargo', 'Revenda', 'Área', 'Setor'].concat(vt ? ['Supervisor'] : []).concat(['Situação', 'Admissão', 'Escala']);
+      const rows = L.map(c => [codigoMatricula(c.matricula), c.nome, c.funcao, c.revenda, areaRel(c), c.setor].concat(vt ? [nomeSup(c.supervisor)] : []).concat([sitRel(c) === 'ferias' ? 'De férias' : c.situacao || 'Trabalhando', c.admissao || '', c.escala ? (c.val ? c.val.status : 'OK') : 'sem escala']));
+      const ws = X.utils.aoa_to_sheet([H].concat(rows)); ws['!cols'] = H.map((h, i) => ({ wch: i === 1 ? 34 : 16 }));
+      const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Colaboradores');
+      X.writeFile(wb, `GEF_colaboradores_${hj}_${L.length}.xlsx`);
+    });
+  };
+}
+
 /* ================= importar relatório do DP ================= */
 // Relatório "Relação de Empregados" do sistema de folha: blocos por "Departamento: 201 - ARMAZEM - AL"
 // (no modelo "Profissional II" o bloco vem como "Centro de Custo: 201 - ARMAZEM - AL").
@@ -1365,14 +1445,14 @@ function detalheCad(c) {
   const a = areaSetor(c.setor), p = [deptoProprio(c.setor) || c.setor];
   if (a === 'arm') p.push(c.turno || 'turno?');
   if (a === 'ent' && papelEntrega(c.funcao) !== 'adm') p.push((c.lotacao || 'sede/ponto?') + (papelEntrega(c.funcao) === 'mot' ? ' · ' + (c.tipoMot || 'rota/puxador?') : ''));
-  if (S.user.perfil === 'ADMIN') p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
+  if (veTudo()) p.push('sup.: ' + (nomeSup(c.supervisor) || '—'));
   return p.join(' · ');
 }
-function nPendCad() { return S.user ? S.cols.filter(c => pendenciasCadastro(c).length && (S.user.perfil === 'ADMIN' || areaSetor(c.setor) !== 'outro')).length : 0; }
+function nPendCad() { return S.user ? S.cols.filter(c => pendenciasCadastro(c).length && (veTudo() || areaSetor(c.setor) !== 'outro')).length : 0; }
 const PAPEL = { mot: 'Motorista', aj: 'Ajudante', adm: 'Administrativo' };
 function selOpts(lista, val, vazio) { return `<option value="">${vazio}</option>` + lista.map(v => { const [k, t] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`; }).join(''); }
 function supsDaRevenda(rev) {
-  const da = S.sups.filter(s => s.revendas.includes('*') || s.revendas.includes(rev)), outros = S.sups.filter(s => !da.includes(s));
+  const L = S.sups.filter(s => s.perfil !== 'DP'), da = L.filter(s => s.revendas.includes('*') || s.revendas.includes(rev)), outros = L.filter(s => !da.includes(s));
   return da.concat(outros).map(s => [s.id, s.nome + (s.perfil === 'ADMIN' ? ' (admin)' : '')]);
 }
 /** Aplica na tela na hora e grava no servidor em segundo plano; se o servidor recusar, desfaz. */
@@ -1384,7 +1464,7 @@ async function classificar(mats, campos) {
   catch (e) { antes.forEach(([c, o]) => Object.assign(c, o)); revalida(); throw e; }
 }
 function vCadastro(m) {
-  const C = S.cad, revs = uniq(S.cols.map(c => c.revenda)), admC = S.user.perfil === 'ADMIN';
+  const C = S.cad, revs = uniq(S.cols.map(c => c.revenda)), admC = veTudo();
   if (!revs.length) { m.innerHTML = '<div class="card empty"><h3>Nenhum colaborador ainda</h3><p>Importe o relatório do DP na aba <b>Importar DP</b>.</p></div>'; return; }
   if (!revs.includes(C.rev)) C.rev = revs[0];
   const doRev = S.cols.filter(c => c.revenda === C.rev);
@@ -1392,7 +1472,7 @@ function vCadastro(m) {
   const abasArea = [['arm', 'Armazém'], ['ent', 'Entrega'], ['outro', 'Adm. Logística e outros']].concat(uniq(doRev.map(c => deptoProprio(c.setor)).filter(Boolean)).map(n => [areaDeptoProprio(n), n]));
   const daArea = doRev.filter(c => areaCad(c) === C.area);
   const q = nrm(C.q);
-  const L = daArea.filter(c => (C.f !== 'pend' || pendenciasCadastro(c).length) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao).includes(q)))
+  const L = daArea.filter(c => (C.f !== 'pend' || pendenciasCadastro(c).length) && (C.f !== 'semsup' || !c.supervisor) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao).includes(q)))
     .sort((a, b) => papelEntrega(a.funcao).localeCompare(papelEntrega(b.funcao)) || a.funcao.localeCompare(b.funcao) || a.nome.localeCompare(b.nome));
   [...C.sel].forEach(x => { if (!daArea.some(c => c.matricula === x)) C.sel.delete(x); });
   const pend = daArea.filter(c => pendenciasCadastro(c).length).length;
@@ -1411,7 +1491,7 @@ function vCadastro(m) {
   const ns = C.sel.size;
   const hj = hoje(), nomeDe = {}; doRev.forEach(c => { nomeDe[c.matricula] = c.nome; });
   const ferRev = S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= isoMaisDias(hj, -30) && (!q || nrm(nomeDe[f.matricula] + ' ' + f.matricula).includes(q))).sort((a, b) => a.inicio.localeCompare(b.inicio) || nomeDe[a.matricula].localeCompare(nomeDe[b.matricula]));
-  const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length]].concat(admC ? [['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length]] : []).concat([['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]]);
+  const ABAS_CAD = [['col', 'Colaboradores', doRev.length], ['pontos', 'Pontos de apoio', pontosRev(C.rev).length]].concat(S.user.perfil === 'ADMIN' ? [['feriados', 'Feriados', feriadosDe(C.rev).filter(f => f.data >= hj).length]] : []).concat([['ferias', 'Férias', S.ferias.filter(f => nomeDe[f.matricula] && f.fim >= hj).length]]);
   if (!ABAS_CAD.some(a => a[0] === C.aba)) C.aba = 'col';
   const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span>${admC ? `<label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden>` : ''}</div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       ${admC ? `<div class="sinc"><span>🔄 <b>Programação de férias:</b> ${S.sincFerias ? (S.sincFerias.erro ? `<span style="color:var(--er)">erro na última sincronização (${esc(dh(S.sincFerias.em))}): ${esc(S.sincFerias.erro)}</span>` : `última sincronização ${esc(dh(S.sincFerias.em))} · ${S.sincFerias.confirmadas} confirmadas · ${S.sincFerias.novos} novas${S.sincFerias.removidos ? ` · ${S.sincFerias.removidos} retiradas` : ''}${S.sincFerias.naoAchados ? ` · ${S.sincFerias.naoAchados} fora desta base` : ''}${S.sincFerias.conflitos && S.sincFerias.conflitos.length ? ` · <b title="${esc(S.sincFerias.conflitos.join('\n'))}">${S.sincFerias.conflitos.length} com conflito</b>` : ''}`) : 'ainda não sincronizado'}</span><button type="button" class="btn sm" data-sincf>Sincronizar agora</button></div>` : ''}
@@ -1427,11 +1507,11 @@ function vCadastro(m) {
     <div class="filt"><label class="f">Revenda<select data-c="rev">${opts(revs, C.rev, '').replace('<option value=""></option>', '')}</select></label>
       ${C.aba === 'col' || C.aba === 'ferias' ? `<label class="f">Buscar<input data-c="q" value="${esc(C.q)}" placeholder="Nome, matrícula ou cargo"></label>` : ''}</div>
     ${C.aba === 'col' ? `    <div class="vt" style="padding-top:0">${abasArea.filter(([k]) => k !== 'outro' || doRev.some(c => areaCad(c) === 'outro')).map(([k, n]) => `<button type="button" data-area="${k}" aria-pressed="${C.area === k}">${n}<i>${doRev.filter(c => areaCad(c) === k).length}</i></button>`).join('')}</div>
-    <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button></div>
+    <div class="chips" style="padding-top:12px"><button type="button" class="chip" data-cf="pend" aria-pressed="${C.f === 'pend'}"><span class="dot d-ALERTA"></span>Faltando dados <i>${pend}</i></button><button type="button" class="chip" data-cf="todos" aria-pressed="${C.f === 'todos'}">Todos <i>${daArea.length}</i></button>${admC ? `<button type="button" class="chip" data-cf="semsup" aria-pressed="${C.f === 'semsup'}">Sem supervisor <i>${daArea.filter(c => !c.supervisor).length}</i></button>` : ''}</div>
     <div class="acts">${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b>
         ${(C.area === 'outro' || /^p_/.test(C.area)) ? '' : C.area === 'arm' ? `<select data-b="turno">${selOpts(turnos, '', 'Turno…')}</select>` : `<select data-b="lotacao">${selOpts(pontos, '', 'Sede / ponto…')}</select><select data-b="tipoMot">${selOpts(tipos, '', 'Rota / puxador…')}</select>`}
         ${admC ? `<select data-b="supervisor">${selOpts(sups, '', 'Supervisor…')}</select>` : ''}
-        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span>${admC ? `<button type="button" class="btn sm er" data-brem>Remover ${ns} do sistema</button>` : ''}`
+        <button type="button" class="btn sm dk" data-bapl>Aplicar aos ${ns}</button><button type="button" class="btn sm" data-blimpa>Limpar</button><span class="sp"></span>${admC ? `<button type="button" class="btn sm er" data-brem>Desligar ${ns}</button>` : ''}`
       : `<button type="button" class="btn sm" data-btodos>Selecionar os ${L.length} da lista</button><span class="hint">Selecione vários para preencher de uma vez, ou escolha direto em cada linha (salva na hora).</span>`}</div>
     <div class="ls">${L.map(linha).join('') || `<div class="empty">${C.f === 'pend' ? 'Tudo preenchido nesta revenda e setor. 🎉' : 'Ninguém aqui.'}</div>`}</div>` : C.aba === 'pontos' ? `<div class="pts" style="padding-top:14px"><b>Pontos de apoio de ${esc(C.rev)}</b><span class="hint">Aparecem no campo “Sede / ponto” de motoristas e ajudantes da Entrega. Quem não tiver ponto fica na Sede.</span><div class="ck">${pontosRev(C.rev).map(p => `<label style="cursor:default">${esc(p)} <button type="button" class="xp" data-delp="${esc(p)}" aria-label="Remover ${esc(p)}">×</button></label>`).join('') || '<span class="hint">Nenhum ponto cadastrado: todos ficam na Sede.</span>'}</div>
       <form class="addp" data-addp><input placeholder="Novo ponto de apoio (ex.: Irará)" maxlength="40"><button class="btn sm" type="submit">Adicionar</button></form></div>
@@ -1457,8 +1537,8 @@ function vCadastro(m) {
     else if (b.hasAttribute('data-btodos')) { L.forEach(c => C.sel.add(c.matricula)); vCadastro(m); }
     else if (b.hasAttribute('data-blimpa')) { C.sel.clear(); vCadastro(m); }
     else if (b.hasAttribute('data-brem')) {
-      if (!confirm(`Remover ${C.sel.size} colaborador(es) do sistema? Eles somem das escalas e não voltam em importações futuras.`)) return;
-      ocupado(b, async () => { const mats = [...C.sel]; await call('removerColaboradores', { matriculas: mats }); S.cols = S.cols.filter(c => !mats.includes(c.matricula)); C.sel.clear(); revalida(); toast(`${mats.length} removido(s).`); vCadastro(m); });
+      if (!confirm(`Desligar ${C.sel.size} colaborador(es)? Eles saem das escalas e do QLP e não voltam em importações futuras.`)) return;
+      ocupado(b, async () => { const mats = [...C.sel]; await call('removerColaboradores', { matriculas: mats }); S.cols = S.cols.filter(c => !mats.includes(c.matricula)); C.sel.clear(); revalida(); toast(`${mats.length} desligado(s).`); vCadastro(m); });
     }
     else if (b.dataset.delh) { if (confirm('Remover este feriado?')) ocupado(b, async () => { await call('removerFeriado', { id: b.dataset.delh }); S.feriados = S.feriados.filter(f => f.id !== b.dataset.delh); revalida(); vCadastro(m); }); }
     else if (b.dataset.delp) { if (confirm('Remover o ponto de apoio "' + b.dataset.delp + '"? Quem estiver nele continua com o nome gravado.')) salvaPontos(C.rev, pontosRev(C.rev).filter(p => p !== b.dataset.delp), m); }
@@ -1620,7 +1700,7 @@ function formAcesso(u) {
   const revs = S.allRevs, sets = S.allSets, adm = u.perfil === 'ADMIN';
   const ck = (nome, arr, sel, todos) => `<div class="ck"><label><input type="checkbox" data-${nome}="*" ${sel.includes('*') ? 'checked' : ''}> <b>${todos}</b></label>${arr.map(v => `<label><input type="checkbox" data-${nome}="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
   return `<div class="ap" data-form="${esc(u.id)}">
-    <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${!adm ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
+    <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${u.perfil !== 'ADMIN' && u.perfil !== 'DP' ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="DP" ${u.perfil === 'DP' ? 'selected' : ''}>DP (consulta escalas e férias, importa, define supervisor e desliga)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
     ${revs.length ? '' : '<p class="hint">Importe o relatório do DP para listar as revendas. Por enquanto dá para liberar "Todas".</p>'}
     <div><b style="font-size:12px;color:var(--mut)">REVENDA(S) DO SUPERVISOR</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
     <p class="hint">O supervisor vê só os colaboradores vinculados a ele na tela <b>Cadastro</b>.</p>
@@ -1629,7 +1709,7 @@ function formAcesso(u) {
 function desenhaUsuarios(m) {
   const U = S.users, pend = U.filter(u => u.status === 'PENDENTE'), out = U.filter(u => u.status !== 'PENDENTE');
   const esc2 = a => a.includes('*') ? 'todas' : a.join(', ') || '—';
-  const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
+  const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : u.perfil === 'DP' ? 'DP' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
       <small>${esc(u.login)}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
       ${u.status !== 'PENDENTE' ? `<small>Revenda: ${esc(esc2(u.revendas))} · ${S.cols.filter(c => c.supervisor === u.id).length} colaboradores vinculados</small>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">

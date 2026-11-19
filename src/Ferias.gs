@@ -26,7 +26,7 @@ function feriasDados_(u) {
   const cols = pfColsMapa_(), out = [], aguardando = {};
   pfLista_().forEach(function (p) {
     const c = cols[pfChaveCol_(p.revenda, p.codigo)];
-    if (!c) { if (u.perfil === 'ADMIN' && p.origem !== 'gozado') { const k = p.revenda + ' · ' + (p.setorF || p.depto || 'Sem setor'); aguardando[k] = (aguardando[k] || 0) + 1; } return; }
+    if (!c) { if (veTudo_(u) && p.origem !== 'gozado') { const k = p.revenda + ' · ' + (p.setorF || p.depto || 'Sem setor'); aguardando[k] = (aguardando[k] || 0) + 1; } return; }
     if (!podeVer_(u, c)) return;
     out.push({
       id: p.id, matricula: c.matricula, revenda: p.revenda, codigo: p.codigo, setorF: p.setorF, grupo: p.grupo, cargo: p.cargo,

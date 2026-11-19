@@ -275,8 +275,8 @@ function classificar_(u, d) {
   const mats = (d.matriculas || []).map(String), campos = d.campos || {};
   const ok = ['turno', 'lotacao', 'tipoMot', 'supervisor'].filter(function (k) { return Object.prototype.hasOwnProperty.call(campos, k); });
   if (!mats.length || !ok.length) throw new Error('Nada para salvar.');
-  const adm = u.perfil === 'ADMIN';
-  if (!adm && ok.indexOf('supervisor') >= 0) throw new Error('Só o administrador vincula o supervisor ao colaborador.');
+  const adm = veTudo_(u);
+  if (!adm && ok.indexOf('supervisor') >= 0) throw new Error('Só o administrador ou o DP vinculam o supervisor ao colaborador.');
   if (campos.supervisor) {
     const s = ler_('Usuarios').filter(function (x) { return x.id === campos.supervisor && x.status === 'ATIVO'; })[0];
     if (!s) throw new Error('Supervisor não encontrado ou sem acesso ativo.');
@@ -299,7 +299,7 @@ function classificar_(u, d) {
 function salvarPontos_(u, d) {
   const rev = String(d.revenda || '').trim(), lista = (d.lista || []).map(function (x) { return String(x).trim().slice(0, 40); }).filter(String);
   if (!rev) throw new Error('Informe a revenda.');
-  if (u.perfil !== 'ADMIN' && !ler_('Colaboradores').some(function (c) { return c.revenda === rev && c.ativo !== 'N' && podeVer_(u, c); }))
+  if (!veTudo_(u) && !ler_('Colaboradores').some(function (c) { return c.revenda === rev && c.ativo !== 'N' && podeVer_(u, c); }))
     throw new Error('Você não tem colaboradores nesta revenda.');
   return comLock_(function () {
     const l = ler_('Config').filter(function (x) { return x.chave === 'PONTOS_APOIO'; })[0];
@@ -352,6 +352,9 @@ function converterPlanilha_(u, d) {
 }
 
 function salvarConfig_(u, d) {
+  // o DP só ajusta como os departamentos do relatório entram na importação
+  if (u.perfil === 'DP' && Object.keys(d || {}).some(function (k) { return k !== 'DEPARTAMENTOS' && k !== 'REVENDAS_SIGLAS'; }))
+    throw new Error('O perfil DP só altera os departamentos da importação.');
   return comLock_(function () {
     const linhas = ler_('Config');
     Object.keys(d || {}).forEach(function (k) {

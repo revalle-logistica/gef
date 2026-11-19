@@ -16,7 +16,7 @@ function qlpRevendas_(u) {
   return uniq_(cols.map(function (c) { return c.revenda; }));
 }
 function qlpLista_(u) {
-  const revs = u.perfil === 'ADMIN' ? null : qlpRevendas_(u);
+  const revs = veTudo_(u) ? null : qlpRevendas_(u);
   return ler_('QLP').filter(function (r) { return !revs || revs.indexOf(r.revenda) >= 0; }).map(qlpPublico_);
 }
 function qlpLimpo_(d) {

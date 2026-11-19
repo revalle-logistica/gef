@@ -105,29 +105,29 @@ function rotas_() {
   aprovarUsuario: { f: aprovarUsuario_, admin: true },
   statusUsuario: { f: statusUsuario_, admin: true },
   resetSenha: { f: resetSenha_, admin: true },
-  importar: { f: importar_, admin: true },
-  atualizarDoDP: { f: atualizarDoDP_, admin: true },
-  sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true },
+  importar: { f: importar_, admin: true, dp: true },
+  atualizarDoDP: { f: atualizarDoDP_, admin: true, dp: true },
+  sincFerias: { f: function (u) { return sincFerias_(u.nome); }, admin: true, dp: true },
   feriasDados: { f: feriasDados_ },
   feriasSalvar: { f: feriasSalvar_ },
   feriasLote: { f: feriasLote_ },
   feriasAcomp: { f: feriasAcomp_ },
   feriasMigrar: { f: feriasMigrar_, admin: true },
-  feriasImportarDP: { f: feriasImportarDP_, admin: true },
+  feriasImportarDP: { f: feriasImportarDP_, admin: true, dp: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   salvarQlp: { f: salvarQlp_ },
   removerQlp: { f: removerQlp_ },
-  removerColaboradores: { f: removerColaboradores_, admin: true },
+  removerColaboradores: { f: removerColaboradores_, admin: true, dp: true },
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
   salvarFeriado: { f: salvarFeriado_, admin: true },
   importarFeriados: { f: importarFeriados_, admin: true },
-  importarFerias: { f: importarFerias_, admin: true },
+  importarFerias: { f: importarFerias_, admin: true, dp: true },
   salvarAjuste: { f: salvarAjuste_ },
   removerFeriado: { f: removerFeriado_, admin: true },
-  converterPlanilha: { f: converterPlanilha_, admin: true },
-  salvarConfig: { f: salvarConfig_, admin: true }
+  converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
+  salvarConfig: { f: salvarConfig_, admin: true, dp: true }
   } };
 }
 
@@ -141,7 +141,8 @@ function api(token, acao, dados) {
     u._token = token;
     const a = PRIVADAS[acao];
     if (!a) throw new Error('Ação inválida.');
-    if (a.admin && u.perfil !== 'ADMIN') throw new Error('Somente o administrador pode fazer isso.');
+    if (a.admin && u.perfil !== 'ADMIN' && !(a.dp && u.perfil === 'DP')) throw new Error('Somente o administrador pode fazer isso.');
+    if (u.perfil === 'DP' && SO_ADMIN_SUP_[acao]) throw new Error('O perfil DP só consulta escalas e férias (não altera).');
     return { ok: true, data: a.f(u, dados) };
   } catch (e) {
     return { ok: false, erro: e && e.message ? e.message : String(e) };
@@ -238,8 +239,12 @@ function comLock_(fn) {
 function lista_(s) { return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(String); }
 function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
 /** Administrador vê todos; supervisor vê só os colaboradores vinculados a ele na tela Cadastro. */
+/** Administrador e DP veem todos os colaboradores. */
+function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
+/** Ações de escala/férias/QLP que o DP não faz (ele só consulta). */
+var SO_ADMIN_SUP_ = { salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
-  if (u.perfil === 'ADMIN') return true;
+  if (veTudo_(u)) return true;
   return !!c.supervisor && c.supervisor === u.id;
 }
 function parse_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
@@ -271,7 +276,7 @@ function carregar_(u) {
     return {
       matricula: c.matricula, nome: c.nome, funcao: c.funcao, revenda: c.revenda, setor: c.setor,
       lotacao: c.lotacao, turno: c.turno, tipoMot: c.tipoMot, supervisor: c.supervisor, departamento: c.departamento,
-      situacao: c.situacao, tele: c.teleatendimento === 'S',
+      situacao: c.situacao, admissao: c.admissao, tele: c.teleatendimento === 'S',
       escala: e || null
     };
   });
@@ -283,9 +288,9 @@ function carregar_(u) {
   const desde = Utilities.formatDate(new Date(Date.now() - 120 * 864e5), TZ, 'yyyy-MM-dd');
   const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
   const revsU = uniq_(cols.map(function (c) { return c.revenda; }));
-  const qlp = ler_('QLP').filter(function (q) { return u.perfil === 'ADMIN' || revsU.indexOf(q.revenda) >= 0; }).map(qlpPublico_);
+  const qlp = ler_('QLP').filter(function (q) { return veTudo_(u) || revsU.indexOf(q.revenda) >= 0; }).map(qlpPublico_);
   const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes, qlp: qlp };
-  if (u.perfil === 'ADMIN') {
+  if (veTudo_(u)) {
     r.sincFerias = parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_SINC'), null);
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));

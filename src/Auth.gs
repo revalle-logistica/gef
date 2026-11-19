@@ -99,11 +99,11 @@ function achaUsuario_(id) {
 function aprovarUsuario_(adm, d) {
   return comLock_(function () {
     const u = achaUsuario_(d.id);
-    const perfil = d.perfil === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
+    const perfil = d.perfil === 'ADMIN' || d.perfil === 'DP' ? d.perfil : 'SUPERVISOR';
     const rv = (d.revendas || []).map(String);
     if (perfil === 'SUPERVISOR' && !rv.length) throw new Error('Escolha ao menos uma revenda para o supervisor.');
     u.perfil = perfil;
-    u.revendas = perfil === 'ADMIN' ? '*' : rv.join(',');
+    u.revendas = perfil === 'SUPERVISOR' ? rv.join(',') : '*';
     u.setores = '*';
     const novo = u.status === 'PENDENTE';
     if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
@@ -126,7 +126,7 @@ function avisarAprovacao_(u, adm) {
     '<p>Olá, <b>' + h(u.nome.split(' ')[0]) + '</b>!</p>' +
     '<p>Seu acesso ao sistema GEF - Gestão de Férias e Escala foi <b style="color:#0f7b4a">aprovado</b>' + (adm && adm.nome ? ' por ' + h(adm.nome) : '') + '.</p>' +
     '<p style="background:#eef2f9;border-radius:8px;padding:10px 12px;font-size:14px">Login: <b>' + h(u.login) + '</b><br>' +
-    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
+    (u.perfil === 'ADMIN' ? 'Perfil: <b>Administrador</b>' : u.perfil === 'DP' ? 'Perfil: <b>DP</b> (relatórios de férias e escalas, importação do DP, supervisor dos novatos e desligamentos)' : 'Revenda: <b>' + h(lst(u.revendas)) + '</b><br>Você vai ver os colaboradores vinculados a você.') + '</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o sistema</a></p>' +
     '<p style="font-size:12px;color:#44526b">Use a senha que você criou no cadastro. Se esqueceu, peça uma nova ao administrador.</p></div></div>';
   try {
