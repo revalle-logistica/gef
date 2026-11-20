@@ -29,6 +29,7 @@ const K="esc5x2_app_html";
 const prep=h=>h.replace('<base target="_top">','').replace(/<head>/i,'<head><script>window.API_URL='+JSON.stringify(U)+'<\/script>');
 const mostra=h=>{ document.open(); document.write(h); document.close(); };
 let cache=null; try{ cache=localStorage.getItem(K); }catch(e){}
+let mexeu=false; ["pointerdown","keydown","input"].forEach(t=>addEventListener(t,()=>{ mexeu=true; },true));
 // abre na hora com a versão guardada no aparelho; a nova versão é baixada em segundo plano
 if(cache){ const go=()=>mostra(prep(cache)); if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",()=>setTimeout(go,0)); else setTimeout(go,0); }
 fetch(U+"?raw=1",{credentials:"omit",cache:"no-store"}).then(r=>{ if(!r.ok) throw 0; return r.text(); }).then(h=>{
@@ -36,9 +37,13 @@ fetch(U+"?raw=1",{credentials:"omit",cache:"no-store"}).then(r=>{ if(!r.ok) thro
   if(h===cache) return;
   try{ localStorage.setItem(K,h); }catch(e){ try{ localStorage.removeItem(K); }catch(_){} }
   if(!cache){ mostra(prep(h)); return; }
+  // ninguém mexeu ainda: já abre a versão nova
+  if(!mexeu){ location.reload(); return; }
+  // estava usando: troca quando a pessoa voltar para a aba, ou ao tocar no aviso
+  addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") location.reload(); });
   const b=document.createElement("div");
-  b.textContent="🔄 Nova versão da Gestão de Férias e Escala disponível — toque aqui para atualizar";
-  b.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#0b2a6b;color:#fff;padding:10px 16px;border-radius:12px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;max-width:92vw;text-align:center";
+  b.textContent="🔄 Nova versão do GEF disponível — toque aqui para atualizar";
+  b.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#d97706;color:#fff;padding:12px 18px;border-radius:12px;font:700 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.3);cursor:pointer;max-width:92vw;text-align:center";
   b.onclick=()=>location.reload();
   (document.body||document.documentElement).appendChild(b);
 }).catch(()=>{ if(!cache){ const l=document.getElementById("l"); if(l) l.textContent="Não foi possível carregar. Verifique a internet e atualize a página."; } });
