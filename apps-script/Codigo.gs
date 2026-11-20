@@ -28,7 +28,7 @@ const ABAS = {
     'iniAq', 'fimAq', 'prazo', 'direito', 'abono', 'gozados', 'saldo', 'origem', 'ano', 'sugestao', 'plano', 'conf', 'por', 'em',
     'acomp', 'acompPor', 'acompEm', 'fonte', 'editadoGestao'],
   QLP: ['id', 'revenda', 'area', 'grupo', 'funcao', 'faixas', 'excecoes', 'obs', 'por', 'em'],
-  LiberacoesDP: ['matricula', 'assinatura', 'liberadoPor', 'liberadoEm', 'vistoAssinatura', 'vistoPor', 'vistoEm'],
+  LiberacoesDP: ['matricula', 'assinatura', 'liberadoPor', 'liberadoEm', 'vistoAssinatura', 'vistoPor', 'vistoEm', 'escala'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -265,6 +265,19 @@ function escalaObj_(rows, ref) {
   const p = periodoNaData(o, ref) || ps.filter(function (x) { return x.vigencia > ref; })[0] || ps[ps.length - 1];
   return { vigencia: p.vigencia, ate: p.ate, dias: p.dias, por: p.por, em: p.em, atualizadoPor: p.por, atualizadoEm: p.em, periodos: ps };
 }
+/** O DP só enxerga a escala que foi liberada (a versão enviada); os demais veem a atual. */
+function escalasParaUsuario_(u, ref) {
+  const atual = escalasPorMatricula_(ref);
+  if (!u || u.perfil !== 'DP') return atual;
+  ref = ref || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const out = {};
+  ler_('LiberacoesDP').forEach(function (l) {
+    if (!l.assinatura) return;
+    const ps = parse_(l.escala, null);
+    out[l.matricula] = ps && ps.length ? escalaObj_(ps.map(function (p) { return { vigencia: p.vigencia, ate: p.ate || '', dias: JSON.stringify(p.dias || []), atualizadoPor: p.por, atualizadoEm: p.em }; }), ref) : (atual[l.matricula] || null);
+  });
+  return out;
+}
 function escalasPorMatricula_(ref) {
   const g = {}, out = {};
   ler_('Escalas').forEach(function (e) { (g[e.matricula] = g[e.matricula] || []).push(e); });
@@ -276,7 +289,7 @@ function escalasPorMatricula_(ref) {
 /* ---------------- carga inicial da tela ---------------- */
 function carregar_(u) {
   const cfg = cfg_();
-  const esc = escalasPorMatricula_();
+  const esc = escalasParaUsuario_(u);
   const todos = ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N'; });
   const cols = todos.filter(function (c) { return podeVer_(u, c); }).map(function (c) {
     const e = esc[c.matricula];
@@ -975,7 +988,7 @@ function liberarDP_(u, d) {
       if (!esc[m]) { res.semEscala++; return; }
       if (stEsc[m]) { res.comErro++; return; }
       const o = idx[m] != null ? libs[idx[m]] : null, ass = assinaturaEscala(esc[m]);
-      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '' };
+      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '', escala: JSON.stringify(esc[m].periodos || []) };
       if (o) libs[idx[m]] = novo; else { idx[m] = libs.length; libs.push(novo); }
       res.liberados++;
     });
@@ -991,8 +1004,8 @@ function vistoDP_(u, d) {
     const esc = escalasPorMatricula_(), libs = ler_('LiberacoesDP'), quando = agora_(), out = {};
     let n = 0;
     libs.forEach(function (l) {
-      if (mats.indexOf(l.matricula) < 0 || !esc[l.matricula]) return;
-      l.vistoAssinatura = assinaturaEscala(esc[l.matricula]); l.vistoPor = u.nome; l.vistoEm = quando; n++;
+      if (mats.indexOf(l.matricula) < 0 || !l.assinatura) return;
+      l.vistoAssinatura = l.assinatura; l.vistoPor = u.nome; l.vistoEm = quando; n++;
       out[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm };
     });
     if (n) gravarTudo_('LiberacoesDP', libs);
@@ -1026,7 +1039,7 @@ function anteciparInicioInterno() {
       const a = antes[l.matricula], d = depois[l.matricula]; if (!a || !d) return;
       const sa = assinaturaEscala(a), sd = assinaturaEscala(d);
       if (sa === sd) return;
-      if (l.assinatura === sa) { l.assinatura = sd; nl++; }
+      if (l.assinatura === sa) { l.assinatura = sd; l.escala = JSON.stringify(d.periodos || []); nl++; }
       if (l.vistoAssinatura === sa) l.vistoAssinatura = sd;
     });
     if (nl) gravarTudo_('LiberacoesDP', libs);
@@ -1506,7 +1519,7 @@ function exportPdf_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Nenhum colaborador selecionado.');
   if (mats.length > 500) throw new Error('Gere no máximo 500 colaboradores por arquivo.');
-  const cfg = cfg_(), esc = escalasPorMatricula_(/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
+  const cfg = cfg_(), esc = escalasParaUsuario_(u, /^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
   const cols = ler_('Colaboradores')
     .filter(function (c) { return mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N' && podeVer_(u, c); })
     .sort(ordemVisao_);

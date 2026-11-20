@@ -499,7 +499,7 @@ function liberarDP_(u, d) {
       if (!esc[m]) { res.semEscala++; return; }
       if (stEsc[m]) { res.comErro++; return; }
       const o = idx[m] != null ? libs[idx[m]] : null, ass = assinaturaEscala(esc[m]);
-      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '' };
+      const novo = { matricula: m, assinatura: ass, liberadoPor: u.nome, liberadoEm: quando, vistoAssinatura: o ? o.vistoAssinatura : '', vistoPor: o ? o.vistoPor : '', vistoEm: o ? o.vistoEm : '', escala: JSON.stringify(esc[m].periodos || []) };
       if (o) libs[idx[m]] = novo; else { idx[m] = libs.length; libs.push(novo); }
       res.liberados++;
     });
@@ -515,8 +515,8 @@ function vistoDP_(u, d) {
     const esc = escalasPorMatricula_(), libs = ler_('LiberacoesDP'), quando = agora_(), out = {};
     let n = 0;
     libs.forEach(function (l) {
-      if (mats.indexOf(l.matricula) < 0 || !esc[l.matricula]) return;
-      l.vistoAssinatura = assinaturaEscala(esc[l.matricula]); l.vistoPor = u.nome; l.vistoEm = quando; n++;
+      if (mats.indexOf(l.matricula) < 0 || !l.assinatura) return;
+      l.vistoAssinatura = l.assinatura; l.vistoPor = u.nome; l.vistoEm = quando; n++;
       out[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm };
     });
     if (n) gravarTudo_('LiberacoesDP', libs);
@@ -550,7 +550,7 @@ function anteciparInicioInterno() {
       const a = antes[l.matricula], d = depois[l.matricula]; if (!a || !d) return;
       const sa = assinaturaEscala(a), sd = assinaturaEscala(d);
       if (sa === sd) return;
-      if (l.assinatura === sa) { l.assinatura = sd; nl++; }
+      if (l.assinatura === sa) { l.assinatura = sd; l.escala = JSON.stringify(d.periodos || []); nl++; }
       if (l.vistoAssinatura === sa) l.vistoAssinatura = sd;
     });
     if (nl) gravarTudo_('LiberacoesDP', libs);

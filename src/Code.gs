@@ -25,7 +25,7 @@ const ABAS = {
     'iniAq', 'fimAq', 'prazo', 'direito', 'abono', 'gozados', 'saldo', 'origem', 'ano', 'sugestao', 'plano', 'conf', 'por', 'em',
     'acomp', 'acompPor', 'acompEm', 'fonte', 'editadoGestao'],
   QLP: ['id', 'revenda', 'area', 'grupo', 'funcao', 'faixas', 'excecoes', 'obs', 'por', 'em'],
-  LiberacoesDP: ['matricula', 'assinatura', 'liberadoPor', 'liberadoEm', 'vistoAssinatura', 'vistoPor', 'vistoEm'],
+  LiberacoesDP: ['matricula', 'assinatura', 'liberadoPor', 'liberadoEm', 'vistoAssinatura', 'vistoPor', 'vistoEm', 'escala'],
   Historico: ['quando', 'usuario', 'matricula', 'acao', 'detalhe']
 };
 
@@ -262,6 +262,19 @@ function escalaObj_(rows, ref) {
   const p = periodoNaData(o, ref) || ps.filter(function (x) { return x.vigencia > ref; })[0] || ps[ps.length - 1];
   return { vigencia: p.vigencia, ate: p.ate, dias: p.dias, por: p.por, em: p.em, atualizadoPor: p.por, atualizadoEm: p.em, periodos: ps };
 }
+/** O DP só enxerga a escala que foi liberada (a versão enviada); os demais veem a atual. */
+function escalasParaUsuario_(u, ref) {
+  const atual = escalasPorMatricula_(ref);
+  if (!u || u.perfil !== 'DP') return atual;
+  ref = ref || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const out = {};
+  ler_('LiberacoesDP').forEach(function (l) {
+    if (!l.assinatura) return;
+    const ps = parse_(l.escala, null);
+    out[l.matricula] = ps && ps.length ? escalaObj_(ps.map(function (p) { return { vigencia: p.vigencia, ate: p.ate || '', dias: JSON.stringify(p.dias || []), atualizadoPor: p.por, atualizadoEm: p.em }; }), ref) : (atual[l.matricula] || null);
+  });
+  return out;
+}
 function escalasPorMatricula_(ref) {
   const g = {}, out = {};
   ler_('Escalas').forEach(function (e) { (g[e.matricula] = g[e.matricula] || []).push(e); });
@@ -273,7 +286,7 @@ function escalasPorMatricula_(ref) {
 /* ---------------- carga inicial da tela ---------------- */
 function carregar_(u) {
   const cfg = cfg_();
-  const esc = escalasPorMatricula_();
+  const esc = escalasParaUsuario_(u);
   const todos = ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N'; });
   const cols = todos.filter(function (c) { return podeVer_(u, c); }).map(function (c) {
     const e = esc[c.matricula];

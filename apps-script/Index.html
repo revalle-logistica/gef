@@ -398,18 +398,17 @@ const SN = v => String(v || '').toUpperCase() === 'S';
 const ROT = { OK: 'Dentro das regras', ALERTA: 'Com alerta', ERRO: 'Com erro', SEM: 'Sem escala' };
 /** Liberação para o DP. Supervisor/admin: NAO, OK, PEND (alterada, reenviar). DP: NAO, NOVA, ALT (alterada desde que viu), VISTA. */
 function libSt(c) {
-  const s = situacaoLiberacao(c.escala, c.lib);
-  if (!soLer() || s === 'SEM' || s === 'NAO') return s;
-  const cur = assinaturaEscala(c.escala);
-  if (!c.lib.visto) return 'NOVA';
-  return cur !== c.lib.visto ? 'ALT' : 'VISTA';
+  if (soLer()) return !c.lib ? 'NAO' : !c.lib.visto ? 'NOVA' : c.lib.visto !== c.lib.assinatura ? 'ALT' : 'VISTA';
+  return situacaoLiberacao(c.escala, c.lib);
 }
+/** O DP só vê nas escalas quem já foi liberado (e na versão liberada). */
+const colsEsc = () => soLer() ? S.cols.filter(c => c.lib) : S.cols;
 const LIB_TXT = { NAO: 'Não liberada ao DP', OK: 'Liberada ao DP', PEND: 'Alterada · reenviar ao DP', NOVA: 'Nova liberação', ALT: 'Alterada', VISTA: 'Vista pelo DP' };
 const LIB_CLS = { NAO: 'SEM', OK: 'OK', PEND: 'ALERTA', NOVA: 'NOVA', ALT: 'ALERTA', VISTA: 'OK' };
 function libPill(c) {
   const k = libSt(c); if (k === 'SEM') return '';
   const l = c.lib, tt = l ? `Liberada por ${l.por} em ${dh(l.em)}${l.vistoEm ? ' · vista pelo DP em ' + dh(l.vistoEm) : ''}` : 'O supervisor ainda não liberou esta escala para o DP';
-  const extra = soLer() && situacaoLiberacao(c.escala, c.lib) === 'PEND' ? ' · aguarda reenvio' : '';
+  const extra = '';
   return `<span class="pill lib p-${LIB_CLS[k]}" title="${esc(tt)}">${LIB_TXT[k]}${extra}</span>`;
 }
 const podeLiberar = c => c.escala && !(c.val && c.val.status === 'ERRO') && ['NAO', 'PEND'].includes(situacaoLiberacao(c.escala, c.lib));
@@ -657,7 +656,7 @@ function arrumaH(F, P, o = {}) {
   if (F.fn && !P.some(c => passaH(F, c, 'fn') && c.vis.funcao === F.fn)) F.fn = '';
   const rc2 = recortes(F); ['tipo', 'loc', 'tur'].forEach(k => { if (!rc2.includes(k)) F[k] = ''; });
 }
-const arrumaFiltros = () => arrumaH(S.f, S.cols);
+const arrumaFiltros = () => arrumaH(S.f, colsEsc());
 /** Barra de filtros em cascata: Revenda › Departamento › Função + recortes. o.direita = html extra à direita; o.n = quantos na lista. */
 function cascataHtml(F, P, o = {}) {
   const nPor = (sem, fn) => { const m = new Map(); P.forEach(c => { if (passaH(F, c, sem)) { const k = fn(c); m.set(k, (m.get(k) || 0) + 1); } }); return m; };
@@ -699,16 +698,16 @@ function barraFiltros(comSit) {
     const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' · ' + q : ''}</option>`;
     sit = `<label class="cb sit${sitV ? ' on' : ''}"><small>Situação</small><select data-ff="sit">${so('', 'Todas')}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA', 'NAO'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select></label>`;
   }
-  return cascataHtml(f, S.cols, { direita: sit, n: (comSit ? filtrados() : filtrados(true)).length, ativo: f.st || f.lib || f.ext || f.tele || f.q });
+  return cascataHtml(f, colsEsc(), { direita: sit, n: (comSit ? filtrados() : filtrados(true)).length, ativo: f.st || f.lib || f.ext || f.tele || f.q });
 }
 function trataFiltro(el) {
   const f = S.f;
   if (el.dataset && el.dataset.ff === 'sit' && el.tagName === 'SELECT') { const v = el.value; f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; return true; }
-  return trataCascata(f, S.cols, el, { limpar: () => { Object.assign(f, { st: '', lib: '', tele: '', ext: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); } });
+  return trataCascata(f, colsEsc(), el, { limpar: () => { Object.assign(f, { st: '', lib: '', tele: '', ext: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); } });
 }
 function filtrados(ignSt) {
   const f = S.f, q = nrm(f.q);
-  return S.cols.filter(c => passaHier(c) &&
+  return colsEsc().filter(c => passaHier(c) &&
     (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (ignSt || !f.lib || libSt(c) === f.lib) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
@@ -736,6 +735,7 @@ function vEscalas(m) {
   const f = S.f;
   const revs = uniq(S.cols.map(c => c.revenda));
   if (f.rev && !revs.includes(f.rev)) f.rev = '';
+  if (soLer() && S.cols.length && !colsEsc().length) { m.innerHTML = `<div class="card empty"><h3>Nenhuma escala liberada ainda</h3><p>As escalas aparecem aqui depois que o supervisor tocar em <b>Liberar para o DP</b>.</p></div>`; return; }
   if (!S.cols.length) {
     m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${veTudo() ? 'Comece importando a planilha do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você. O administrador faz o vínculo na tela Cadastro.'}</p></div>`;
     return;
@@ -821,7 +821,7 @@ function linhaHtml(c) {
     ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}${c.escala && c.escala.ate ? `<small class="ate${c.escala.ate <= isoMaisDias(S.semana, 13) ? ' vence' : ''}" title="Este período da escala vale até ${dataBr(c.escala.ate)}">até ${dataBr(c.escala.ate).slice(0, 5)}</small>` : ''}</div>
     <div class="stc"><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span>${libPill(c)}</div>
-    <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
+    <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${soLer() ? 'Ver' : c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
 }
 
 /* ================= editor individual ================= */
@@ -1109,6 +1109,7 @@ function mesColab(c) {
 function vMes(m) {
   const f = S.f, revs = uniq(S.cols.map(c => c.revenda));
   if (f.rev && !revs.includes(f.rev)) f.rev = '';
+  if (soLer() && S.cols.length && !colsEsc().length) { m.innerHTML = `<div class="card empty"><h3>Nenhuma escala liberada ainda</h3><p>As escalas aparecem aqui depois que o supervisor tocar em <b>Liberar para o DP</b>.</p></div>`; return; }
   if (!S.cols.length) { m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${veTudo() ? 'Importe o relatório do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você.'}</p></div>`; return; }
   const datas = diasDoMes(S.mes), L = ordenar(filtrados(true));
   const ferAll = d => S.feriados.filter(x => x.data === d && (!f.rev || x.revenda === f.rev));
@@ -1280,8 +1281,8 @@ async function excelLote(list) {
 /* ================= painel ================= */
 function vPainel(m) {
   const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));
-  arrumaH(P, S.cols);
-  const L = S.cols.filter(c => passaH(P, c));
+  arrumaH(P, colsEsc());
+  const L = colsEsc().filter(c => passaH(P, c));
   const cnt = a => { const o = { OK: 0, ALERTA: 0, ERRO: 0, SEM: 0 }; a.forEach(c => o[st(c)]++); return o; };
   const k = cnt(L), tot = L.length, pc = x => tot ? Math.round(x / tot * 100) : 0;
   const porK = fn => uniq(L.map(fn)).map(g => ({ g, a: L.filter(c => fn(c) === g) }));
@@ -1297,7 +1298,7 @@ function vPainel(m) {
     });
   });
   const pend = L.filter(c => ['ERRO', 'SEM'].includes(st(c))).sort((a, b) => (st(a) === 'ERRO' ? 0 : 1) - (st(b) === 'ERRO' ? 0 : 1) || a.vis.ordem.localeCompare(b.vis.ordem)).slice(0, 40);
-  m.innerHTML = `<section class="card">${barraSemana()}<div class="fx">${cascataHtml(P, S.cols, { n: L.length })}</div></section>
+  m.innerHTML = `<section class="card">${barraSemana()}<div class="fx">${cascataHtml(P, colsEsc(), { n: L.length })}</div></section>
     <div class="kpis">
       <div class="kpi"><span>Colaboradores</span><b>${tot}</b><small>${pc(k.OK + k.ALERTA)}% com escala válida</small></div>
       <div class="kpi OK"><span>Dentro das regras</span><b>${k.OK}</b><small>${pc(k.OK)}%</small></div>
@@ -1310,10 +1311,10 @@ function vPainel(m) {
       <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map((d, i) => `<th>${d}<br>${ddmm(isoMaisDias(S.semana, i))}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pendências</h3><span class="hint">erros primeiro · toque para abrir</span></div>
       <div class="pend">${pend.map(c => `<button type="button" data-ed="${esc(c.matricula)}"><span class="pill p-${st(c)}">${ROT[st(c)]}</span><b>${esc(c.nome)}</b><small>${esc(c.funcao)} · ${esc(c.vis.areaNome)}${c.vis.area === 'adm' ? '' : ' · ' + esc(c.vis.grupo)} · ${esc(c.revenda)}${c.val ? '<br>' + esc((c.val.msgs.find(x => x.nivel === 'erro') || {}).texto || '') : ''}</small></button>`).join('') || '<p class="empty">Nada pendente. Todas as escalas estão válidas.</p>'}</div></section>`;
-  m.onchange = e => { if (trataCascata(P, S.cols, e.target)) vPainel(m); };
+  m.onchange = e => { if (trataCascata(P, colsEsc(), e.target)) vPainel(m); };
   ligaSemana(m, () => vPainel(m));
   m.onclick = e => {
-    const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(P, S.cols, v)) return vPainel(m);
+    const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(P, colsEsc(), v)) return vPainel(m);
     const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
   };
 }
@@ -1355,7 +1356,7 @@ function vRelacao(m) {
         <label class="f">Situação<select data-r="sit">${selOpts([['trab', 'Trabalhando'], ['ferias', 'De férias hoje'], ['afast', 'Afastado'], ['novos', 'Admitidos em 30 dias'], ['semesc', 'Sem escala']].concat(vt ? [['semsup', 'Sem supervisor']] : []), R.sit, 'Todas')}</select></label>
         ${vt ? `<label class="f">Supervisor<select data-r="sup">${selOpts([['-', '— sem supervisor —']].concat(sups.map(x => [x.id, x.nome])), R.sup, 'Todos')}</select></label>` : ''}</div>
       <div class="ovf"><table class="tb rs-l"><tr><th>Matr.</th><th>Nome</th><th>Cargo</th><th>Revenda</th><th>Área</th>${vt ? '<th>Supervisor</th>' : ''}<th>Situação</th><th>Admissão</th><th>Escala</th><th>DP</th></tr>
-        ${L.slice(0, 400).map(c => `<tr><td>${esc(codigoMatricula(c.matricula))}</td><td><button type="button" class="lk" data-ed="${esc(c.matricula)}">${esc(c.nome)}</button></td><td>${esc(c.funcao)}</td><td>${esc(c.revenda)}</td><td>${esc(areaRel(c))}</td>${vt ? `<td>${esc(nomeSup(c.supervisor) || '—')}</td>` : ''}<td>${sitRel(c) === 'trab' ? 'Trabalhando' : sitRel(c) === 'ferias' ? 'De férias' : esc(c.situacao)}</td><td>${esc(c.admissao || '')}</td><td>${c.escala ? `<span class="pill p-${c.val ? c.val.status : 'OK'}">${c.val ? ({ OK: 'OK', ALERTA: 'Alerta', ERRO: 'Erro' })[c.val.status] || c.val.status : 'OK'}</span>` : '<span class="hint">sem escala</span>'}</td><td>${libPill(c)}</td></tr>`).join('') || `<tr><td colspan="10" class="empty">Ninguém com esses filtros.</td></tr>`}</table></div>
+        ${L.slice(0, 400).map(c => `<tr><td>${esc(codigoMatricula(c.matricula))}</td><td><button type="button" class="lk" data-ed="${esc(c.matricula)}">${esc(c.nome)}</button></td><td>${esc(c.funcao)}</td><td>${esc(c.revenda)}</td><td>${esc(areaRel(c))}</td>${vt ? `<td>${esc(nomeSup(c.supervisor) || '—')}</td>` : ''}<td>${sitRel(c) === 'trab' ? 'Trabalhando' : sitRel(c) === 'ferias' ? 'De férias' : esc(c.situacao)}</td><td>${esc(c.admissao || '')}</td><td>${c.escala ? `<span class="pill p-${c.val ? c.val.status : 'OK'}">${c.val ? ({ OK: 'OK', ALERTA: 'Alerta', ERRO: 'Erro' })[c.val.status] || c.val.status : 'OK'}</span>` : `<span class="hint">${soLer() && !c.lib ? 'aguardando liberação' : 'sem escala'}</span>`}</td><td>${libPill(c)}</td></tr>`).join('') || `<tr><td colspan="10" class="empty">Ninguém com esses filtros.</td></tr>`}</table></div>
       ${L.length > 400 ? '<p class="hint" style="padding:8px 16px">Mostrando 400. Baixe o Excel para ver todos.</p>' : ''}</section>`;
   m.onchange = e => { if (trataCascata(R, todos, e.target)) vRelacao(m); };
   m.querySelectorAll('[data-r]').forEach(el => {

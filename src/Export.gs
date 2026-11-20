@@ -106,7 +106,7 @@ function exportPdf_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Nenhum colaborador selecionado.');
   if (mats.length > 500) throw new Error('Gere no máximo 500 colaboradores por arquivo.');
-  const cfg = cfg_(), esc = escalasPorMatricula_(/^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
+  const cfg = cfg_(), esc = escalasParaUsuario_(u, /^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')) ? d.semana : /^\d{4}-\d{2}$/.test(String(d.mes || '')) ? d.mes + '-01' : null);
   const cols = ler_('Colaboradores')
     .filter(function (c) { return mats.indexOf(c.matricula) >= 0 && c.ativo !== 'N' && podeVer_(u, c); })
     .sort(ordemVisao_);
