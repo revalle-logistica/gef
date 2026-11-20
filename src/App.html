@@ -318,12 +318,17 @@ function barraFiltros(comSit) {
   if (comSit) {
     const base = filtrados(true), n = k => base.filter(c => st(c) === k).length, sitV = f.tele ? 'tele' : f.lib ? 'lib:' + f.lib : f.ext || f.st || '';
     const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' · ' + q : ''}</option>`;
-    sit = `<label class="cb sit${sitV ? ' on' : ''}"><small>Situação</small><select data-ff="sit">${so('', 'Todas')}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA', 'NAO'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select></label>`;
+    sit = `<label class="cb sit${sitV ? ' on' : ''}"><small>Situação</small><select data-ff="sit">${so('', 'Todas')}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select></label>`;
+  }
+  if (comSit && soLer()) {
+    const base = filtrados(true), n = k => base.filter(c => libSt(c) === k).length;
+    sit += `</div><div class="fx-row rcs"><div class="seg dpl"><span>Liberação</span><button type="button" data-dpl="" aria-pressed="${!f.lib}">Todas<i>${base.length}</i></button>${[['ALT', 'Alteradas'], ['NOVA', 'Novas'], ['VISTA', 'Vistas']].map(([k, t]) => `<button type="button" data-dpl="${k}" aria-pressed="${f.lib === k}" class="${k === 'ALT' && n(k) ? 'alt' : ''}">${t}<i>${n(k)}</i></button>`).join('')}</div>`;
   }
   return cascataHtml(f, colsEsc(), { direita: sit, n: (comSit ? filtrados() : filtrados(true)).length, ativo: f.st || f.lib || f.ext || f.tele || f.q });
 }
 function trataFiltro(el) {
   const f = S.f;
+  if (el.dataset && el.dataset.dpl !== undefined) { f.lib = f.lib === el.dataset.dpl ? '' : el.dataset.dpl; if (f.lib) { f.st = ''; f.tele = ''; f.ext = ''; } return true; }
   if (el.dataset && el.dataset.ff === 'sit' && el.tagName === 'SELECT') { const v = el.value; f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; return true; }
   return trataCascata(f, colsEsc(), el, { limpar: () => { Object.assign(f, { st: '', lib: '', tele: '', ext: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); } });
 }
