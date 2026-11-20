@@ -61,7 +61,7 @@ function vQlp(m) {
   const revs = uniq(S.cols.map(c => c.revenda).concat(S.qlp.map(r => r.revenda)));
   if (!revs.includes(Q.rev)) Q.rev = revs[0] || '';
   const doRev = S.cols.filter(c => c.revenda === Q.rev);
-  if (!Q.vis) Q.vis = S.f.vis && S.f.vis !== 'todos' ? S.f.vis : 'entrega';
+  if (!Q.vis) Q.vis = ({ entrega: 'entrega', arm: 'arm', adm: 'adm' })[S.f.dep] || (S.f.dep && /^p_/.test(S.f.dep) ? S.f.dep : 'entrega');
   const R = S.qlp.filter(r => r.revenda === Q.rev && r.area === Q.vis);
   const grs = qlpGrupos(Q.rev, Q.vis, R.map(r => r.grupo).filter(g => g !== '*'));
   if (Q.grp && !grs.includes(Q.grp)) Q.grp = '';
@@ -80,10 +80,11 @@ function vQlp(m) {
   const gl = QLP_GL[Q.vis];
   m.innerHTML = `<section class="card">
     <div class="esc-top">${barraSemana()}<button type="button" class="btn sm dk" data-q="novo" style="margin:8px 0">+ Nova necessidade</button></div>
-    <div class="vt vt2">${visoes().map(([k]) => `<button type="button" data-qv="${k}" aria-pressed="${Q.vis === k}">${VIS_CURTO[k]}<i>${nArea(k)}</i></button>`).join('')}</div>
-    <div class="fbar">${revs.length > 1 ? `<select data-qf="rev" aria-label="Revenda">${revs.map(v => `<option ${v === Q.rev ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
-      ${gl ? `<select data-qf="grp" class="${Q.grp ? 'on' : ''}" aria-label="${gl}">${opts(grs, Q.grp, QLP_TODOS[Q.vis])}</select>` : ''}
-      <span class="cnt">${RV.length} necessidade${RV.length === 1 ? '' : 's'} cadastrada${RV.length === 1 ? '' : 's'}</span></div>
+    <div class="fx"><div class="fx-row"><div class="cad">
+      ${revs.length > 1 ? `<label class="cb"><small>Revenda</small><select data-qf="rev">${revs.map(v => `<option ${v === Q.rev ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label><i class="sep">›</i>` : ''}
+      <label class="cb on"><small>Departamento</small><select data-qf="vis">${visoes().map(([k]) => `<option value="${k}" ${Q.vis === k ? 'selected' : ''}>${esc(VIS_CURTO[k])} · ${nArea(k)}</option>`).join('')}</select></label>
+      ${gl ? `<i class="sep">›</i><label class="cb${Q.grp ? ' on' : ''}"><small>${gl}</small><select data-qf="grp">${opts(grs, Q.grp, QLP_TODOS[Q.vis])}</select></label>` : ''}</div></div>
+      <div class="fx-row fx-ft"><span class="cnt"><b>${RV.length}</b> necessidade${RV.length === 1 ? '' : 's'} cadastrada${RV.length === 1 ? '' : 's'}</span></div></div>
     ${RV.length ? `<div class="qk">
       <div class="${falta ? 'qk-r' : 'qk-g'}"><b>${falta}</b><span>${falta === 1 ? 'pessoa faltando' : 'pessoas faltando'}<small>soma das faixas descobertas</small></span></div>
       <div class="qk-g"><b>${ok}<small>/${tot}</small></b><span>faixas cobertas<small>na semana</small></span></div>
@@ -93,7 +94,7 @@ function vQlp(m) {
     <p class="hint" style="margin:14px 2px 0">Confronto com a escala real da semana: folgas, férias, ajustes do dia e virada da noite. Conta como cobrindo a faixa quem trabalha <b>mais da metade</b> dela (passe o mouse na célula para ver quem cobre tudo, a maior parte ou só metade ou menos). O intervalo de refeição não entra porque a escala não registra o horário dele.${S.user.perfil === 'ADMIN' ? '' : ' Contam só os colaboradores vinculados a você.'}</p></div></section>`;
   ligaSemana(m, () => vQlp(m));
   m.querySelectorAll('[data-qv]').forEach(b => { b.onclick = () => { Q.vis = b.dataset.qv; Q.grp = ''; vQlp(m); }; });
-  m.querySelectorAll('[data-qf]').forEach(s => { s.onchange = () => { Q[s.dataset.qf] = s.value; if (s.dataset.qf === 'rev') Q.grp = ''; vQlp(m); }; });
+  m.querySelectorAll('[data-qf]').forEach(s => { s.onchange = () => { Q[s.dataset.qf] = s.value; if (s.dataset.qf !== 'grp') Q.grp = ''; vQlp(m); }; });
   m.querySelector('[data-q=novo]').onclick = () => qlpEditor(null, { revenda: Q.rev, area: Q.vis, grupo: Q.grp || '*' });
   m.querySelectorAll('[data-qn]').forEach(b => { b.onclick = () => { const [g, f] = b.dataset.qn.split('|'); qlpEditor(null, { revenda: Q.rev, area: Q.vis, grupo: gl ? g : '*', funcao: f }); }; });
   m.querySelectorAll('[data-qe]').forEach(b => { b.onclick = () => qlpEditor(S.qlp.find(r => r.id === b.dataset.qe)); });
