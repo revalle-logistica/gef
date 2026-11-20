@@ -523,3 +523,40 @@ function vistoDP_(u, d) {
     return { vistos: n, libs: out };
   });
 }
+
+/**
+ * Rodar uma vez no editor (Executar ▸ anteciparInicioInterno): as escalas que começam no início oficial
+ * (DATA_INICIO_5X2) passam a começar no início interno (DATA_INICIO_INTERNO). Dias e horários não mudam.
+ * As liberações para o DP acompanham a nova data, para não aparecerem como "alteradas".
+ */
+function anteciparInicioInterno() {
+  const cfg = cfg_(), de = String(cfg.DATA_INICIO_5X2 || ''), para = String(cfg.DATA_INICIO_INTERNO || '');
+  if (!de || !para || para >= de) throw new Error('DATA_INICIO_INTERNO precisa ser antes de DATA_INICIO_5X2.');
+  return comLock_(function () {
+    const antes = escalasPorMatricula_(para), linhas = ler_('Escalas');
+    const ocupado = {};
+    linhas.forEach(function (e) { if (e.vigencia >= para && e.vigencia < de) ocupado[e.matricula] = true; });
+    let n = 0, pulados = 0;
+    linhas.forEach(function (e) {
+      if (e.vigencia !== de) return;
+      if (ocupado[e.matricula]) { pulados++; return; }
+      e.vigencia = para; n++;
+    });
+    if (!n) return 'Nenhuma escala começando em ' + de + '.';
+    gravarTudo_('Escalas', linhas);
+    const depois = escalasPorMatricula_(para), libs = ler_('LiberacoesDP');
+    let nl = 0;
+    libs.forEach(function (l) {
+      const a = antes[l.matricula], d = depois[l.matricula]; if (!a || !d) return;
+      const sa = assinaturaEscala(a), sd = assinaturaEscala(d);
+      if (sa === sd) return;
+      if (l.assinatura === sa) { l.assinatura = sd; nl++; }
+      if (l.vistoAssinatura === sa) l.vistoAssinatura = sd;
+    });
+    if (nl) gravarTudo_('LiberacoesDP', libs);
+    log_({ login: 'sistema' }, '', 'anteciparInicio', n + ' escala(s) de ' + de + ' para ' + para);
+    const msg = n + ' escala(s) passaram a começar em ' + para + ' (' + nl + ' liberação(ões) para o DP acompanharam)' + (pulados ? '; ' + pulados + ' ficaram como estavam porque já tinham escala nesses dias.' : '.');
+    Logger.log(msg);
+    return msg;
+  });
+}
