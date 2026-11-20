@@ -630,20 +630,19 @@ function turnoC(c) {
   const g = turnoTag(t); return g ? 'Turno ' + g.split('/')[0].slice(1) : t;
 }
 /** Quais recortes aparecem para a escolha atual de departamento e função. */
+/** Localidade: sede ou ponto de apoio (entrega), turno (armazém) ou Administrativo (demais). */
+const localidadeC = c => { const d = depKey(c); return d === 'arm' ? turnoC(c) : d === 'entrega' ? (papelC(c) === 'adm' ? 'Administrativo' : localC(c)) : 'Administrativo'; };
+/** Recorte extra: só o Tipo (rota/puxador) quando a função é motorista da entrega. */
 function recortes(F = S.f) {
-  const fnPapel = F.fn ? papelEntrega(F.fn) : '';
-  if (F.dep === 'entrega') return F.fn && fnPapel === 'mot' ? ['tipo', 'loc'] : F.fn && fnPapel === 'adm' ? ['adm'] : ['loc'];
-  if (F.dep === 'arm') return ['tur'];
-  if (F.dep) return ['adm'];
-  return [];
+  return F.dep === 'entrega' && F.fn && papelEntrega(F.fn) === 'mot' ? ['tipo'] : [];
 }
 const RC_LBL = { tipo: 'Tipo', loc: 'Sede ou ponto de apoio', tur: 'Turno' };
 const RC_VAL = { tipo: tipoMotC, loc: localC, tur: turnoC };
 /** sem = nível a ignorar: ele e os de baixo não filtram (os recortes tipo/loc/tur ignoram só a si mesmos). */
-const NIVEIS = ['rev', 'dep', 'fn'];
+const NIVEIS = ['rev', 'dep', 'fn', 'lc'];
 function passaH(F, c, sem) {
   const ni = NIVEIS.indexOf(sem), ign = k => k === sem || (ni >= 0 && (NIVEIS.indexOf(k) >= ni || !NIVEIS.includes(k)));
-  return (ign('rev') || !F.rev || c.revenda === F.rev) && (ign('dep') || !F.dep || depKey(c) === F.dep) && (ign('fn') || !F.fn || c.vis.funcao === F.fn) &&
+  return (ign('rev') || !F.rev || c.revenda === F.rev) && (ign('dep') || !F.dep || depKey(c) === F.dep) && (ign('fn') || !F.fn || c.vis.funcao === F.fn) && (ign('lc') || !F.lc || localidadeC(c) === F.lc) &&
     (ign('tipo') || !F.tipo || (papelC(c) === 'mot' && tipoMotC(c) === F.tipo)) && (ign('loc') || !F.loc || localC(c) === F.loc) && (ign('tur') || !F.tur || turnoC(c) === F.tur);
 }
 const passaHier = (c, sem) => passaH(S.f, c, sem);
@@ -656,6 +655,7 @@ function arrumaH(F, P, o = {}) {
   if (F.dep && !P.some(c => passaH(F, c, 'dep') && depKey(c) === F.dep)) F.dep = '';
   if (o.depObrig && !F.dep) { const d = P.find(c => passaH(F, c, 'dep')); F.dep = d ? depKey(d) : ''; }
   if (F.fn && !P.some(c => passaH(F, c, 'fn') && c.vis.funcao === F.fn)) F.fn = '';
+  if (F.lc && !P.some(c => passaH(F, c, 'lc') && localidadeC(c) === F.lc)) F.lc = '';
   const rc2 = recortes(F); ['tipo', 'loc', 'tur'].forEach(k => { if (!rc2.includes(k)) F[k] = ''; });
 }
 const arrumaFiltros = () => arrumaH(S.f, colsEsc());
@@ -666,9 +666,12 @@ function cascataHtml(F, P, o = {}) {
     const ops = [...mapa.keys()].sort((a, b) => String(nome(a)).localeCompare(String(nome(b)), 'pt'));
     return `<label class="cb${F[k] ? ' on' : ''}"><small>${lbl}</small><select data-ff="${k}">${todos === null ? '' : `<option value="">${todos}</option>`}${ops.map(v => `<option value="${esc(v)}" ${F[k] === v ? 'selected' : ''}>${esc(nome(v))} · ${mapa.get(v)}</option>`).join('')}</select></label>`;
   };
-  const revs = nPor('rev', c => c.revenda), deps = nPor('dep', depKey), fns = nPor('fn', c => c.vis.funcao);
+  const revs = nPor('rev', c => c.revenda), deps = nPor('dep', depKey), fns = nPor('fn', c => c.vis.funcao), lcs = nPor('lc', localidadeC);
+  const pesoL = v => v === 'Sede' ? 0 : /^Turno/.test(v) ? 1 : v === 'Administrativo' ? 8 : v === 'Não informado' ? 9 : 5;
+  const selL = () => { const ops = [...lcs.keys()].sort((a, b) => pesoL(a) - pesoL(b) || String(a).localeCompare(String(b), 'pt'));
+    return `<label class="cb${F.lc ? ' on' : ''}"><small>Localidade</small><select data-ff="lc"><option value="">Todas</option>${ops.map(v => `<option value="${esc(v)}" ${F.lc === v ? 'selected' : ''}>${esc(v)} · ${lcs.get(v)}</option>`).join('')}</select></label>`; };
   const cadeia = (revs.size > 1 || F.rev ? sel('rev', 'Revenda', revs, o.revObrig ? null : 'Todas') + '<i class="sep">›</i>' : '') +
-    sel('dep', 'Departamento', deps, o.depObrig ? null : 'Todos', depNome) + '<i class="sep">›</i>' + sel('fn', 'Função', fns, 'Todas');
+    sel('dep', 'Departamento', deps, o.depObrig ? null : 'Todos', depNome) + '<i class="sep">›</i>' + sel('fn', 'Função', fns, 'Todas') + '<i class="sep">›</i>' + selL();
   const peso = v => v === 'Sede' || v === 'Rota' ? 0 : v === 'Puxador' ? 1 : v === 'Administrativo' ? 8 : v === 'Não informado' ? 9 : 5;
   const rc = recortes(F).map(k => {
     if (k === 'adm') return `<div class="seg"><span>Turno</span><b class="fixo">Administrativo</b></div>`;
@@ -676,7 +679,7 @@ function cascataHtml(F, P, o = {}) {
     if (ops.length > 6) return `<div class="seg"><span>${RC_LBL[k]}</span><select data-ff="${k}" class="${F[k] ? 'on' : ''}"><option value="">Todos</option>${ops.map(v => `<option value="${esc(v)}" ${F[k] === v ? 'selected' : ''}>${esc(v)} · ${mp.get(v)}</option>`).join('')}</select></div>`;
     return `<div class="seg"><span>${RC_LBL[k]}</span><button type="button" data-rc="${k}" data-v="" aria-pressed="${!F[k]}">Todos</button>${ops.map(v => `<button type="button" data-rc="${k}" data-v="${esc(v)}" aria-pressed="${F[k] === v}">${esc(v)}<i>${mp.get(v)}</i></button>`).join('')}</div>`;
   }).join('');
-  const ativo = (!o.revObrig && F.rev) || (!o.depObrig && F.dep) || F.fn || F.tipo || F.loc || F.tur || o.ativo;
+  const ativo = (!o.revObrig && F.rev) || (!o.depObrig && F.dep) || F.fn || F.lc || F.tipo || F.loc || F.tur || o.ativo;
   return `<div class="fx-row"><div class="cad">${cadeia}</div>${o.direita || ''}</div>
     ${rc ? `<div class="fx-row rcs">${rc}</div>` : ''}
     ${o.n !== undefined ? `<div class="fx-row fx-ft"><span class="cnt"><b>${o.n}</b> de ${P.length} colaboradores</span>${ativo ? '<button type="button" class="fx-lk" data-ac="limpaf">Limpar filtros</button>' : ''}</div>` : ''}`;
@@ -685,10 +688,10 @@ function cascataHtml(F, P, o = {}) {
 function trataCascata(F, P, el, o = {}) {
   if (!el || !el.dataset) return false;
   if (el.dataset.rc !== undefined) { F[el.dataset.rc] = F[el.dataset.rc] === el.dataset.v ? '' : el.dataset.v; return true; }
-  if (el.dataset.ac === 'limpaf') { ['fn', 'tipo', 'loc', 'tur'].concat(o.revObrig ? [] : ['rev']).concat(o.depObrig ? [] : ['dep']).forEach(k => { F[k] = ''; }); if (o.limpar) o.limpar(); arrumaH(F, P, o); return true; }
-  const k = el.dataset.ff; if (!k || el.tagName !== 'SELECT' || !['rev', 'dep', 'fn', 'tipo', 'loc', 'tur'].includes(k)) return false;
+  if (el.dataset.ac === 'limpaf') { ['fn', 'lc', 'tipo', 'loc', 'tur'].concat(o.revObrig ? [] : ['rev']).concat(o.depObrig ? [] : ['dep']).forEach(k => { F[k] = ''; }); if (o.limpar) o.limpar(); arrumaH(F, P, o); return true; }
+  const k = el.dataset.ff; if (!k || el.tagName !== 'SELECT' || !['rev', 'dep', 'fn', 'lc', 'tipo', 'loc', 'tur'].includes(k)) return false;
   F[k] = el.value;
-  if (k === 'rev') { F.fn = ''; } if (k === 'dep') { F.fn = ''; F.tipo = ''; F.loc = ''; F.tur = ''; } if (k === 'fn') { F.tipo = ''; }
+  if (k === 'rev') { F.fn = ''; } if (k === 'dep') { F.fn = ''; F.lc = ''; F.tipo = ''; F.loc = ''; F.tur = ''; } if (k === 'fn') { F.tipo = ''; }
   arrumaH(F, P, o); return true;
 }
 /** Escalas e Mês: a cascata + situação. */
