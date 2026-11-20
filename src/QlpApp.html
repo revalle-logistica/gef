@@ -45,7 +45,7 @@ function qlpNec(r, fi, i) {
 function qlpCalc(r) {
   const P = qlpPessoas(r);
   let falta = 0, sobra = 0, ok = 0, tot = 0;
-  const ini = S.cfg.DATA_INICIO_5X2 || '';
+  const ini = inicioEscala(S.cfg);
   const cel = r.faixas.map((f, fi) => [0, 1, 2, 3, 4, 5, 6].map(i => {
     if (ini && isoMaisDias(S.semana, i) < ini) return { antes: true, nec: 0, n: 0, d: 0, todo: [], maior: [], menor: [], parte: [] };
     const nc = qlpNec(r, fi, i), cv = qlpCobre(P, f, i), d = cv.n - nc.q;
@@ -110,13 +110,13 @@ function qlpCard(r, k) {
   const fd = feriadosDe(r.revenda);
   const dias = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = isoMaisDias(S.semana, i), f = fd.find(x => x.data === d); return `<th class="${f ? 'fer' : ''}" ${f ? `title="${esc(f.descricao)}"` : ''}>${DIAS_CURTO[i]}<small>${ddmm(d)}${f ? ' ★' : ''}</small></th>`; }).join('');
   const linhas = r.faixas.map((f, fi) => `<tr><th class="fx">${esc(f.de)}–${esc(f.ate)}</th>${k.cel[fi].map((x, i) => {
-    if (x.antes) return `<td class="qz" title="Antes do início da escala 5x2 (${dataBr(S.cfg.DATA_INICIO_5X2)}): não entra na conta">–</td>`;
+    if (x.antes) return `<td class="qz" title="Antes do início da escala 5x2 na Revalle (${dataBr(inicioEscala(S.cfg))}): não entra na conta">–</td>`;
     const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
     const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
       (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.maior.length ? `\nMaior parte (conta): ${x.maior.map(qlpNm).join(', ')}` : '') + (x.menor.length ? `\nMetade ou menos (não conta): ${x.menor.map(qlpNm).join(', ')}` : '');
     return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.menor.length ? `<small class="qp">+${x.menor.length} metade ou menos</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
   }).join('')}</tr>`).join('');
-  const ini5 = S.cfg.DATA_INICIO_5X2 || '', antes = i => ini5 && isoMaisDias(S.semana, i) < ini5;
+  const ini5 = inicioEscala(S.cfg), antes = i => ini5 && isoMaisDias(S.semana, i) < ini5;
   const cnt = t => [0, 1, 2, 3, 4, 5, 6].map(i => antes(i) ? 0 : k.P.filter(c => c.sem[i] && c.sem[i].tipo === t).length);
   const trab = cnt('T'), ns = cnt('N'), fer = cnt('FER');
   const rodape = `<tr class="qt"><th>Trabalham no dia</th>${trab.map(n => `<td>${n}</td>`).join('')}</tr>` +

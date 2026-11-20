@@ -150,8 +150,8 @@ async function carregar() {
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.sincFerias = r.sincFerias || null;
   S.qlp = r.qlp || []; S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
-  if (!S.semana) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.semana = segundaDaSemana(h > i ? h : i); }
-  if (!S.mes) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.mes = (h > i ? h : i).slice(0, 7); }
+  if (!S.semana) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.semana = segundaDaSemana(h > i ? h : i); }
+  if (!S.mes) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.mes = (h > i ? h : i).slice(0, 7); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
@@ -458,7 +458,7 @@ const intTxt = n => { n = +n || 0; return Math.floor(n / 60) + ':' + String(n % 
 const campoInt = (attr, v) => `<input type="text" inputmode="numeric" class="int" ${attr} value="${intTxt(v)}" placeholder="1:00" maxlength="6" title="Digite o intervalo em horas:minutos (ex.: 1:00, 1:12, 0:30)" aria-label="Intervalo">`;
 /** Lê o campo de intervalo: marca em vermelho se não entender e devolve null. */
 function leInt(el) { const v = intMin(el.value); el.classList.toggle('bad', v == null); return v; }
-function vigPadrao() { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; return h > i ? h : i; }
+function vigPadrao() { const h = hoje(), i = inicioEscala(S.cfg) || h; return h > i ? h : i; }
 function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, S.cfg.PADRAO_ENTRADA, S.cfg.PADRAO_SAIDA, S.cfg.PADRAO_INTERVALO) }; }
 function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
 const domFixo = () => false;
@@ -1505,11 +1505,12 @@ function desenhaUsuarios(m) {
 /* ================= regras ================= */
 function vRegras(m) {
   const c = S.cfg, adm = S.user.perfil === 'ADMIN';
-  const P = parametrosRegra(c, hoje() < c.DATA_INICIO_5X2 ? c.DATA_INICIO_5X2 : hoje());
+  const P = parametrosRegra(c, hoje() < inicioEscala(c) ? inicioEscala(c) : hoje());
   const cards = [
     ['5 dias + 2 folgas', '5x2', 'Toda semana: 5 dias de trabalho e 2 de folga.'],
+    ['Início da escala', dataBr(inicioEscala(c)).slice(0, 5), c.DATA_INICIO_INTERNO && c.DATA_INICIO_INTERNO !== c.DATA_INICIO_5X2 ? `Na Revalle começa em ${dataBr(c.DATA_INICIO_INTERNO)} (antecipado). Oficial: ${dataBr(c.DATA_INICIO_5X2)}.` : `A nova jornada começa em ${dataBr(c.DATA_INICIO_5X2)}.`],
     ['Domingo', 'Livre', 'Domingo pode ser dia de trabalho; o descanso cai num domingo ao menos 1 vez a cada 3 semanas.'],
-    ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(c.DATA_INICIO_5X2)} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
+    ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(inicioEscala(c))} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
     ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${minParaHm(minutosCfg(c.DIARIO_MAX_TRANSICAO))}. Depois: ${minParaHm(minutosCfg(c.DIARIO_MAX_FINAL))}.`],
     ['Motorista e ajudante de entrega', minParaHm(minutosCfg(c.DIARIO_MAX_ENTREGA)), 'Jornada diária máxima para motoristas e ajudantes do setor Entrega.'],
     ['Intervalo', '1h a 2h', 'Acima de 6h de trabalho; 15 min entre 4h e 6h (CLT, art. 71).'],

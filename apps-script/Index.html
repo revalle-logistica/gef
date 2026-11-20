@@ -528,8 +528,8 @@ async function carregar() {
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.sincFerias = r.sincFerias || null;
   S.qlp = r.qlp || []; S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
-  if (!S.semana) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.semana = segundaDaSemana(h > i ? h : i); }
-  if (!S.mes) { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; S.mes = (h > i ? h : i).slice(0, 7); }
+  if (!S.semana) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.semana = segundaDaSemana(h > i ? h : i); }
+  if (!S.mes) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.mes = (h > i ? h : i).slice(0, 7); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
@@ -836,7 +836,7 @@ const intTxt = n => { n = +n || 0; return Math.floor(n / 60) + ':' + String(n % 
 const campoInt = (attr, v) => `<input type="text" inputmode="numeric" class="int" ${attr} value="${intTxt(v)}" placeholder="1:00" maxlength="6" title="Digite o intervalo em horas:minutos (ex.: 1:00, 1:12, 0:30)" aria-label="Intervalo">`;
 /** Lê o campo de intervalo: marca em vermelho se não entender e devolve null. */
 function leInt(el) { const v = intMin(el.value); el.classList.toggle('bad', v == null); return v; }
-function vigPadrao() { const h = hoje(), i = S.cfg.DATA_INICIO_5X2 || h; return h > i ? h : i; }
+function vigPadrao() { const h = hoje(), i = inicioEscala(S.cfg) || h; return h > i ? h : i; }
 function escalaPadrao() { return { vigencia: vigPadrao(), dias: semanaModelo(5, S.cfg.PADRAO_ENTRADA, S.cfg.PADRAO_SAIDA, S.cfg.PADRAO_INTERVALO) }; }
 function horasDia(d) { const c = calcDia(d); return c ? minParaHm(c.liquido) : '–'; }
 const domFixo = () => false;
@@ -1883,11 +1883,12 @@ function desenhaUsuarios(m) {
 /* ================= regras ================= */
 function vRegras(m) {
   const c = S.cfg, adm = S.user.perfil === 'ADMIN';
-  const P = parametrosRegra(c, hoje() < c.DATA_INICIO_5X2 ? c.DATA_INICIO_5X2 : hoje());
+  const P = parametrosRegra(c, hoje() < inicioEscala(c) ? inicioEscala(c) : hoje());
   const cards = [
     ['5 dias + 2 folgas', '5x2', 'Toda semana: 5 dias de trabalho e 2 de folga.'],
+    ['Início da escala', dataBr(inicioEscala(c)).slice(0, 5), c.DATA_INICIO_INTERNO && c.DATA_INICIO_INTERNO !== c.DATA_INICIO_5X2 ? `Na Revalle começa em ${dataBr(c.DATA_INICIO_INTERNO)} (antecipado). Oficial: ${dataBr(c.DATA_INICIO_5X2)}.` : `A nova jornada começa em ${dataBr(c.DATA_INICIO_5X2)}.`],
     ['Domingo', 'Livre', 'Domingo pode ser dia de trabalho; o descanso cai num domingo ao menos 1 vez a cada 3 semanas.'],
-    ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(c.DATA_INICIO_5X2)} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
+    ['Limite semanal hoje', minParaHm(P.semanal), `De ${dataBr(inicioEscala(c))} até ${dataBr(c.DATA_40H)}: ${c.LIMITE_SEMANAL_TRANSICAO}h. Depois: ${c.LIMITE_SEMANAL_FINAL}h.`],
     ['Máximo por dia', minParaHm(P.diario), `Na transição, até ${minParaHm(minutosCfg(c.DIARIO_MAX_TRANSICAO))}. Depois: ${minParaHm(minutosCfg(c.DIARIO_MAX_FINAL))}.`],
     ['Motorista e ajudante de entrega', minParaHm(minutosCfg(c.DIARIO_MAX_ENTREGA)), 'Jornada diária máxima para motoristas e ajudantes do setor Entrega.'],
     ['Intervalo', '1h a 2h', 'Acima de 6h de trabalho; 15 min entre 4h e 6h (CLT, art. 71).'],
@@ -2684,7 +2685,7 @@ function qlpNec(r, fi, i) {
 function qlpCalc(r) {
   const P = qlpPessoas(r);
   let falta = 0, sobra = 0, ok = 0, tot = 0;
-  const ini = S.cfg.DATA_INICIO_5X2 || '';
+  const ini = inicioEscala(S.cfg);
   const cel = r.faixas.map((f, fi) => [0, 1, 2, 3, 4, 5, 6].map(i => {
     if (ini && isoMaisDias(S.semana, i) < ini) return { antes: true, nec: 0, n: 0, d: 0, todo: [], maior: [], menor: [], parte: [] };
     const nc = qlpNec(r, fi, i), cv = qlpCobre(P, f, i), d = cv.n - nc.q;
@@ -2749,13 +2750,13 @@ function qlpCard(r, k) {
   const fd = feriadosDe(r.revenda);
   const dias = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = isoMaisDias(S.semana, i), f = fd.find(x => x.data === d); return `<th class="${f ? 'fer' : ''}" ${f ? `title="${esc(f.descricao)}"` : ''}>${DIAS_CURTO[i]}<small>${ddmm(d)}${f ? ' ★' : ''}</small></th>`; }).join('');
   const linhas = r.faixas.map((f, fi) => `<tr><th class="fx">${esc(f.de)}–${esc(f.ate)}</th>${k.cel[fi].map((x, i) => {
-    if (x.antes) return `<td class="qz" title="Antes do início da escala 5x2 (${dataBr(S.cfg.DATA_INICIO_5X2)}): não entra na conta">–</td>`;
+    if (x.antes) return `<td class="qz" title="Antes do início da escala 5x2 na Revalle (${dataBr(inicioEscala(S.cfg))}): não entra na conta">–</td>`;
     const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
     const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
       (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.maior.length ? `\nMaior parte (conta): ${x.maior.map(qlpNm).join(', ')}` : '') + (x.menor.length ? `\nMetade ou menos (não conta): ${x.menor.map(qlpNm).join(', ')}` : '');
     return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.menor.length ? `<small class="qp">+${x.menor.length} metade ou menos</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
   }).join('')}</tr>`).join('');
-  const ini5 = S.cfg.DATA_INICIO_5X2 || '', antes = i => ini5 && isoMaisDias(S.semana, i) < ini5;
+  const ini5 = inicioEscala(S.cfg), antes = i => ini5 && isoMaisDias(S.semana, i) < ini5;
   const cnt = t => [0, 1, 2, 3, 4, 5, 6].map(i => antes(i) ? 0 : k.P.filter(c => c.sem[i] && c.sem[i].tipo === t).length);
   const trab = cnt('T'), ns = cnt('N'), fer = cnt('FER');
   const rodape = `<tr class="qt"><th>Trabalham no dia</th>${trab.map(n => `<td>${n}</td>`).join('')}</tr>` +

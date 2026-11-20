@@ -53,6 +53,9 @@ function minutosCfg(v) {
 /** Motorista ou ajudante de entrega (setor Entrega): podem ter jornada diária maior (parâmetro DIARIO_MAX_ENTREGA). */
 function ehEntregaCampo(c) { return !!c && areaSetor(c.setor) === 'ent' && papelEntrega(c.funcao) !== 'adm'; }
 
+/** Data em que a escala 5x2 começa na Revalle: a interna (antecipada) ou, se não houver, a oficial. */
+function inicioEscala(cfg) { return String((cfg && (cfg.DATA_INICIO_INTERNO || cfg.DATA_INICIO_5X2)) || ''); }
+
 function parametrosRegra(cfg, vigencia, entrega) {
   var final = !!(vigencia && cfg.DATA_40H && String(vigencia) >= String(cfg.DATA_40H));
   var normal = minutosCfg(final ? cfg.DIARIO_MAX_FINAL : cfg.DIARIO_MAX_TRANSICAO), ent = minutosCfg(cfg.DIARIO_MAX_ENTREGA);
@@ -78,8 +81,8 @@ function validarEscala(esc, ctx) {
   var trab = 0, folgas = 0, total = 0, blocos = [], noturno = false;
 
   if (!esc.vigencia) add('erro', 'Informe a data de início da escala (vigência).');
-  else if (cfg.DATA_INICIO_5X2 && String(esc.vigencia) < String(cfg.DATA_INICIO_5X2))
-    add('alerta', 'A vigência começa antes de ' + String(cfg.DATA_INICIO_5X2).split('-').reverse().join('/') + ', data em que a nova jornada passa a valer.');
+  else if (inicioEscala(cfg) && String(esc.vigencia) < inicioEscala(cfg))
+    add('alerta', 'A vigência começa antes de ' + inicioEscala(cfg).split('-').reverse().join('/') + ', data em que a escala 5x2 começa na Revalle.');
   if (dias.length !== 7) add('erro', 'A escala precisa ter os 7 dias da semana.');
 
   for (var i = 0; i < 7; i++) {
