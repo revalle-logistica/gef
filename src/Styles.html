@@ -336,4 +336,26 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .stc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .pill.lib { font-size: 11px; padding: 2px 8px; }
 .p-NOVA { background: #e0e9ff; color: #1446c8; }
+
+/* filtros em cascata (clean) */
+.fx{padding:12px 16px 10px;display:grid;gap:10px;border-bottom:1px solid var(--ln)}
+.fx-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.fx .cad{display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap;flex:1 1 auto}
+.fx .sep{font-style:normal;color:var(--fa);font-size:18px;line-height:34px;padding:0 2px}
+.fx .cb{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.fx .cb small{font:700 10.5px var(--fd);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding-left:12px}
+.fx .cb select{width:auto;max-width:260px;padding:7px 32px 7px 12px;font-size:13.5px;border-radius:10px;border:1px solid var(--ln);background-color:var(--sf);font-weight:600;color:var(--ink)}
+.fx .cb.on select{border-color:var(--ac);background-color:var(--acs);color:var(--b8)}
+.fx .cb.sit{margin-left:auto}
+.fx .rcs{gap:18px;align-items:center}
+.fx .seg{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.fx .seg>span{font:700 10.5px var(--fd);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin-right:6px}
+.fx .seg button{border:0;background:var(--sunk);color:var(--ink);padding:6px 12px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.fx .seg button i{font-style:normal;font-size:11px;color:var(--mut);font-weight:700}
+.fx .seg button[aria-pressed=true]{background:var(--b8);color:#fff}.fx .seg button[aria-pressed=true] i{color:rgba(255,255,255,.75)}
+.fx .seg select{width:auto;padding:6px 30px 6px 12px;border-radius:99px;font-size:13px}
+.fx .seg .fixo{background:var(--sunk);padding:6px 12px;border-radius:99px;font-size:13px;color:var(--mut)}
+.fx .fx-ft{justify-content:space-between;align-items:center}
+.fx .cnt{font-size:12.5px;color:var(--mut)}.fx .cnt b{color:var(--ink)}
+@media(max-width:700px){.fx .cad{flex-direction:column;align-items:stretch}.fx .sep{display:none}.fx .cb,.fx .cb select{max-width:none;width:100%}.fx .cb.sit{margin-left:0;width:100%}}
 </style>

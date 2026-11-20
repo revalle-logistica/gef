@@ -346,6 +346,28 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .stc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .pill.lib { font-size: 11px; padding: 2px 8px; }
 .p-NOVA { background: #e0e9ff; color: #1446c8; }
+
+/* filtros em cascata (clean) */
+.fx{padding:12px 16px 10px;display:grid;gap:10px;border-bottom:1px solid var(--ln)}
+.fx-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.fx .cad{display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap;flex:1 1 auto}
+.fx .sep{font-style:normal;color:var(--fa);font-size:18px;line-height:34px;padding:0 2px}
+.fx .cb{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.fx .cb small{font:700 10.5px var(--fd);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding-left:12px}
+.fx .cb select{width:auto;max-width:260px;padding:7px 32px 7px 12px;font-size:13.5px;border-radius:10px;border:1px solid var(--ln);background-color:var(--sf);font-weight:600;color:var(--ink)}
+.fx .cb.on select{border-color:var(--ac);background-color:var(--acs);color:var(--b8)}
+.fx .cb.sit{margin-left:auto}
+.fx .rcs{gap:18px;align-items:center}
+.fx .seg{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.fx .seg>span{font:700 10.5px var(--fd);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin-right:6px}
+.fx .seg button{border:0;background:var(--sunk);color:var(--ink);padding:6px 12px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.fx .seg button i{font-style:normal;font-size:11px;color:var(--mut);font-weight:700}
+.fx .seg button[aria-pressed=true]{background:var(--b8);color:#fff}.fx .seg button[aria-pressed=true] i{color:rgba(255,255,255,.75)}
+.fx .seg select{width:auto;padding:6px 30px 6px 12px;border-radius:99px;font-size:13px}
+.fx .seg .fixo{background:var(--sunk);padding:6px 12px;border-radius:99px;font-size:13px;color:var(--mut)}
+.fx .fx-ft{justify-content:space-between;align-items:center}
+.fx .cnt{font-size:12.5px;color:var(--mut)}.fx .cnt b{color:var(--ink)}
+@media(max-width:700px){.fx .cad{flex-direction:column;align-items:stretch}.fx .sep{display:none}.fx .cb,.fx .cb select{max-width:none;width:100%}.fx .cb.sit{margin-left:0;width:100%}}
 </style>
 
 </head>
@@ -359,7 +381,7 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 'use strict';
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
-  f: { rev: '', st: '', q: '', tele: '', vis: '' }, sel: new Set(), pnl: { rev: '', vis: '' },
+  f: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', q: '', tele: '', vis: 'todos' }, sel: new Set(), pnl: { rev: '', vis: '' },
   imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], ajustes: [], semana: '', mes: '',
   cad: { aba: 'col', rev: '', area: 'arm', f: 'pend', q: '', sel: new Set() },
   rel: { rev: '', area: '', sit: '', sup: '', q: '' } };
@@ -512,9 +534,8 @@ async function carregar() {
   revalida();
   const ok = new Set(S.cols.map(c => c.matricula));
   [...S.sel].forEach(m => { if (!ok.has(m)) S.sel.delete(m); });
-  const prim = (visoes().find(([k]) => S.cols.some(c => c.vis.area === k)) || ['todos'])[0];
-  if (!S.f.vis) S.f.vis = prim;
-  if (!S.pnl.vis) S.pnl.vis = prim;
+  if (S.f.dep && !S.cols.some(c => depKey(c) === S.f.dep)) S.f.dep = '';
+  if (!S.pnl.vis) S.pnl.vis = (visoes().find(([k]) => S.cols.some(c => c.vis.area === k)) || ['todos'])[0];
   render();
 }
 const feriasDe = m => S.ferias.filter(f => f.matricula === m);
@@ -594,10 +615,88 @@ function atualizaVisoesExtra() {
   VIS_EXTRA = [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
   VIS_EXTRA.forEach(([k, n]) => { VIS_TXT[k] = n + ' · função'; VIS_CURTO[k] = n; });
 }
-function filtrados(ignSt, ignVis) {
+/* ---- filtro em cascata: Revenda › Departamento › Função, e o recorte de cada função ---- */
+const DEP_NOME = { entrega: 'Entrega', arm: 'Armazém', adm: 'Administrativo-Logística' };
+const depKey = c => c.vis.proprio ? c.vis.area : ({ arm: 'arm', ent: 'entrega' })[areaSetor(c.setor)] || 'adm';
+const depNome = k => DEP_NOME[k] || ((S.cols.find(c => depKey(c) === k) || { vis: {} }).vis.areaNome) || k;
+const papelC = c => depKey(c) === 'entrega' ? papelEntrega(c.funcao) : '';
+const tipoMotC = c => normTxt(c.tipoMot) === 'puxador' ? 'Puxador' : 'Rota';
+const localC = c => { const l = String(c.lotacao || '').trim(); return !l ? 'Não informado' : ehSede(l) ? 'Sede' : l; };
+function turnoC(c) {
+  if (depKey(c) !== 'arm') return 'Administrativo';
+  const t = String(c.turno || '').trim(); if (!t) return 'Não informado';
+  if (normTxt(t) === 'administrativo') return 'Administrativo';
+  const g = turnoTag(t); return g ? 'Turno ' + g.split('/')[0].slice(1) : t;
+}
+/** Quais recortes aparecem para a escolha atual de departamento e função. */
+function recortes() {
+  const f = S.f, fnPapel = f.fn ? papelEntrega(f.fn) : '';
+  if (f.dep === 'entrega') return f.fn && fnPapel === 'mot' ? ['tipo', 'loc'] : f.fn && fnPapel === 'adm' ? ['adm'] : ['loc'];
+  if (f.dep === 'arm') return ['tur'];
+  if (f.dep) return ['adm'];
+  return [];
+}
+const RC_LBL = { tipo: 'Tipo', loc: 'Sede ou ponto de apoio', tur: 'Turno' };
+const RC_VAL = { tipo: tipoMotC, loc: localC, tur: turnoC };
+/** sem = nível a ignorar: ele e os de baixo não filtram (os recortes tipo/loc/tur ignoram só a si mesmos). */
+const NIVEIS = ['rev', 'dep', 'fn'];
+function passaHier(c, sem) {
+  const f = S.f, ni = NIVEIS.indexOf(sem), ign = k => k === sem || (ni >= 0 && (NIVEIS.indexOf(k) >= ni || !NIVEIS.includes(k)));
+  return (ign('rev') || !f.rev || c.revenda === f.rev) && (ign('dep') || !f.dep || depKey(c) === f.dep) && (ign('fn') || !f.fn || c.vis.funcao === f.fn) &&
+    (ign('tipo') || !f.tipo || (papelC(c) === 'mot' && tipoMotC(c) === f.tipo)) && (ign('loc') || !f.loc || localC(c) === f.loc) && (ign('tur') || !f.tur || turnoC(c) === f.tur);
+}
+/** Limpa o que não faz mais sentido depois de trocar um nível de cima. */
+function arrumaFiltros() {
+  const f = S.f, rc = recortes();
+  ['tipo', 'loc', 'tur'].forEach(k => { if (!rc.includes(k)) f[k] = ''; });
+  if (f.dep && !S.cols.some(c => passaHier(c, 'dep') && depKey(c) === f.dep)) f.dep = '';
+  if (f.fn && !S.cols.some(c => passaHier(c, 'fn') && c.vis.funcao === f.fn)) f.fn = '';
+}
+/** Barra de filtros (Escalas e Mês). comSit = mostra a situação da escala. */
+function barraFiltros(comSit) {
+  const f = S.f, nPor = (sem, fn) => { const m = new Map(); S.cols.forEach(c => { if (passaHier(c, sem)) { const k = fn(c); m.set(k, (m.get(k) || 0) + 1); } }); return m; };
+  const sel = (k, lbl, mapa, todos, nome = x => x) => {
+    const ops = [...mapa.keys()].sort((a, b) => String(nome(a)).localeCompare(String(nome(b)), 'pt'));
+    return `<label class="cb${f[k] ? ' on' : ''}"><small>${lbl}</small><select data-ff="${k}"><option value="">${todos}</option>${ops.map(v => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(nome(v))} · ${mapa.get(v)}</option>`).join('')}</select></label>`;
+  };
+  const revs = nPor('rev', c => c.revenda), deps = nPor('dep', depKey), fns = nPor('fn', c => c.vis.funcao);
+  const cadeia = (revs.size > 1 || f.rev ? sel('rev', 'Revenda', revs, 'Todas') + '<i class="sep">›</i>' : '') +
+    sel('dep', 'Departamento', deps, 'Todos', depNome) + '<i class="sep">›</i>' + sel('fn', 'Função', fns, 'Todas');
+  const rc = recortes().map(k => {
+    if (k === 'adm') return `<div class="seg"><span>Turno</span><b class="fixo">Administrativo</b></div>`;
+    const mp = nPor(k, RC_VAL[k]);
+    const peso = v => v === 'Sede' || v === 'Rota' ? 0 : v === 'Puxador' ? 1 : v === 'Administrativo' ? 8 : v === 'Não informado' ? 9 : 5;
+    const ops = [...mp.keys()].sort((a, b) => peso(a) - peso(b) || String(a).localeCompare(String(b), 'pt'));
+    if (ops.length > 6) return `<div class="seg"><span>${RC_LBL[k]}</span><select data-ff="${k}" class="${f[k] ? 'on' : ''}"><option value="">Todos</option>${ops.map(v => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(v)} · ${mp.get(v)}</option>`).join('')}</select></div>`;
+    return `<div class="seg"><span>${RC_LBL[k]}</span><button type="button" data-rc="${k}" data-v="" aria-pressed="${!f[k]}">Todos</button>${ops.map(v => `<button type="button" data-rc="${k}" data-v="${esc(v)}" aria-pressed="${f[k] === v}">${esc(v)}<i>${mp.get(v)}</i></button>`).join('')}</div>`;
+  }).join('');
+  let sit = '';
+  if (comSit) {
+    const base = filtrados(true), n = k => base.filter(c => st(c) === k).length, sitV = f.tele ? 'tele' : f.lib ? 'lib:' + f.lib : f.ext || f.st || '';
+    const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' · ' + q : ''}</option>`;
+    sit = `<label class="cb sit${sitV ? ' on' : ''}"><small>Situação</small><select data-ff="sit">${so('', 'Todas')}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA', 'NAO'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select></label>`;
+  }
+  const ativo = f.rev || f.dep || f.fn || f.tipo || f.loc || f.tur || f.st || f.lib || f.ext || f.tele || f.q;
+  const L = comSit ? filtrados() : filtrados(true);
+  return `<div class="fx-row"><div class="cad">${cadeia}</div>${sit}</div>
+    ${rc ? `<div class="fx-row rcs">${rc}</div>` : ''}
+    <div class="fx-row fx-ft"><span class="cnt"><b>${L.length}</b> de ${S.cols.length} colaboradores</span>${ativo ? '<button type="button" class="fx-lk" data-ac="limpaf">Limpar filtros</button>' : ''}</div>`;
+}
+/** Aplica um filtro vindo da barra; devolve true se tratou. */
+function trataFiltro(el) {
+  const f = S.f;
+  if (el.dataset.rc !== undefined) { f[el.dataset.rc] = f[el.dataset.rc] === el.dataset.v ? '' : el.dataset.v; return true; }
+  if (el.dataset.ac === 'limpaf') { Object.assign(f, { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', lib: '', tele: '', ext: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); return true; }
+  const k = el.dataset.ff; if (!k || el.tagName !== 'SELECT') return false;
+  const v = el.value;
+  if (k === 'sit') { f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; return true; }
+  f[k] = v;
+  if (k === 'rev') { arrumaFiltros(); } if (k === 'dep') { f.fn = ''; f.tipo = ''; f.loc = ''; f.tur = ''; } if (k === 'fn') { f.tipo = ''; }
+  arrumaFiltros(); return true;
+}
+function filtrados(ignSt) {
   const f = S.f, q = nrm(f.q);
-  return S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (ignVis || f.vis === 'todos' || c.vis.area === f.vis) &&
-    (ignVis || ((!f.fn || c.vis.funcao === f.fn) && (!f.grp || c.vis.grupo === f.grp))) &&
+  return S.cols.filter(c => passaHier(c) &&
     (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (ignSt || !f.lib || libSt(c) === f.lib) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
@@ -606,7 +705,8 @@ function ordenar(L) { return L.slice().sort((a, b) => (S.f.rev ? 0 : a.revenda.l
 function agrupar(L, comArea) {
   const G = new Map();
   ordenar(L).forEach(c => {
-    const gk = (S.f.rev ? '' : c.revenda + ' · ') + (comArea || c.vis.area === 'adm' ? c.vis.areaNome + (c.vis.area === 'adm' ? '' : ' · ') : '') + (c.vis.area === 'adm' ? '' : c.vis.grupo);
+    const dk = depKey(c), gn = dk === 'adm' || c.vis.proprio ? '' : dk === 'arm' ? turnoC(c) : dk === 'entrega' ? (papelC(c) === 'mot' && tipoMotC(c) === 'Puxador' ? 'Puxadores · ' : '') + localC(c) : c.vis.grupo;
+    const gk = [S.f.rev ? '' : c.revenda, comArea || !gn ? depNome(dk) : '', gn].filter(Boolean).join(' · ');
     if (!G.has(gk)) G.set(gk, new Map());
     const F = G.get(gk);
     if (!F.has(c.vis.funcao)) F.set(c.vis.funcao, []);
@@ -630,8 +730,7 @@ function vEscalas(m) {
   }
   m.innerHTML = `<section class="card">
     <div class="esc-top">${barraSemana()}<label class="busca">${ic('search')}<input type="search" data-f="q" value="${esc(f.q)}" placeholder="Buscar nome, matrícula ou função" aria-label="Buscar"></label></div>
-    <div class="vt vt2" id="vt"></div>
-    <div class="fbar" id="fbar"></div>
+    <div class="fx" id="fbar"></div>
     <div class="acts" id="acts"></div>
     <div class="ls" id="ls"></div></section>`;
   ligaSemana(m, () => vEscalas(m));
@@ -639,8 +738,7 @@ function vEscalas(m) {
   m.onclick = e => {
     const t = e.target.closest('button, [data-chip]');
     if (!t) return;
-    if (t.dataset.vis) { if (f.vis !== t.dataset.vis) { f.fn = ''; f.grp = ''; } f.vis = t.dataset.vis; lista(); }
-    else if (t.dataset.ac === 'limpaf') { f.rev = ''; f.fn = ''; f.grp = ''; f.st = ''; f.lib = ''; f.tele = ''; f.ext = ''; f.q = ''; const qi = m.querySelector('[data-f=q]'); if (qi) qi.value = ''; lista(); }
+    if (trataFiltro(t)) lista();
     else if (t.dataset.chip !== undefined) { const k = t.dataset.chip; if (k === 'tele') f.tele = f.tele ? '' : 'S'; else if (k === 'ferias' || k === 'feriado') f.ext = f.ext === k ? '' : k; else f.st = k; lista(); }
     else if (t.dataset.link) abrirLink(t.dataset.link);
     else if (t.dataset.ed) abrirEditor(t.dataset.ed);
@@ -655,37 +753,17 @@ function vEscalas(m) {
     else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
   };
   m.onchange = e => {
-    const k = e.target.dataset.ff;
-    if (k === 'rev') { f.rev = e.target.value; f.fn = ''; f.grp = ''; lista(); return; }
-    if (k === 'sit') { const v = e.target.value; f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; lista(); return; }
-    if (k) { f[k] = e.target.value; lista(); return; } const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
+    if (e.target.dataset.ff) { trataFiltro(e.target); lista(); return; }
+    const c = e.target.closest('[data-sel]'); if (c) { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); acoes(); } };
   lista();
 }
 let grupoSel = {};
 function lista() {
-  const f = S.f, tudo = filtrados(true, true), base = filtrados(true), L = filtrados();
-  $('#vt').innerHTML = visoes().concat([['todos', 'Todos']]).map(([k]) => {
-    const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length;
-    return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'} title="${esc(VIS_TXT[k])}">${VIS_CURTO[k]}<i>${n}</i></button>`;
-  }).join('');
-  // filtros da visão: Entrega = função + ponto; Puxadores = função + grupo; Armazém = função + turno; Administrativo/Todos = função
-  const pool = S.cols.filter(c => (!f.rev || c.revenda === f.rev) && (f.vis === 'todos' || c.vis.area === f.vis));
-  const gLbl = { entrega: 'Ponto de apoio', ent: 'Ponto de apoio', pux: 'Grupo', arm: 'Turno' }[f.vis];
-  const fns = uniq(pool.filter(c => !f.grp || c.vis.grupo === f.grp).map(c => c.vis.funcao)), grs = uniq(pool.filter(c => !f.fn || c.vis.funcao === f.fn).map(c => c.vis.grupo));
-  if (f.fn && !fns.includes(f.fn)) f.fn = ''; if (f.grp && !grs.includes(f.grp)) f.grp = '';
-  const revs = uniq(S.cols.map(c => c.revenda)), n = k => base.filter(c => st(c) === k).length;
-  const sitV = f.tele ? 'tele' : f.lib ? 'lib:' + f.lib : f.ext || f.st || '';
-  const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' (' + q + ')' : ''}</option>`;
-  const ativo = f.rev || f.fn || f.grp || sitV || f.q;
-  $('#fbar').innerHTML = (revs.length > 1 ? `<select data-ff="rev" class="${f.rev ? 'on' : ''}" aria-label="Revenda">${opts(revs, f.rev, 'Todas as revendas')}</select>` : '') +
-    `<select data-ff="fn" class="${f.fn ? 'on' : ''}" aria-label="Função">${opts(fns, f.fn || '', 'Todas as funções')}</select>` +
-    (gLbl ? `<select data-ff="grp" class="${f.grp ? 'on' : ''}" aria-label="${gLbl}">${opts(grs, f.grp || '', gLbl === 'Turno' ? 'Todos os turnos' : gLbl === 'Grupo' ? 'Todos os grupos' : 'Todos os pontos de apoio')}</select>` : '') +
-    `<select data-ff="sit" class="${sitV ? 'on' : ''}" aria-label="Situação">${so('', 'Todas as situações', base.length)}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA', 'NAO'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select>` +
-    (ativo ? '<button type="button" class="fx-lk" data-ac="limpaf">✕ Limpar filtros</button>' : '') +
-    `<span class="cnt"><b>${L.length}</b> de ${tudo.length} colaboradores</span>`;
+  const f = S.f, L = filtrados();
+  $('#fbar').innerHTML = barraFiltros(true);
   grupoSel = {};
   let h = '', gi = 0;
-  agrupar(L, f.vis === 'todos').forEach((F, gk) => {
+  agrupar(L, !f.dep).forEach((F, gk) => {
     const todosG = [...F.values()].flat(); grupoSel[gi] = todosG;
     h += `<div class="gh"><div><b>${esc(gk)}</b><span>${todosG.length} ${todosG.length === 1 ? 'pessoa' : 'pessoas'}</span></div><button type="button" class="btn sm" data-gsel="${gi++}">Selecionar grupo</button></div>`;
     F.forEach((arr, fn) => { h += `<div class="gf"><b>${esc(fn)} <span>(${arr.length})</span></b>${faixaDias(arr)}</div>` + arr.map(linhaHtml).join(''); });
@@ -1022,9 +1100,8 @@ function vMes(m) {
   if (!S.cols.length) { m.innerHTML = `<div class="card empty"><h3>Nenhum colaborador por aqui ainda</h3><p>${veTudo() ? 'Importe o relatório do DP na aba <b>Importar DP</b>.' : 'Ainda não há colaboradores vinculados a você.'}</p></div>`; return; }
   const datas = diasDoMes(S.mes), L = ordenar(filtrados(true));
   const ferAll = d => S.feriados.filter(x => x.data === d && (!f.rev || x.revenda === f.rev));
-  const tudo = filtrados(true, true);
   let corpo = '', gi = 0, nErro = 0;
-  const G = agrupar(L, f.vis === 'todos');
+  const G = agrupar(L, !f.dep);
   G.forEach((F, gk) => {
     const arr = [...F.values()].flat();
     corpo += `<tr class="mg"><td colspan="${datas.length + 3}"><b>${esc(gk)}</b> <span>${arr.length} ${arr.length === 1 ? 'pessoa' : 'pessoas'}</span></td></tr>`;
@@ -1047,9 +1124,8 @@ function vMes(m) {
       <label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês<input type="month" data-mes value="${esc(S.mes)}" style="width:auto"></label>
       <button type="button" class="btn sm" data-mm="1" aria-label="Próximo mês">›</button><b style="color:var(--b8)">${esc(nomeMes(S.mes))}</b>
       ${nErro ? `<span class="pill p-ERRO">${nErro} colaborador(es) com semana fora das regras</span>` : ''}</div>
-    <div class="vt">${visoes().concat([['todos', 'Todos']]).map(([k]) => { const n = k === 'todos' ? tudo.length : tudo.filter(c => c.vis.area === k).length; return `<button type="button" data-vis="${k}" aria-pressed="${f.vis === k}" ${n || k === 'todos' ? '' : 'class="vz"'}>${VIS_TXT[k]}<i>${n}</i></button>`; }).join('')}</div>
-    <div class="filt"><label class="f">Revenda<select data-f="rev">${opts(revs, f.rev, 'Todas')}</select></label>
-      <label class="f">Buscar<input data-f="q" value="${esc(f.q)}" placeholder="Nome, matrícula, função ou ponto"></label></div>
+    <div class="esc-top"><span></span><label class="busca">${ic('search')}<input type="search" data-f="q" value="${esc(f.q)}" placeholder="Buscar nome, matrícula ou função" aria-label="Buscar"></label></div>
+    <div class="fx" id="fbar">${barraFiltros(false)}</div>
     <div class="acts"><span class="hint">Clique num dia para trocar só aquela data (trabalho, folga ou horário). Clique no nome para mudar o padrão semanal. Número = hora de entrada, <b>F</b> = folga, <b>V</b> = férias, borda vermelha = feriado, ponto amarelo = dia alterado.</span><span class="sp"></span>
       <button type="button" class="btn sm" data-mx>${ic('xls')}Excel do mês</button>
       <button type="button" class="btn sm" data-mp="fichas">${ic('pdf')}PDF do mês por colaborador</button>
@@ -1057,12 +1133,12 @@ function vMes(m) {
     <div class="ovf mw"><table class="mt"><thead><tr><th class="mn">Colaborador</th>${datas.map(d => { const fs = ferAll(d); return `<th class="${diaSemanaIso(d) === 6 ? 'dom' : ''}${fs.length ? ' fer' : ''}" title="${esc(fs.map(x => x.descricao + ' (' + x.revenda + ')').join(', '))}">${+d.slice(8)}<small>${DIAS_CURTO[diaSemanaIso(d)].charAt(0)}</small></th>`; }).join('')}<th>Horas</th><th>Semanas</th></tr></thead>
       <tbody>${corpo || `<tr><td colspan="${datas.length + 3}" class="empty">Ninguém nesta visão.</td></tr>`}</tbody></table></div></section>`;
   m.querySelector('[data-mes]').onchange = e => { if (e.target.value) { S.mes = e.target.value; vMes(m); } };
-  m.querySelector('select[data-f=rev]').onchange = e => { f.rev = e.target.value; vMes(m); };
+  m.onchange = e => { if (e.target.dataset.ff && trataFiltro(e.target)) vMes(m); };
   m.querySelector('input[data-f=q]').oninput = e => { f.q = e.target.value; clearTimeout(S.tq); S.tq = setTimeout(() => { vMes(m); const i = m.querySelector('input[data-f=q]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
   m.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.mm) { const p = S.mes.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1 + +b.dataset.mm, 1)); S.mes = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'); vMes(m); }
-    else if (b.dataset.vis) { f.vis = b.dataset.vis; vMes(m); }
+    else if (trataFiltro(b)) vMes(m);
     else if (b.dataset.ed) abrirEditor(b.dataset.ed);
     else if (b.dataset.dm) abrirDia(b.dataset.dm, b.dataset.dd, () => vMes(m));
     else if (b.dataset.sv) { const c = S.cols.find(x => x.matricula === b.dataset.sv), s = mesColab(c).semanas[+b.dataset.si]; toast(s.val ? `<b>${esc(c.nome)}</b> · semana de ${ddmm(s.ini)}: ${esc(ROT[s.val.status])}${s.val.msgs.filter(x => x.nivel !== 'info').length ? '<br>' + s.val.msgs.filter(x => x.nivel !== 'info').map(x => esc(x.texto)).join('<br>') : ''}` : 'Semana com férias ou sem escala: não é conferida.', s.val && s.val.status === 'ERRO'); }
