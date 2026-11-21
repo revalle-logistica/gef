@@ -1041,7 +1041,7 @@ function revDoArquivo(nome) {
  */
 function lerRelacaoDP(A, nomeArq) {
   const linhas = A.map(r => r.map(x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim()));
-  const ehDep = x => /^(departamento|centro de custos?)\b/i.test(x);
+  const ehDep = x => /^departamento\b/i.test(x) || /^centro de custos?\s*:/i.test(x);
   const iDep = linhas.findIndex(L => L.some(ehDep));
   if (iDep < 0) return null;
   // empresa no cabeçalho (ex.: "REVENDA REVALLE AGRESTE DA BAHIA LTDA" -> AGRESTE)
