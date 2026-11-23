@@ -86,8 +86,8 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 /** Envia as regras de Regras.gs para o navegador (mesma validação nos dois lados). */
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
-    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';\n' +
-    [inicioEscala, assinaturaEscala, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';\n' +
+    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -1450,7 +1450,7 @@ function fichaPdf_(c, e, cfg, ultima, ctx) {
     const val = validarEscala(esc, { tele: tele, cfg: cfg, entrega: ehEntregaCampo(c) });
     const sem = ctx && ctx.semana ? semanaEfetiva(esc, ctx.semana, ctx.ferias[c.matricula], ctx.feriados[c.revenda], ctx.ajustes[c.matricula]) : null;
     const linhas = DIAS_SEMANA.map(function (nome, i) {
-      const sd = sem ? sem[i] : null, rot = nome + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
+      const sd = sem ? sem[i] : null, rot = (sd ? DIAS_SEMANA[diaSemanaIso(sd.data)] : nome) + (sd ? ' ' + sd.data.split('-').reverse().slice(0, 2).join('/') : '') + (sd && sd.feriado ? '<br><small style="color:#b42318">Feriado: ' + h_(sd.feriado) + '</small>' : '');
       if (sd && sd.tipo === 'FER') return '<tr class="f"><td class="d">' + rot + '</td><td colspan="5" style="background:#ece6fd;color:#6d3fd8">FÉRIAS</td></tr>';
       const d = sd ? (sd.tipo === 'T' ? { tipo: 'T', ent: sd.ent, sai: sd.sai, int: sd.int } : { tipo: 'F' }) : (esc.dias[i] || { tipo: 'F' }), t = d.tipo === 'T' ? textoDia_(d) : null;
       return t ? '<tr><td class="d">' + rot + '</td><td>Trabalho</td><td>' + h_(t.ent) + '</td><td>' + h_(t.sai) + '</td><td>' + t.int + '</td><td><b>' + t.horas + '</b></td></tr>'
@@ -1508,6 +1508,7 @@ function quadroPdf_(cols, esc, cfg, ctx) {
     '<table class="q" style="margin-top:8px"><tr><th>Colaborador</th><th>Função</th><th>Turno / sede-ponto</th>' +
     DIAS_CURTO.map(function (d, i) {
       if (!(ctx && ctx.semana)) return '<th>' + d + '</th>';
+      d = DIAS_CURTO[diaDoOffset(i)];
       const dt = isoMaisDias(ctx.semana, i), fs = Object.keys(ctx.feriados).filter(function (r) { return ctx.feriados[r].some(function (f) { return f.data === dt; }); });
       return '<th>' + d + '<br>' + dt.split('-').reverse().slice(0, 2).join('/') + (fs.length ? '<br>feriado' : '') + '</th>';
     }).join('') + '<th>Total</th><th>Status</th></tr>' + rows + '</table>' +
@@ -1527,7 +1528,7 @@ function exportPdf_(u, d) {
   let ctx = null;
   const temSemana = /^\d{4}-\d{2}-\d{2}$/.test(String(d.semana || '')), temMes = /^\d{4}-\d{2}$/.test(String(d.mes || ''));
   if (temSemana || temMes) {
-    ctx = { semana: temSemana ? segundaDaSemana(d.semana) : '', mes: temMes ? d.mes : '', ferias: {}, feriados: {}, ajustes: {} };
+    ctx = { semana: temSemana ? inicioSemana(d.semana) : '', mes: temMes ? d.mes : '', ferias: {}, feriados: {}, ajustes: {} };
     ler_('Ferias').forEach(function (f) { (ctx.ferias[f.matricula] = ctx.ferias[f.matricula] || []).push(f); });
     ler_('Feriados').forEach(function (f) { (ctx.feriados[f.revenda] = ctx.feriados[f.revenda] || []).push(f); });
     ler_('Ajustes').forEach(function (a) { (ctx.ajustes[a.matricula] = ctx.ajustes[a.matricula] || {})[a.data] = a; });
@@ -1556,7 +1557,7 @@ function diasMesColab_(c, e, ctx) {
 function fichaMesPdf_(c, e, cfg, ultima, ctx) {
   const dias = diasMesColab_(c, e, ctx), cel = {};
   dias.forEach(function (d) { cel[d.data] = d; });
-  const ini = segundaDaSemana(dias[0].data), fim = dias[dias.length - 1].data;
+  const ini = inicioSemana(dias[0].data), fim = dias[dias.length - 1].data;
   let linhas = '', total = 0, avisos = [];
   for (let s = ini; s <= fim; s = isoMaisDias(s, 7)) {
     linhas += '<tr>' + [0, 1, 2, 3, 4, 5, 6].map(function (i) {
@@ -1575,7 +1576,7 @@ function fichaMesPdf_(c, e, cfg, ultima, ctx) {
     '<div class="top"><span>' + h_(nomeMes_(ctx.mes)) + '</span><b>' + h_(cfg.EMPRESA) + ' · Escala do mês</b></div>' +
     '<table class="inf" style="margin-top:10px"><tr><td class="k">Colaborador</td><td colspan="3"><b>' + h_(c.nome) + '</b></td><td class="k">Matrícula</td><td>' + h_(codigoMatricula(c.matricula)) + '</td></tr>' +
     '<tr><td class="k">Função</td><td>' + h_(c.funcao) + '</td><td class="k">Revenda</td><td>' + h_(c.revenda) + '</td><td class="k">' + (areaSetor(c.setor) === 'arm' ? 'Turno' : 'Sede / ponto') + '</td><td>' + h_(areaSetor(c.setor) === 'arm' ? (c.turno || '—') : (c.lotacao || '—') + (c.tipoMot ? ' · ' + c.tipoMot : '')) + '</td></tr></table>' +
-    '<table class="esc" style="margin-top:10px"><tr>' + DIAS_SEMANA.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>' + linhas + '</table>' +
+    '<table class="esc" style="margin-top:10px"><tr>' + ORDEM_SEMANA.map(function (i) { return '<th>' + DIAS_SEMANA[i] + '</th>'; }).join('') + '</tr>' + linhas + '</table>' +
     '<p class="tot">Horas no mês: <b>' + minParaHm(total) + '</b>' + (avisos.length ? ' &nbsp; <span class="st ALERTA">Feriado trabalhado: ' + avisos.map(function (x) { return x.split('-').reverse().slice(0, 2).join('/'); }).join(', ') + '</span>' : '') + '</p>' +
     '<p class="leg">* dia alterado em relação ao padrão semanal. Escala 5x2 conforme a EC nº 141/2026 e a CLT; feriado trabalhado exige folga compensatória na semana ou pagamento em dobro (Lei 605/49).</p>' +
     '<table class="ass"><tr><td><span>Colaborador</span></td><td><span>Supervisor</span></td></tr></table></div>';
@@ -1899,6 +1900,12 @@ function isoMaisDias(iso, n) {
 /** 0 = segunda ... 6 = domingo */
 function diaSemanaIso(iso) { var p = String(iso).split('-'); return (new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() + 6) % 7; }
 function segundaDaSemana(iso) { return isoMaisDias(iso, -diaSemanaIso(iso)); }
+/** Na Revalle a semana vai de domingo (1º dia) a sábado (7º dia). */
+function inicioSemana(iso) { return isoMaisDias(iso, -((diaSemanaIso(iso) + 1) % 7)); }
+/** Dia da semana (0 = segunda … 6 = domingo) do i-ésimo dia de uma semana que começa no domingo. */
+function diaDoOffset(i) { return (i + 6) % 7; }
+/** Ordem de exibição dos dias do padrão semanal: domingo primeiro. */
+var ORDEM_SEMANA = [6, 0, 1, 2, 3, 4, 5];
 /** Datas ISO de um mês "AAAA-MM". */
 function diasDoMes(ym) {
   var p = String(ym).split('-'), n = new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(), out = [];
@@ -1974,7 +1981,8 @@ function avisosSemana(sem) {
  */
 function validarSemanaReal(sem, ctx) {
   if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
-  var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
+  var ord = sem.slice().sort(function (a, b) { return diaSemanaIso(a.data) - diaSemanaIso(b.data); });
+  var esc = { vigencia: sem[0].data, dias: ord.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
   var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg, entrega: ctx.entrega });
   v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
     .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));

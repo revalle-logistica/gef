@@ -241,6 +241,12 @@ function isoMaisDias(iso, n) {
 /** 0 = segunda ... 6 = domingo */
 function diaSemanaIso(iso) { var p = String(iso).split('-'); return (new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() + 6) % 7; }
 function segundaDaSemana(iso) { return isoMaisDias(iso, -diaSemanaIso(iso)); }
+/** Na Revalle a semana vai de domingo (1º dia) a sábado (7º dia). */
+function inicioSemana(iso) { return isoMaisDias(iso, -((diaSemanaIso(iso) + 1) % 7)); }
+/** Dia da semana (0 = segunda … 6 = domingo) do i-ésimo dia de uma semana que começa no domingo. */
+function diaDoOffset(i) { return (i + 6) % 7; }
+/** Ordem de exibição dos dias do padrão semanal: domingo primeiro. */
+var ORDEM_SEMANA = [6, 0, 1, 2, 3, 4, 5];
 /** Datas ISO de um mês "AAAA-MM". */
 function diasDoMes(ym) {
   var p = String(ym).split('-'), n = new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(), out = [];
@@ -316,7 +322,8 @@ function avisosSemana(sem) {
  */
 function validarSemanaReal(sem, ctx) {
   if (sem.some(function (d) { return d.tipo === 'FER' || d.tipo === 'N'; })) return null;
-  var esc = { vigencia: sem[0].data, dias: sem.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
+  var ord = sem.slice().sort(function (a, b) { return diaSemanaIso(a.data) - diaSemanaIso(b.data); });
+  var esc = { vigencia: sem[0].data, dias: ord.map(function (d) { return d.tipo === 'T' ? { tipo: 'T', ent: d.ent, sai: d.sai, int: d.int } : { tipo: 'F' }; }) };
   var v = validarEscala(esc, { tele: ctx.tele, cfg: ctx.cfg, entrega: ctx.entrega });
   v.msgs = v.msgs.filter(function (m) { return m.texto.indexOf('vigência') < 0; })
     .concat(avisosSemana(sem).map(function (t) { return { nivel: 'alerta', texto: t }; }));

@@ -40,7 +40,7 @@ function qlpCobre(P, f, i) {
 }
 function qlpNec(r, fi, i) {
   const data = isoMaisDias(S.semana, i), x = (r.excecoes || []).find(e => e.data === data);
-  return x ? { q: +(x.q || [])[fi] || 0, exc: x } : { q: +(r.faixas[fi].q || [])[i] || 0 };
+  return x ? { q: +(x.q || [])[fi] || 0, exc: x } : { q: +(r.faixas[fi].q || [])[diaSemanaIso(data)] || 0 };
 }
 function qlpCalc(r) {
   const P = qlpPessoas(r);
@@ -108,11 +108,11 @@ function vQlp(m) {
 }
 function qlpCard(r, k) {
   const fd = feriadosDe(r.revenda);
-  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = isoMaisDias(S.semana, i), f = fd.find(x => x.data === d); return `<th class="${f ? 'fer' : ''}" ${f ? `title="${esc(f.descricao)}"` : ''}>${DIAS_CURTO[i]}<small>${ddmm(d)}${f ? ' ★' : ''}</small></th>`; }).join('');
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = isoMaisDias(S.semana, i), f = fd.find(x => x.data === d); return `<th class="${f ? 'fer' : ''}" ${f ? `title="${esc(f.descricao)}"` : ''}>${DIAS_CURTO[diaDoOffset(i)]}<small>${ddmm(d)}${f ? ' ★' : ''}</small></th>`; }).join('');
   const linhas = r.faixas.map((f, fi) => `<tr><th class="fx">${esc(f.de)}–${esc(f.ate)}</th>${k.cel[fi].map((x, i) => {
     if (x.antes) return `<td class="qz" title="Antes do início da escala 5x2 na Revalle (${dataBr(inicioEscala(S.cfg))}): não entra na conta">–</td>`;
     const cls = !x.nec && !x.n ? 'z' : x.d < 0 ? 'r' : x.d > 0 ? 'b' : 'g';
-    const tip = `${DIAS_CURTO[i]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
+    const tip = `${DIAS_CURTO[diaDoOffset(i)]} ${f.de}–${f.ate}: precisa ${x.nec}, tem ${x.n}${x.exc ? ' (exceção' + (x.exc.obs ? ': ' + x.exc.obs : '') + ')' : ''}` +
       (x.todo.length ? `\nFaixa toda: ${x.todo.map(qlpNm).join(', ')}` : '') + (x.maior.length ? `\nMaior parte (conta): ${x.maior.map(qlpNm).join(', ')}` : '') + (x.menor.length ? `\nMetade ou menos (não conta): ${x.menor.map(qlpNm).join(', ')}` : '');
     return `<td class="q${cls}" title="${esc(tip)}"><b>${x.n}</b><span>/${x.nec}</span>${x.d ? `<em>${x.d > 0 ? '+' : ''}${x.d}</em>` : ''}${x.menor.length ? `<small class="qp">+${x.menor.length} metade ou menos</small>` : ''}${x.exc ? '<i class="qx" aria-label="exceção"></i>' : ''}</td>`;
   }).join('')}</tr>`).join('');

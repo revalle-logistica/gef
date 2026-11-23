@@ -166,3 +166,19 @@ test('assinatura e situação da liberação para o DP', () => {
   assert.notStrictEqual(assinaturaEscala(e2), a);
   assert.strictEqual(situacaoLiberacao(e2, { assinatura: a }), 'PEND');
 });
+
+test('semana de domingo a sábado: folga dom + qui, trabalha o resto é OK', () => {
+  const { inicioSemana, semanaEfetiva, validarSemanaReal, diaSemanaIso } = ctxVm;
+  assert.strictEqual(inicioSemana('2026-12-24'), '2026-12-20');
+  assert.strictEqual(inicioSemana('2026-12-20'), '2026-12-20');
+  assert.strictEqual(inicioSemana('2026-12-26'), '2026-12-20');
+  const T = { tipo: 'T', ent: '07:00', sai: '15:20', int: 60 }, F = { tipo: 'F' };
+  // padrão seg..dom: folga quinta e domingo
+  const esc = { periodos: [{ vigencia: '2026-12-13', dias: [T, T, T, F, T, T, F] }], vigencia: '2026-12-13', dias: [T, T, T, F, T, T, F] };
+  const sem = semanaEfetiva(esc, inicioSemana('2026-12-22'), [], [], {});
+  assert.strictEqual(sem[0].data, '2026-12-20');
+  assert.strictEqual(diaSemanaIso(sem[0].data), 6);
+  const r = validarSemanaReal(sem, { cfg });
+  assert.ok(r, 'semana conferida');
+  assert.notStrictEqual(r.status, 'ERRO', JSON.stringify(r.msgs));
+});

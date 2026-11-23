@@ -149,7 +149,7 @@ async function carregar() {
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
   S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.sincFerias = r.sincFerias || null;
   S.qlp = r.qlp || []; S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
-  if (!S.semana) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.semana = segundaDaSemana(h > i ? h : i); }
+  if (!S.semana) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.semana = inicioSemana(h > i ? h : i); }
   if (!S.mes) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.mes = (h > i ? h : i).slice(0, 7); }
   S.cols = r.colaboradores.sort((a, b) => (a.revenda + a.nome).localeCompare(b.revenda + b.nome, 'pt'));
   revalida();
@@ -219,7 +219,7 @@ function barraSemana() {
 }
 function ligaSemana(m, redesenha) {
   m.querySelectorAll('[data-sem]').forEach(b => { b.onclick = () => { S.semana = isoMaisDias(S.semana, +b.dataset.sem); revalida(); redesenha(); }; });
-  const i = m.querySelector('[data-semdt]'); if (i) i.onchange = () => { if (i.value) { S.semana = segundaDaSemana(i.value); revalida(); redesenha(); } };
+  const i = m.querySelector('[data-semdt]'); if (i) i.onchange = () => { if (i.value) { S.semana = inicioSemana(i.value); revalida(); redesenha(); } };
 }
 
 /* ================= escalas ================= */
@@ -359,7 +359,7 @@ function porDia(arr) { const d = [0, 0, 0, 0, 0, 0, 0]; arr.forEach(c => { (c.se
 function faixaDias(arr) {
   const d = porDia(arr), sem = arr.filter(c => !c.escala).length;
   const fe = arr.filter(c => c.sem && c.sem.some(x => x.tipo === 'FER')).length;
-  return `<div class="cd">${d.map((v, i) => `<span title="${DIAS_SEMANA[i]}: ${v} trabalhando"><small>${DIAS_CURTO[i]}</small>${v}</span>`).join('')}</div>${sem ? `<em class="se">${sem} sem escala</em>` : ''}${fe ? `<em class="se" style="color:var(--excess,#6d3fd8)">${fe} de férias</em>` : ''}`;
+  return `<div class="cd">${d.map((v, i) => `<span title="${DIAS_SEMANA[diaDoOffset(i)]}: ${v} trabalhando"><small>${DIAS_CURTO[diaDoOffset(i)]}</small>${v}</span>`).join('')}</div>${sem ? `<em class="se">${sem} sem escala</em>` : ''}${fe ? `<em class="se" style="color:var(--excess,#6d3fd8)">${fe} de férias</em>` : ''}`;
 }
 function vEscalas(m) {
   const f = S.f;
@@ -427,7 +427,8 @@ function acoes() {
     <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro</button>`;
 }
 function semana(e) {
-  return `<div class="wk">${DIAS_CURTO.map((d, i) => {
+  return `<div class="wk">${ORDEM_SEMANA.map(i => {
+    const d = DIAS_CURTO[i];
     if (!e) return `<span class="n">${d}<small>–</small></span>`;
     const x = e.dias[i] || {};
     return x.tipo === 'T' ? `<span class="t">${d}<small>${esc(x.ent || '')}</small></span>` : `<span class="f">${d}<small>folga</small></span>`;
@@ -436,11 +437,11 @@ function semana(e) {
 function semanaReal(c) {
   return `<div class="wk">${c.sem.map((x, i) => {
     const h = x.feriado ? ' h' : '', tt = x.feriado ? ` title="Feriado: ${esc(x.feriado)}"` : '';
-    if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[i]}<small>férias</small></span>`;
-    if (x.tipo === 'N' && x.depois) return `<span class="n an${h}" title="A escala terminou em ${dataBr(x.depois)}: monte o próximo período">${DIAS_CURTO[i]}<small>fim ${dataBr(x.depois).slice(0, 5)}</small></span>`;
-    if (x.tipo === 'N') return x.antes ? `<span class="n an${h}" title="A escala começa em ${dataBr(x.antes)}${x.feriado ? ' · feriado: ' + esc(x.feriado) : ''}">${DIAS_CURTO[i]}<small>início ${dataBr(x.antes).slice(0, 5)}</small></span>` : `<span class="n${h}"${tt}>${DIAS_CURTO[i]}<small>sem escala</small></span>`;
+    if (x.tipo === 'FER') return `<span class="v${h}"${tt}>${DIAS_CURTO[diaDoOffset(i)]}<small>férias</small></span>`;
+    if (x.tipo === 'N' && x.depois) return `<span class="n an${h}" title="A escala terminou em ${dataBr(x.depois)}: monte o próximo período">${DIAS_CURTO[diaDoOffset(i)]}<small>fim ${dataBr(x.depois).slice(0, 5)}</small></span>`;
+    if (x.tipo === 'N') return x.antes ? `<span class="n an${h}" title="A escala começa em ${dataBr(x.antes)}${x.feriado ? ' · feriado: ' + esc(x.feriado) : ''}">${DIAS_CURTO[diaDoOffset(i)]}<small>início ${dataBr(x.antes).slice(0, 5)}</small></span>` : `<span class="n${h}"${tt}>${DIAS_CURTO[diaDoOffset(i)]}<small>sem escala</small></span>`;
     const a = x.ajuste ? ' aj' : '';
-    return x.tipo === 'T' ? `<span class="t${h}${a}"${tt}>${DIAS_CURTO[i]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}${a}"${tt}>${DIAS_CURTO[i]}<small>folga</small></span>`;
+    return x.tipo === 'T' ? `<span class="t${h}${a}"${tt}>${DIAS_CURTO[diaDoOffset(i)]}<small>${esc(x.ent || '')}</small></span>` : `<span class="f${h}${a}"${tt}>${DIAS_CURTO[diaDoOffset(i)]}<small>folga</small></span>`;
   }).join('')}</div>`;
 }
 function linhaHtml(c) {
@@ -517,7 +518,7 @@ function desenhaEditor() {
       <div class="row2">
         <label class="sw"><input type="checkbox" id="ed-tele" ${S.ed.tele ? 'checked' : ''}><span><b>Teleatendimento</b><br>Jornada de até ${esc(S.cfg.TELE_DIARIO)}h por dia</span></label></div>
       <div class="ed" id="ed-dias"><div class="ed-r hd"><span>Dia</span><span>Situação</span><span>Entrada</span><span>Saída</span><span>Intervalo</span><span style="text-align:right">Horas</span></div>
-        ${DIAS_SEMANA.map((_, i) => linhaEd(i)).join('')}</div>
+        ${ORDEM_SEMANA.map(i => linhaEd(i)).join('')}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-copiar>${ic('copy')}Repetir o 1º horário nos outros dias</button>
         <button type="button" class="btn sm" data-padrao>Horário padrão (${esc(S.cfg.PADRAO_ENTRADA)}–${esc(S.cfg.PADRAO_SAIDA)})</button></div>
       <div id="ed-val"></div>
@@ -553,7 +554,7 @@ function desenhaEditor() {
     if (b.hasAttribute('data-pernovo')) {
       if (S.ed.sujo && !confirm('Começar um período novo sem salvar as alterações?')) return;
       const ps = (S.ed.c.escala && S.ed.c.escala.periodos) || [], ult = ps[ps.length - 1];
-      const ini = ult && ult.ate ? isoMaisDias(ult.ate, 1) : isoMaisDias(segundaDaSemana(hoje()), 7);
+      const ini = ult && ult.ate ? isoMaisDias(ult.ate, 1) : isoMaisDias(inicioSemana(hoje()), 7);
       S.ed.e = { vigencia: ini > vigPadrao() ? ini : vigPadrao(), ate: '', dias: JSON.parse(JSON.stringify(S.ed.e.dias)) }; S.ed.vigOrig = ''; S.ed.sujo = true; desenhaEditor(); return;
     }
     if (b.hasAttribute('data-perdel')) {
@@ -641,7 +642,7 @@ function listaFerias() {
 }
 function redesenhaDias() {
   const w = $('#ed-dias');
-  w.innerHTML = w.firstElementChild.outerHTML + DIAS_SEMANA.map((_, i) => linhaEd(i)).join('');
+  w.innerHTML = w.firstElementChild.outerHTML + ORDEM_SEMANA.map(i => linhaEd(i)).join('');
   atualizaVal(); periodosEd();
 }
 function caixaVal(v) {
@@ -685,8 +686,8 @@ function modalLote() {
       <div class="row2">
         <label class="f">Vale de<input type="date" data-l="vig" value="${esc(S.lote.vig)}"></label>
         <label class="f">Até <span class="hint">(em branco = sem fim)</span><input type="date" data-l="ate" value=""></label>
-        <label class="f">1ª folga<select data-l="folga1">${DIAS_SEMANA.map((d, i) => `<option value="${i}" ${i === 6 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
-        <label class="f">2ª folga<select data-l="folga2">${DIAS_SEMANA.map((d, i) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <label class="f">1ª folga<select data-l="folga1">${ORDEM_SEMANA.map(i => [DIAS_SEMANA[i], i]).map(([d, i]) => `<option value="${i}" ${i === 6 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <label class="f">2ª folga<select data-l="folga2">${ORDEM_SEMANA.map(i => [DIAS_SEMANA[i], i]).map(([d, i]) => `<option value="${i}" ${i === 5 ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
         <label class="f">Entrada<input type="time" data-l="ent" value="${esc(S.lote.ent)}"></label>
         <label class="f">Saída<input type="time" data-l="sai" value="${esc(S.lote.sai)}"></label>
         <label class="f">Intervalo${campoInt('data-l="int"', S.lote.int)}</label>
@@ -729,7 +730,7 @@ function mesColab(c) {
   const fer = feriasDe(c.matricula), fds = feriadosDe(c.revenda), aj = c.aj || ajustesDe(c.matricula);
   const dias = diasDoMes(S.mes).map(dt => diaEfetivo(c.escala, dt, fer, fds, aj));
   const semanas = [];
-  for (let s = segundaDaSemana(dias[0].data); s <= dias[dias.length - 1].data; s = isoMaisDias(s, 7)) {
+  for (let s = inicioSemana(dias[0].data); s <= dias[dias.length - 1].data; s = isoMaisDias(s, 7)) {
     const sem = semanaEfetiva(c.escala, s, fer, fds, aj);
     semanas.push({ ini: s, sem, val: validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) });
   }
@@ -813,7 +814,7 @@ function abrirDia(mat, data, depois) {
   };
   const valida = () => {
     const aj2 = Object.assign({}, aj, { [data]: { tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int } });
-    const sem = semanaEfetiva(c.escala, segundaDaSemana(data), feriasDe(mat), feriadosDe(c.revenda), aj2), v = validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
+    const sem = semanaEfetiva(c.escala, inicioSemana(data), feriasDe(mat), feriadosDe(c.revenda), aj2), v = validarSemanaReal(sem, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
     $('#dia-val').innerHTML = v ? '<p class="hint" style="margin-bottom:6px">Como fica a semana de ' + ddmm(sem[0].data) + ':</p>' + caixaVal(v) : '<p class="hint">Semana com férias ou sem escala: não é conferida.</p>';
   };
   box.addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) { st.tipo = b.dataset.dt; desenha(); } });
@@ -884,8 +885,8 @@ async function excelLote(list) {
   if (!list.length) throw new Error('Nenhum colaborador na lista.');
   const X = await loadXLSX();
   list = ordenar(list);
-  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Sede / ponto', 'Turno', 'Rota / puxador', 'Supervisor', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA.map((d, i) => d + ' ' + ddmm(isoMaisDias(S.semana, i)) + (S.feriados.some(f => f.data === isoMaisDias(S.semana, i)) ? ' (feriado)' : '')), 'Total semanal', 'Status', 'Pendências'];
-  const D0 = H.indexOf('Segunda');
+  const H = ['Matrícula', 'Nome', 'Função', 'Revenda', 'Visão', 'Grupo (ponto / turno)', 'Setor', 'Sede / ponto', 'Turno', 'Rota / puxador', 'Supervisor', 'Teleatendimento', 'Vigência', ...DIAS_SEMANA.map((d, i) => DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(isoMaisDias(S.semana, i)) + (S.feriados.some(f => f.data === isoMaisDias(S.semana, i)) ? ' (feriado)' : '')), 'Total semanal', 'Status', 'Pendências'];
+  const D0 = 13;
   const R = list.map(c => {
     const e = c.escala, v = c.val;
     return [codigoMatricula(c.matricula), c.nome, c.funcao, c.revenda, c.vis.areaNome, c.vis.grupo, c.setor, c.lotacao, c.turno, c.tipoMot, nomeSup(c.supervisor), c.tele ? 'Sim' : 'Não', e ? dataBr(e.vigencia) : '',
@@ -938,7 +939,7 @@ function vPainel(m) {
     <section class="card"><div class="card-h"><h3>Andamento por ${!P.rev ? 'revenda' : !P.dep ? 'departamento' : 'função'}</h3><div class="leg"><span><span class="dot d-OK"></span> OK</span><span><span class="dot d-ALERTA"></span> Alerta</span><span><span class="dot d-ERRO"></span> Erro</span><span><span class="dot d-SEM"></span> Sem escala</span></div></div>
       <div class="card-b prg">${and.map(x => { const c = cnt(x.a), n = x.a.length; return `<div class="pr"><b title="${esc(x.g)}">${esc(x.g)}</b><div class="stk">${['OK', 'ALERTA', 'ERRO', 'SEM'].map(s => c[s] ? `<i class="${s}" style="width:${c[s] / n * 100}%" title="${ROT[s]}: ${c[s]}"></i>` : '').join('')}</div><span class="pc">${Math.round((c.OK + c.ALERTA) / n * 100)}%</span></div>`; }).join('') || '<p class="hint">Sem dados.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pessoas trabalhando por dia</h3><span class="hint">semana de ${dataBr(S.semana)} · sem quem está de férias · a última coluna mostra quem está sem escala</span></div>
-      <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map((d, i) => `<th>${d}<br>${ddmm(isoMaisDias(S.semana, i))}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
+      <div class="card-b ovf">${hm ? `<table class="hm"><tr><th></th>${DIAS_CURTO.map((d, i) => `<th>${DIAS_CURTO[diaDoOffset(i)]}<br>${ddmm(isoMaisDias(S.semana, i))}</th>`).join('')}<th>Sem esc.</th></tr>${hm}</table>` : '<p class="hint">Ninguém nesta visão.</p>'}</div></section>
     <section class="card"><div class="card-h"><h3>Pendências</h3><span class="hint">erros primeiro · toque para abrir</span></div>
       <div class="pend">${pend.map(c => `<button type="button" data-ed="${esc(c.matricula)}"><span class="pill p-${st(c)}">${ROT[st(c)]}</span><b>${esc(c.nome)}</b><small>${esc(c.funcao)} · ${esc(c.vis.areaNome)}${c.vis.area === 'adm' ? '' : ' · ' + esc(c.vis.grupo)} · ${esc(c.revenda)}${c.val ? '<br>' + esc((c.val.msgs.find(x => x.nivel === 'erro') || {}).texto || '') : ''}</small></button>`).join('') || '<p class="empty">Nada pendente. Todas as escalas estão válidas.</p>'}</div></section>`;
   m.onchange = e => { if (trataCascata(P, colsEsc(), e.target)) vPainel(m); };
