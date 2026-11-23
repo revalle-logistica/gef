@@ -231,6 +231,8 @@ function visaoColaborador(c) {
 }
 
 /** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
+/** Chave do departamento (mesma do filtro em cascata): entrega, arm, adm ou p_<departamento próprio>. */
+function departamentoChave(c) { var v = visaoColaborador(c); return v.proprio ? v.area : ({ arm: 'arm', ent: 'entrega' })[areaSetor(c.setor)] || 'adm'; }
 function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }
 
 /* ---------------- dias reais: padrão + ajustes do dia + férias + feriados ---------------- */

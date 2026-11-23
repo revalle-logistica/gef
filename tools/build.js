@@ -5,7 +5,7 @@
 const fs = require('fs'), path = require('path');
 const src = path.join(__dirname, '..', 'src'), out = path.join(__dirname, '..', 'apps-script');
 fs.mkdirSync(out, { recursive: true });
-const gs = ['Code.gs', 'Auth.gs', 'Escalas.gs', 'Ferias.gs', 'Qlp.gs', 'Export.gs', 'Central.gs', 'Regras.gs']
+const gs = ['Code.gs', 'Auth.gs', 'Escalas.gs', 'Ferias.gs', 'Qlp.gs', 'Export.gs', 'Central.gs', 'Propostas.gs', 'Regras.gs']
   .map(f => `// ===================== ${f} =====================\n` + fs.readFileSync(path.join(src, f), 'utf8')).join('\n\n');
 fs.writeFileSync(path.join(out, 'Codigo.gs'), '// GERADO por tools/build.js a partir de src/. Edite em src/ e rode o build.\n\n' + gs);
 let html = fs.readFileSync(path.join(src, 'Index.html'), 'utf8')

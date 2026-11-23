@@ -99,12 +99,13 @@ function achaUsuario_(id) {
 function aprovarUsuario_(adm, d) {
   return comLock_(function () {
     const u = achaUsuario_(d.id);
-    const perfil = d.perfil === 'ADMIN' || d.perfil === 'DP' ? d.perfil : 'SUPERVISOR';
-    const rv = (d.revendas || []).map(String);
-    if (perfil === 'SUPERVISOR' && !rv.length) throw new Error('Escolha ao menos uma revenda para o supervisor.');
+    const perfil = ['ADMIN', 'DP', 'ANALISTA'].indexOf(d.perfil) >= 0 ? d.perfil : 'SUPERVISOR';
+    const rv = (d.revendas || []).map(String), dps = (d.departamentos || []).map(String);
+    if ((perfil === 'SUPERVISOR' || perfil === 'ANALISTA') && !rv.length) throw new Error('Escolha ao menos uma revenda.');
+    if (perfil === 'ANALISTA' && !dps.length) throw new Error('Escolha ao menos um departamento para o Assistente / Analista.');
     u.perfil = perfil;
-    u.revendas = perfil === 'SUPERVISOR' ? rv.join(',') : '*';
-    u.setores = '*';
+    u.revendas = perfil === 'SUPERVISOR' || perfil === 'ANALISTA' ? rv.join(',') : '*';
+    u.setores = perfil === 'ANALISTA' ? dps.join(',') : '*';
     const novo = u.status === 'PENDENTE';
     if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
     gravarLinha_('Usuarios', u);

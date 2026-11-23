@@ -18,6 +18,7 @@ function autorizarAcessoExterno() {
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
+  Propostas: ['id', 'matricula', 'tipo', 'dados', 'obs', 'status', 'criadoPor', 'criadoPorNome', 'criadoEm', 'decididoPor', 'decididoEm', 'motivo'],
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm', 'ate'],
   Ferias: ['id', 'matricula', 'inicio', 'fim', 'obs', 'criadoPor', 'criadoEm'],
@@ -134,7 +135,10 @@ function rotas_() {
   salvarAjuste: { f: salvarAjuste_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
-  salvarConfig: { f: salvarConfig_, admin: true, dp: true }
+  salvarConfig: { f: salvarConfig_, admin: true, dp: true },
+  propor: { f: propor_ },
+  cancelarProposta: { f: cancelarProposta_ },
+  decidirProposta: { f: decidirProposta_ }
   } };
 }
 
@@ -150,6 +154,7 @@ function api(token, acao, dados) {
     if (!a) throw new Error('Ação inválida.');
     if (a.admin && u.perfil !== 'ADMIN' && !(a.dp && u.perfil === 'DP')) throw new Error('Somente o administrador pode fazer isso.');
     if (u.perfil === 'DP' && SO_ADMIN_SUP_[acao]) throw new Error('O perfil DP só consulta escalas e férias (não altera).');
+    if (u.perfil === 'ANALISTA' && !ANALISTA_OK_[acao]) throw new Error('O perfil Assistente / Analista só consulta e propõe alterações ao supervisor.');
     return { ok: true, data: a.f(u, dados) };
   } catch (e) {
     return { ok: false, erro: e && e.message ? e.message : String(e) };
@@ -252,6 +257,10 @@ function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
 var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
   if (veTudo_(u)) return true;
+  if (u.perfil === 'ANALISTA') {
+    const rv = lista_(u.revendas), dp = lista_(u.setores);
+    return (rv.indexOf('*') >= 0 || rv.indexOf(c.revenda) >= 0) && (dp.indexOf('*') >= 0 || dp.indexOf(departamentoChave(c)) >= 0);
+  }
   return !!c.supervisor && c.supervisor === u.id;
 }
 function parse_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
@@ -311,7 +320,8 @@ function carregar_(u) {
   const ajustes = ler_('Ajustes').filter(function (a) { return vis[a.matricula] && a.data >= desde; }).map(function (a) { return { matricula: a.matricula, data: a.data, tipo: a.tipo, ent: a.ent, sai: a.sai, int: +a.int || 0 }; });
   const revsU = uniq_(cols.map(function (c) { return c.revenda; }));
   const qlp = ler_('QLP').filter(function (q) { return veTudo_(u) || revsU.indexOf(q.revenda) >= 0; }).map(qlpPublico_);
-  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes, qlp: qlp };
+  const r = { usuario: publico_(u), cfg: cfg, colaboradores: cols, ferias: ferias, feriados: feriados, ajustes: ajustes, qlp: qlp, propostas: propostasDoUsuario_(u, vis) };
+  if (u.perfil === 'ANALISTA') { const ids = {}; cols.forEach(function (c) { if (c.supervisor) ids[c.supervisor] = 1; }); r.supervisores = ler_('Usuarios').filter(function (x) { return ids[x.id]; }).map(function (x) { return { id: x.id, nome: x.nome, perfil: x.perfil, revendas: [] }; }); }
   if (veTudo_(u)) {
     r.sincFerias = parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_SINC'), null);
     r.pendentes = ler_('Usuarios').filter(function (x) { return x.status === 'PENDENTE'; }).length;
@@ -427,12 +437,13 @@ function achaUsuario_(id) {
 function aprovarUsuario_(adm, d) {
   return comLock_(function () {
     const u = achaUsuario_(d.id);
-    const perfil = d.perfil === 'ADMIN' || d.perfil === 'DP' ? d.perfil : 'SUPERVISOR';
-    const rv = (d.revendas || []).map(String);
-    if (perfil === 'SUPERVISOR' && !rv.length) throw new Error('Escolha ao menos uma revenda para o supervisor.');
+    const perfil = ['ADMIN', 'DP', 'ANALISTA'].indexOf(d.perfil) >= 0 ? d.perfil : 'SUPERVISOR';
+    const rv = (d.revendas || []).map(String), dps = (d.departamentos || []).map(String);
+    if ((perfil === 'SUPERVISOR' || perfil === 'ANALISTA') && !rv.length) throw new Error('Escolha ao menos uma revenda.');
+    if (perfil === 'ANALISTA' && !dps.length) throw new Error('Escolha ao menos um departamento para o Assistente / Analista.');
     u.perfil = perfil;
-    u.revendas = perfil === 'SUPERVISOR' ? rv.join(',') : '*';
-    u.setores = '*';
+    u.revendas = perfil === 'SUPERVISOR' || perfil === 'ANALISTA' ? rv.join(',') : '*';
+    u.setores = perfil === 'ANALISTA' ? dps.join(',') : '*';
     const novo = u.status === 'PENDENTE';
     if (novo) { u.status = 'ATIVO'; u.aprovadoPor = adm.login; u.aprovadoEm = agora_(); }
     gravarLinha_('Usuarios', u);
@@ -1656,6 +1667,92 @@ function centralFeed_(d) {
 }
 
 
+// ===================== Propostas.gs =====================
+/**
+ * Perfil Assistente / Analista: vê as escalas da(s) revenda(s) × departamento(s) a que está vinculado
+ * e propõe alterações. A proposta só vale depois que o supervisor do colaborador (ou o administrador) aprova.
+ */
+
+/** O analista só consulta e propõe; estas são as únicas ações liberadas para ele. */
+var ANALISTA_OK_ = { carregar: 1, logout: 1, trocarSenha: 1, exportPdf: 1, feriasDados: 1, propor: 1, cancelarProposta: 1 };
+
+function propostaPublica_(p) {
+  return { id: p.id, matricula: p.matricula, tipo: p.tipo, dados: parse_(p.dados, {}), obs: p.obs, status: p.status,
+    criadoPor: p.criadoPor, criadoPorNome: p.criadoPorNome, criadoEm: p.criadoEm, decididoPor: p.decididoPor, decididoEm: p.decididoEm, motivo: p.motivo };
+}
+/** Propostas que o usuário enxerga: o analista vê as dele; supervisor/admin veem as dos colaboradores que acessam. */
+function propostasDoUsuario_(u, vis) {
+  const limite = Utilities.formatDate(new Date(Date.now() - 45 * 864e5), TZ, 'yyyy-MM-dd');
+  return ler_('Propostas').filter(function (p) {
+    if (!vis[p.matricula]) return false;
+    if (p.status !== 'PENDENTE' && String(p.decididoEm || p.criadoEm) < limite) return false;
+    if (u.perfil === 'ANALISTA') return p.criadoPor === u.id;
+    return u.perfil !== 'DP';
+  }).map(propostaPublica_);
+}
+
+/** d = {matricula, tipo:'escala', vigencia, ate?, vigOrig?, dias, obs} ou {matricula, tipo:'ajuste', data, tipo_dia, ent, sai, int, obs} */
+function propor_(u, d) {
+  if (u.perfil !== 'ANALISTA') throw new Error('Só o perfil Assistente / Analista envia propostas.');
+  const c = achaColab_(u, d.matricula), tipo = d.tipo === 'ajuste' ? 'ajuste' : 'escala';
+  let dados;
+  if (tipo === 'escala') {
+    const vig = vigenciaOk_(d.vigencia), esc = { vigencia: vig, ate: ateOk_(d.ate, vig), dias: limpaDias_(d.dias) };
+    const val = validarEscala(esc, { tele: c.teleatendimento === 'S', cfg: cfg_(), entrega: ehEntregaCampo(c) });
+    if (val.status === 'ERRO') throw new Error('A proposta tem erro legal: ' + val.msgs.filter(function (m) { return m.nivel === 'erro'; }).map(function (m) { return m.texto; }).join(' '));
+    dados = { vigencia: esc.vigencia, ate: esc.ate, dias: esc.dias, vigOrig: d.vigOrig ? String(d.vigOrig) : '' };
+  } else {
+    const td = String(d.tipoDia || '');
+    if (td && td !== 'T' && td !== 'F') throw new Error('Tipo de dia inválido.');
+    if (td === 'T' && (hmParaMin(d.ent) == null || hmParaMin(d.sai) == null)) throw new Error('Informe entrada e saída.');
+    dados = { data: dataOk_(d.data, 'dia'), tipoDia: td, ent: td === 'T' ? d.ent : '', sai: td === 'T' ? d.sai : '', int: td === 'T' ? Math.max(0, parseInt(d.int, 10) || 0) : 0 };
+  }
+  return comLock_(function () {
+    const lst = ler_('Propostas');
+    // uma proposta pendente do mesmo tipo/alvo substitui a anterior do mesmo analista
+    lst.forEach(function (p) {
+      if (p.status === 'PENDENTE' && p.criadoPor === u.id && p.matricula === c.matricula && p.tipo === tipo &&
+        (tipo === 'escala' || parse_(p.dados, {}).data === dados.data)) { p.status = 'SUBSTITUIDA'; p.decididoEm = agora_(); gravarLinha_('Propostas', p); }
+    });
+    const p = { id: Utilities.getUuid().slice(0, 8), matricula: c.matricula, tipo: tipo, dados: JSON.stringify(dados), obs: String(d.obs || '').slice(0, 500),
+      status: 'PENDENTE', criadoPor: u.id, criadoPorNome: u.nome, criadoEm: agora_() };
+    gravarLinha_('Propostas', p);
+    log_(u, c.matricula, 'propôs alteração', tipo + (tipo === 'ajuste' ? ' ' + dados.data : ' a partir de ' + dados.vigencia));
+    return propostaPublica_(p);
+  });
+}
+function cancelarProposta_(u, d) {
+  return comLock_(function () {
+    const p = ler_('Propostas').filter(function (x) { return x.id === String(d.id); })[0];
+    if (!p || p.criadoPor !== u.id) throw new Error('Proposta não encontrada.');
+    if (p.status !== 'PENDENTE') throw new Error('Essa proposta já foi decidida.');
+    p.status = 'CANCELADA'; p.decididoPor = u.nome; p.decididoEm = agora_(); gravarLinha_('Propostas', p);
+    return propostaPublica_(p);
+  });
+}
+/** Supervisor do colaborador (ou administrador) aprova: a alteração é gravada em nome de quem aprovou. */
+function decidirProposta_(u, d) {
+  if (u.perfil !== 'ADMIN' && u.perfil !== 'SUPERVISOR') throw new Error('Só o supervisor aprova propostas.');
+  const p = ler_('Propostas').filter(function (x) { return x.id === String(d.id); })[0];
+  if (!p) throw new Error('Proposta não encontrada.');
+  if (p.status !== 'PENDENTE') throw new Error('Essa proposta já foi decidida.');
+  achaColab_(u, p.matricula);
+  const aprovar = !!d.aprovar, dd = parse_(p.dados, {});
+  let resultado = null;
+  if (aprovar) {
+    if (p.tipo === 'escala') resultado = salvarEscala_(u, { matricula: p.matricula, vigencia: dd.vigencia, ate: dd.ate, dias: dd.dias, vigOrig: dd.vigOrig });
+    else resultado = salvarAjuste_(u, { matricula: p.matricula, data: dd.data, tipo: dd.tipoDia, ent: dd.ent, sai: dd.sai, int: dd.int });
+  } else if (!String(d.motivo || '').trim()) throw new Error('Informe o motivo da recusa.');
+  return comLock_(function () {
+    const q = ler_('Propostas').filter(function (x) { return x.id === p.id; })[0];
+    q.status = aprovar ? 'APROVADA' : 'RECUSADA'; q.decididoPor = u.nome; q.decididoEm = agora_(); q.motivo = String(d.motivo || '').slice(0, 500);
+    gravarLinha_('Propostas', q);
+    log_(u, q.matricula, aprovar ? 'aprovou proposta' : 'recusou proposta', q.id + ' de ' + q.criadoPorNome + (q.motivo ? ' · ' + q.motivo : ''));
+    return { proposta: propostaPublica_(q), resultado: resultado };
+  });
+}
+
+
 // ===================== Regras.gs =====================
 /**
  * Regras legais da escala 5x2.
@@ -1890,6 +1987,8 @@ function visaoColaborador(c) {
 }
 
 /** A chave interna é EMPRESA-CÓDIGO (as empresas do grupo repetem códigos). Para exibir, só o código. */
+/** Chave do departamento (mesma do filtro em cascata): entrega, arm, adm ou p_<departamento próprio>. */
+function departamentoChave(c) { var v = visaoColaborador(c); return v.proprio ? v.area : ({ arm: 'arm', ent: 'entrega' })[areaSetor(c.setor)] || 'adm'; }
 function codigoMatricula(m) { var s = String(m == null ? '' : m); var i = s.lastIndexOf('-'); return i >= 0 ? s.slice(i + 1) : s; }
 
 /* ---------------- dias reais: padrão + ajustes do dia + férias + feriados ---------------- */

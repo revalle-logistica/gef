@@ -370,6 +370,22 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 @media(max-width:700px){.fx .cad{flex-direction:column;align-items:stretch}.fx .sep{display:none}.fx .cb,.cb select{max-width:none;width:100%}.fx .cb.sit{margin-left:0;width:100%}}
 
 .fx .seg.dpl button.alt{background:#fff1e0;color:#b45309}.fx .seg.dpl button.alt[aria-pressed=true]{background:#d97706;color:#fff}
+
+/* propostas do Assistente / Analista */
+.pill.p-PROP{font-size:11px;padding:2px 8px;background:#f3e8ff;color:#7e22ce}
+.analista [data-link], .analista #ed-ferf, .analista label.sw:has(#ed-tele), .analista [data-lnk], .analista [data-perdel] { display: none !important; }
+.analista.so-ler [data-pernovo] { display: inline-flex !important; }
+.pp-l{display:grid;gap:12px;padding:14px}
+.pp{border:1px solid var(--ln);border-radius:12px;padding:14px 16px;background:var(--sf);display:grid;gap:8px}
+.pp-h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.pp-h small{display:block;color:var(--mut);font-size:12px}
+.pp-t{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px}
+.pp-dia{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px}.pp-dia .ar{color:var(--mut)}
+.pp-tb{border-collapse:separate;border-spacing:3px;font-size:12px}.pp-tb th{color:var(--mut);font-weight:700;text-align:left;padding:2px 6px}
+.pp-tb td{min-width:54px;text-align:center;border-radius:6px;padding:4px 6px;font-weight:700}.pp-tb td small{display:block;font-weight:500;opacity:.8}
+.pp-tb .pt{background:#e0e9ff;color:#1446c8}.pp-tb .pf{background:#fdf0d8;color:#9a5800}.pp-tb .pz{background:var(--sunk);color:var(--mut)}
+.pp-tb td.mu{outline:2px solid #7e22ce;outline-offset:-2px}
+.pp-o{margin:0;font-style:italic;color:var(--ink);background:var(--sunk);border-radius:8px;padding:8px 10px;font-size:13px}
+.pp-a{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}.pp-r{display:flex;gap:6px;flex:1;min-width:260px}.pp-r input{flex:1}
 </style>
 
 </head>
@@ -433,6 +449,7 @@ async function vistoDP(lista) {
 }
 const st = c => c.val ? c.val.status : 'SEM';
 const IC = {
+  edit: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
@@ -527,7 +544,7 @@ async function sair() { try { await call('logout'); } catch (e) { /* ok */ } S.t
 async function carregar() {
   const r = await call('carregar');
   S.user = r.usuario; S.cfg = r.cfg; S.pend = r.pendentes || 0;
-  S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.sincFerias = r.sincFerias || null;
+  S.allRevs = r.todasRevendas || []; S.allSets = r.todosSetores || []; S.sups = r.supervisores || []; S.propostas = r.propostas || []; S.sincFerias = r.sincFerias || null;
   S.qlp = r.qlp || []; S.ferias = r.ferias || []; S.feriados = r.feriados || []; S.ajustes = r.ajustes || [];
   if (!S.semana) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.semana = inicioSemana(h > i ? h : i); }
   if (!S.mes) { const h = hoje(), i = inicioEscala(S.cfg) || h; S.mes = (h > i ? h : i).slice(0, 7); }
@@ -557,24 +574,30 @@ function revalida() { const GF = grupoFuncao(); S.cols.forEach(c => { periodoDaS
 /** Administrador e DP veem todos os colaboradores; o DP só consulta escalas e férias. */
 const veTudo = () => S.user && (S.user.perfil === 'ADMIN' || S.user.perfil === 'DP');
 const soLer = () => S.user && S.user.perfil === 'DP';
+const ehAnalista = () => S.user && S.user.perfil === 'ANALISTA';
+const aprovaProp = () => S.user && (S.user.perfil === 'ADMIN' || S.user.perfil === 'SUPERVISOR');
+const propsPend = c => (S.propostas || []).filter(p => p.status === 'PENDENTE' && (!c || p.matricula === c.matricula));
+const propPill = c => { const n = propsPend(c).length; return n ? `<span class="pill p-PROP" title="${ehAnalista() ? 'Sua proposta aguarda o supervisor' : 'Proposta do analista aguardando sua aprovação (aba Propostas)'}">✎ Proposta pendente</span>` : ''; };
 function render() {
-  const adm = S.user.perfil === 'ADMIN', dp = soLer();
-  document.body.classList.toggle('so-ler', dp);
-  const tabs = [['escalas', 'cal', 'Escalas']].concat(dp ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel'], ['relacao', 'list', 'Colaboradores']])
-    .concat([['cadastro', 'users', 'Cadastro']])
+  const adm = S.user.perfil === 'ADMIN', dp = soLer(), an = ehAnalista();
+  document.body.classList.toggle('so-ler', dp || an);
+  document.body.classList.toggle('analista', an);
+  const tabs = [['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel'], ['relacao', 'list', 'Colaboradores']])
+    .concat(an ? [] : [['cadastro', 'users', 'Cadastro']])
+    .concat(an || (aprovaProp() && S.propostas.length) ? [['propostas', 'edit', 'Propostas']] : [])
     .concat(adm || dp ? [['importar', 'up', 'Importar DP']] : []).concat(adm ? [['usuarios', 'key', 'Usuários']] : [])
     .concat([['regras', 'shield', 'Regras']]);
   if (!tabs.some(t => t[0] === S.view)) S.view = 'escalas';
   root.innerHTML = `<header class="top"><div class="top-in"><span class="logo">R</span>
     <div class="br"><b>GEF · Gestão de Férias e Escala</b><small>${esc(S.cfg.EMPRESA || 'Revalle')}</small></div>
-    <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}${k === 'cadastro' && nPendCad() ? `<em>${nPendCad()}</em>` : ''}</button>`).join('')}</nav>
-    <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : dp ? ' · DP' : ''}</span>
+    <nav class="nav">${tabs.map(([k, i, t]) => `<button type="button" data-v="${k}" aria-current="${S.view === k}">${ic(i)}${t}${k === 'usuarios' && S.pend ? `<em>${S.pend}</em>` : ''}${k === 'cadastro' && nPendCad() ? `<em>${nPendCad()}</em>` : ''}${k === 'propostas' && propsPend().length ? `<em>${propsPend().length}</em>` : ''}</button>`).join('')}</nav>
+    <div class="usr"><span>${esc(S.user.nome.split(' ')[0])}${adm ? ' · admin' : dp ? ' · DP' : an ? ' · analista' : ''}</span>
       <button class="btn sm" type="button" data-a="senha" title="Trocar senha" aria-label="Trocar senha">${ic('key')}</button>
       <button class="btn sm" type="button" data-a="sair">Sair</button></div></div></header><main id="main"></main>`;
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras })[S.view]($('#main'));
+  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras, propostas: vPropostas })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -800,7 +823,7 @@ function acoes() {
   $('#acts').innerHTML = `<button type="button" class="btn sm" data-ac="todos">${ns ? 'Desmarcar' : 'Marcar todos'}</button>
     ${ns ? `<b>${ns} selecionado${ns > 1 ? 's' : ''}</b><button type="button" class="fx-lk" data-ac="limpar">limpar</button>` : `<span class="hint">ações valem para os ${a.lista.length} da lista</span>`}
     <span class="sp"></span>
-    ${soLer() ? (() => { const n = a.lista.filter(pedeVisto).length; return `<button type="button" class="btn sm ${n ? 'dk' : ''}" data-ac="visto" ${n ? '' : 'disabled'} title="Some o aviso de nova/alterada">✓ Marcar como visto${n ? ' (' + n + ')' : ''}</button>`; })()
+    ${ehAnalista() ? '<span class="hint">Para mudar uma escala, abra o colaborador e envie a proposta ao supervisor.</span>' : soLer() ? (() => { const n = a.lista.filter(pedeVisto).length; return `<button type="button" class="btn sm ${n ? 'dk' : ''}" data-ac="visto" ${n ? '' : 'disabled'} title="Some o aviso de nova/alterada">✓ Marcar como visto${n ? ' (' + n + ')' : ''}</button>`; })()
       : `<button type="button" class="btn sm dk" data-ac="lote">${ic('wand')}Horário em lote</button>${(() => { const n = a.lista.filter(podeLiberar).length; return `<button type="button" class="btn sm ${n ? 'pr' : ''}" data-ac="liberar" ${n ? '' : 'disabled'} title="Envia para o DP a escala como está agora">➜ Liberar para o DP${n ? ' (' + n + ')' : ''}</button>`; })()}`}
     <button type="button" class="btn sm" data-ac="xls" title="Baixar em Excel">${ic('xls')}Excel</button>
     <button type="button" class="btn sm" data-ac="pdf" title="Uma ficha em PDF por colaborador">${ic('pdf')}Fichas</button>
@@ -831,8 +854,8 @@ function linhaHtml(c) {
     <div class="fn">${esc(c.funcao)}<small>${esc(detalheCad(c))}</small></div>
     ${semanaReal(c)}
     <div class="hr">${c.val ? minParaHm(c.val.total) : '–'}${c.escala && c.escala.ate ? `<small class="ate${c.escala.ate <= isoMaisDias(S.semana, 13) ? ' vence' : ''}" title="Este período da escala vale até ${dataBr(c.escala.ate)}">até ${dataBr(c.escala.ate).slice(0, 5)}</small>` : ''}</div>
-    <div class="stc"><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span>${libPill(c)}</div>
-    <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${soLer() ? 'Ver' : c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
+    <div class="stc"><span class="pill p-${s}"><span class="dot d-${s}"></span>${ROT[s]}</span>${libPill(c)}${propPill(c)}</div>
+    <div><button type="button" class="btn sm" data-ed="${esc(c.matricula)}">${soLer() ? 'Ver' : ehAnalista() ? 'Propor' : c.escala ? 'Editar' : 'Montar'}</button></div></div>`;
 }
 
 /* ================= editor individual ================= */
@@ -906,9 +929,11 @@ function desenhaEditor() {
         <form class="addp" id="ed-ferf"><input type="date" name="inicio" aria-label="Início das férias"><input type="date" name="fim" aria-label="Fim das férias"><input name="obs" placeholder="Obs. (opcional)" maxlength="120"><button class="btn sm" type="submit">Adicionar férias</button></form></div>
       ${S.ed.vigOrig && c.escala && c.escala.em ? `<p class="hint">Última alteração: ${esc(c.escala.por)} em ${esc(dh(c.escala.em))}</p>` : (c.escala ? '<p class="hint">Novo período: ajuste o horário e as datas e salve.</p>' : '<p class="hint">Escala nova: sugerimos o horário padrão com folga no sábado e no domingo. Ajuste e salve.</p>')}
       <div id="ed-lnk"></div>
+      ${ehAnalista() ? `${propsPend(c).filter(p => p.tipo === 'escala').length ? '<p class="msgbox">Você já tem uma proposta de escala aguardando o supervisor para esta pessoa. Enviar outra substitui a anterior.</p>' : ''}
+        <label class="f">Comentário para o supervisor <span class="hint">(opcional)</span><textarea id="ed-obs" rows="2" maxlength="500" placeholder="Ex.: troca da folga para cobrir a rota de Irará"></textarea></label>` : ''}
     </div>
     <div class="mdl-f"><button type="button" class="btn" data-xl>${ic('xls')}Excel</button><button type="button" class="btn" data-pdf>${ic('pdf')}PDF</button><button type="button" class="btn" data-lnk>📲 Link p/ colaborador</button>
-      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button>${soLer() ? `${pedeVisto(c) ? '<button type="button" class="btn pr" data-visto>✓ Marcar como visto</button>' : ''}<span class="hint">Perfil DP: só consulta.</span>` : `<button type="button" class="btn" data-salvar>Salvar escala</button><button type="button" class="btn pr" data-salvar="lib" title="Salva e já envia ao DP">Salvar e liberar ao DP</button>`}</div>`);
+      <span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button>${ehAnalista() ? '<button type="button" class="btn pr" data-propor>Enviar proposta ao supervisor</button>' : soLer() ? `${pedeVisto(c) ? '<button type="button" class="btn pr" data-visto>✓ Marcar como visto</button>' : ''}<span class="hint">Perfil DP: só consulta.</span>` : `<button type="button" class="btn" data-salvar>Salvar escala</button><button type="button" class="btn pr" data-salvar="lib" title="Salva e já envia ao DP">Salvar e liberar ao DP</button>`}</div>`);
   const box = modal.querySelector('.mdl');
   box.querySelector('#ed-vig').onchange = ev => { S.ed.e.vigencia = ev.target.value; S.ed.sujo = true; atualizaVal(); periodosEd(); };
   box.querySelector('#ed-ate').onchange = ev => { S.ed.e.ate = ev.target.value; S.ed.sujo = true; periodosEd(); };
@@ -953,6 +978,7 @@ function desenhaEditor() {
       D.forEach((x, i) => { if (x.tipo === 'T') D[i] = { tipo: 'T', ent: S.cfg.PADRAO_ENTRADA, sai: S.cfg.PADRAO_SAIDA, int: +S.cfg.PADRAO_INTERVALO }; }); S.ed.sujo = true; redesenhaDias();
     } else if (b.hasAttribute('data-salvar')) { if (modal.querySelector('input.int.bad')) return toast('Confira o intervalo em vermelho (use horas:minutos, ex.: 1:12).', true); salvarEditor(b, b.dataset.salvar === 'lib'); }
     else if (b.hasAttribute('data-visto')) ocupado(b, async () => { await vistoDP([S.ed.c]); fecharModal(true); render(); });
+    else if (b.hasAttribute('data-propor')) { if (modal.querySelector('input.int.bad')) return toast('Confira o intervalo em vermelho (use horas:minutos, ex.: 1:12).', true); proporEditor(b); }
     else if (b.hasAttribute('data-xl')) ocupado(b, () => excelIndividual(S.ed.c, S.ed.e, S.ed.tele));
     else if (acaoLink(b, S.ed.c)) { /* link do colaborador */ }
     else if (b.hasAttribute('data-pdf')) {
@@ -1037,6 +1063,17 @@ function atualizaVal() {
   $('#ed-val').innerHTML = caixaVal(v);
   const bs = modal.querySelectorAll('[data-salvar]'), bloq = v.status === 'ERRO' && SN(S.cfg.BLOQUEAR_ERRO);
   bs.forEach(b => { b.disabled = bloq || (b.dataset.salvar === 'lib' && v.status === 'ERRO'); b.title = bloq ? 'Corrija os itens em vermelho para salvar' : b.dataset.salvar === 'lib' && v.status === 'ERRO' ? 'Escala com erro não pode ser liberada ao DP' : ''; });
+}
+function proporEditor(bt) {
+  const { c, e } = S.ed;
+  if (e.ate && e.ate < e.vigencia) return toast('A data final não pode ser antes do início.', true);
+  const v = validarEscala(e, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
+  if (v.status === 'ERRO') return toast('A proposta está com erro legal. Corrija antes de enviar.', true);
+  ocupado(bt, async () => {
+    const p = await call('propor', { matricula: c.matricula, tipo: 'escala', vigencia: e.vigencia, ate: e.ate || '', vigOrig: S.ed.vigOrig, dias: e.dias, obs: (modal.querySelector('#ed-obs') || {}).value || '' });
+    S.propostas = S.propostas.map(x => x.status === 'PENDENTE' && x.matricula === p.matricula && x.tipo === 'escala' && x.criadoPor === p.criadoPor ? Object.assign({}, x, { status: 'SUBSTITUIDA' }) : x).concat([p]);
+    fecharModal(true); toast(`Proposta enviada. O supervisor de <b>${esc(c.nome)}</b> vai aprovar ou recusar.`); render();
+  });
 }
 function salvarEditor(bt, liberar) {
   const { c, e } = S.ed;
@@ -1183,8 +1220,10 @@ function abrirDia(mat, data, depois) {
       <div class="row2" id="dia-h"><label class="f">Entrada<input type="time" data-dk="ent"></label><label class="f">Saída<input type="time" data-dk="sai"></label>
         <label class="f">Intervalo${campoInt('data-dk="int"', 0)}</label></div>
       <p class="hint">Vale só para este dia. O padrão semanal não muda.${d.ajuste ? ' Este dia já foi alterado.' : ''}</p>
+      ${ehAnalista() ? '<label class="f">Comentário para o supervisor <span class="hint">(opcional)</span><input id="dia-obs" maxlength="500"></label>' : ''}
       <div id="dia-val"></div></div>
-    <div class="mdl-f">${d.ajuste ? '<button type="button" class="btn" data-dpad>Voltar ao padrão</button>' : ''}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-dsalvar>Salvar dia</button></div>`, true);
+    <div class="mdl-f">${ehAnalista() ? `${d.ajuste ? '<button type="button" class="btn" data-dpropad>Propor voltar ao padrão</button>' : ''}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-dpropor>Propor ao supervisor</button>`
+      : `${d.ajuste ? '<button type="button" class="btn" data-dpad>Voltar ao padrão</button>' : ''}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-dsalvar>Salvar dia</button>`}</div>`, true);
   const box = modal.querySelector('.mdl');
   const desenha = () => {
     box.querySelectorAll('[data-dt]').forEach(b => b.classList.toggle('on', b.dataset.dt === st.tipo));
@@ -1200,6 +1239,12 @@ function abrirDia(mat, data, depois) {
   box.addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) { st.tipo = b.dataset.dt; desenha(); } });
   box.addEventListener('input', e => { const k = e.target.dataset.dk; if (!k) return; if (k === 'int') { const v = leInt(e.target); if (v == null) return; st.int = v; } else st[k] = e.target.value; valida(); });
   const fim = r => { S.ajustes = S.ajustes.filter(a => !(a.matricula === mat && a.data === data)); if (r) S.ajustes.push(r); revalida(); fecharModal(true); depois && depois(); };
+  const propDia = (bt, tipo) => ocupado(bt, async () => {
+    const p = await call('propor', { matricula: mat, tipo: 'ajuste', data, tipoDia: tipo, ent: st.ent, sai: st.sai, int: st.int, obs: ($('#dia-obs') || {}).value || '' });
+    S.propostas = S.propostas.map(x => x.status === 'PENDENTE' && x.matricula === mat && x.tipo === 'ajuste' && x.dados.data === data && x.criadoPor === p.criadoPor ? Object.assign({}, x, { status: 'SUBSTITUIDA' }) : x).concat([p]);
+    fecharModal(true); depois && depois(); toast('Proposta enviada ao supervisor.');
+  });
+  const bpp = box.querySelector('[data-dpropor]'); if (bpp) { bpp.onclick = () => propDia(bpp, st.tipo); const b2 = box.querySelector('[data-dpropad]'); if (b2) b2.onclick = () => propDia(b2, ''); desenha(); return; }
   box.querySelector('[data-dsalvar]').onclick = ev => ocupado(ev.currentTarget, async () => { fim(await call('salvarAjuste', { matricula: mat, data, tipo: st.tipo, ent: st.ent, sai: st.sai, int: st.int })); toast('Dia salvo.'); });
   const bp = box.querySelector('[data-dpad]'); if (bp) bp.onclick = () => ocupado(bp, async () => { await call('salvarAjuste', { matricula: mat, data, tipo: '' }); fim(null); toast('Dia voltou ao padrão.'); });
   desenha();
@@ -1845,18 +1890,19 @@ function formAcesso(u) {
   const revs = S.allRevs, sets = S.allSets, adm = u.perfil === 'ADMIN';
   const ck = (nome, arr, sel, todos) => `<div class="ck"><label><input type="checkbox" data-${nome}="*" ${sel.includes('*') ? 'checked' : ''}> <b>${todos}</b></label>${arr.map(v => `<label><input type="checkbox" data-${nome}="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
   return `<div class="ap" data-form="${esc(u.id)}">
-    <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${u.perfil !== 'ADMIN' && u.perfil !== 'DP' ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="DP" ${u.perfil === 'DP' ? 'selected' : ''}>DP (consulta escalas e férias, importa, define supervisor e desliga)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
+    <label class="f">Perfil<select data-perfil><option value="SUPERVISOR" ${!['ADMIN', 'DP', 'ANALISTA'].includes(u.perfil) ? 'selected' : ''}>Supervisor (vê só o que for liberado)</option><option value="ANALISTA" ${u.perfil === 'ANALISTA' ? 'selected' : ''}>Assistente / Analista (vê e propõe alterações ao supervisor)</option><option value="DP" ${u.perfil === 'DP' ? 'selected' : ''}>DP (consulta escalas e férias, importa, define supervisor e desliga)</option><option value="ADMIN" ${adm ? 'selected' : ''}>Administrador (vê tudo)</option></select></label>
     ${revs.length ? '' : '<p class="hint">Importe o relatório do DP para listar as revendas. Por enquanto dá para liberar "Todas".</p>'}
-    <div><b style="font-size:12px;color:var(--mut)">REVENDA(S) DO SUPERVISOR</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
-    <p class="hint">O supervisor vê só os colaboradores vinculados a ele na tela <b>Cadastro</b>.</p>
+    <div data-blk="rv"><b style="font-size:12px;color:var(--mut)">REVENDA(S)</b>${ck('rv', revs, u.revendas, 'Todas')}</div>
+    <div data-blk="dp" ${u.perfil === 'ANALISTA' ? '' : 'hidden'}><b style="font-size:12px;color:var(--mut)">DEPARTAMENTO(S)</b>${ck('dp', uniq(S.cols.map(depKey)).sort((a, b) => depNome(a).localeCompare(depNome(b))).map(k => k), u.perfil === 'ANALISTA' ? (u.setores || []) : [], 'Todos').replace(/(data-dp="([^"]+)"[^>]*>) ([^<]+)</g, (x, a, k) => a + ' ' + esc(k === '*' ? 'Todos' : depNome(k)) + '<')}</div>
+    <p class="hint" data-blk="hs">${u.perfil === 'ANALISTA' ? 'O Assistente / Analista vê os colaboradores das revendas <b>e</b> departamentos marcados e só propõe alterações; quem aprova é o supervisor de cada colaborador.' : 'O supervisor vê só os colaboradores vinculados a ele na tela <b>Cadastro</b>.'}</p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn sm" data-u="cancel">Cancelar</button><button type="button" class="btn sm ok" data-u="salvar" data-id="${esc(u.id)}">${u.status === 'PENDENTE' ? 'Aprovar acesso' : 'Salvar acesso'}</button></div></div>`;
 }
 function desenhaUsuarios(m) {
   const U = S.users, pend = U.filter(u => u.status === 'PENDENTE'), out = U.filter(u => u.status !== 'PENDENTE');
   const esc2 = a => a.includes('*') ? 'todas' : a.join(', ') || '—';
-  const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : u.perfil === 'DP' ? 'DP' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
+  const linha = u => `<div class="us"><div><b>${esc(u.nome)}</b> <span class="pill ${u.status === 'ATIVO' ? 'p-OK' : u.status === 'PENDENTE' ? 'p-ALERTA' : 'p-ERRO'}">${u.status === 'ATIVO' ? (u.perfil === 'ADMIN' ? 'Administrador' : u.perfil === 'DP' ? 'DP' : u.perfil === 'ANALISTA' ? 'Assistente / Analista' : 'Supervisor') : u.status === 'PENDENTE' ? 'Aguardando aprovação' : 'Bloqueado'}</span>
       <small>${esc(u.login)}${u.telefone ? ' · ' + esc(u.telefone) : ''} · cadastro ${esc(dh(u.criadoEm))}${u.ultimoAcesso ? ' · último acesso ' + esc(dh(u.ultimoAcesso)) : ''}</small>
-      ${u.status !== 'PENDENTE' ? `<small>Revenda: ${esc(esc2(u.revendas))} · ${S.cols.filter(c => c.supervisor === u.id).length} colaboradores vinculados</small>` : ''}</div>
+      ${u.status !== 'PENDENTE' ? `<small>Revenda: ${esc(esc2(u.revendas))}${u.perfil === 'ANALISTA' ? ' · Departamento: ' + esc(u.setores.includes('*') ? 'todos' : u.setores.map(depNome).join(', ')) : ' · ' + S.cols.filter(c => c.supervisor === u.id).length + ' colaboradores vinculados'}</small>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       ${u.status === 'PENDENTE' ? `<button type="button" class="btn sm ok" data-u="abrir" data-id="${esc(u.id)}">Aprovar</button><button type="button" class="btn sm er" data-u="BLOQUEADO" data-id="${esc(u.id)}">Recusar</button>`
       : `<button type="button" class="btn sm" data-u="abrir" data-id="${esc(u.id)}">Acesso</button><button type="button" class="btn sm" data-u="reset" data-id="${esc(u.id)}">Nova senha</button>${u.id !== S.user.id ? `<button type="button" class="btn sm ${u.status === 'ATIVO' ? 'er' : ''}" data-u="${u.status === 'ATIVO' ? 'BLOQUEADO' : 'ATIVO'}" data-id="${esc(u.id)}">${u.status === 'ATIVO' ? 'Bloquear' : 'Reativar'}</button>` : ''}`}</div>
@@ -1864,6 +1910,12 @@ function desenhaUsuarios(m) {
   m.innerHTML = `<section class="card"><div class="card-h"><h3>Aguardando aprovação (${pend.length})</h3><button type="button" class="btn sm" data-u="ref">${ic('ref')}Atualizar</button></div>
       ${pend.map(linha).join('') || '<p class="empty">Nenhum cadastro pendente.</p>'}</section>
     <section class="card"><div class="card-h"><h3>Usuários (${out.length})</h3><span class="hint">Supervisores só veem as revendas e os setores liberados</span></div>${out.map(linha).join('')}</section>`;
+  m.onchange = e => {
+    const sel = e.target.closest('[data-perfil]'); if (!sel) return;
+    const f = sel.closest('[data-form]'), an = sel.value === 'ANALISTA';
+    f.querySelector('[data-blk=dp]').hidden = !an;
+    f.querySelector('[data-blk=hs]').innerHTML = an ? 'O Assistente / Analista vê os colaboradores das revendas <b>e</b> departamentos marcados e só propõe alterações; quem aprova é o supervisor de cada colaborador.' : 'O supervisor vê só os colaboradores vinculados a ele na tela <b>Cadastro</b>.';
+  };
   m.onclick = e => {
     const b = e.target.closest('[data-u]'); if (!b) return;
     const a = b.dataset.u, id = b.dataset.id;
@@ -1874,7 +1926,8 @@ function desenhaUsuarios(m) {
       const f = b.closest('[data-form]');
       const pick = n => [...f.querySelectorAll(`[data-${n}]:checked`)].map(x => x.getAttribute('data-' + n));
       let rv = pick('rv'); if (rv.includes('*')) rv = ['*'];
-      return ocupado(b, async () => { const r = await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv }); S.editUser = null; await carregar(); toast(r.emailEnviado ? `Acesso aprovado. E-mail enviado para <b>${esc(r.emailEnviado)}</b>.` : 'Acesso salvo.'); });
+      let dps = pick('dp'); if (dps.includes('*')) dps = ['*'];
+      return ocupado(b, async () => { const r = await call('aprovarUsuario', { id, perfil: f.querySelector('[data-perfil]').value, revendas: rv, departamentos: dps }); S.editUser = null; await carregar(); toast(r.emailEnviado ? `Acesso aprovado. E-mail enviado para <b>${esc(r.emailEnviado)}</b>.` : 'Acesso salvo.'); });
     }
     if (a === 'reset') {
       if (!confirm('Gerar uma senha temporária para este usuário?')) return;
@@ -1889,6 +1942,70 @@ function desenhaUsuarios(m) {
       if (a === 'BLOQUEADO' && !confirm('Bloquear o acesso deste usuário?')) return;
       return ocupado(b, async () => { await call('statusUsuario', { id, status: a }); vUsuarios(m); });
     }
+  };
+}
+
+/* ================= propostas (Assistente / Analista → supervisor) ================= */
+const PROP_TXT = { PENDENTE: 'Aguardando', APROVADA: 'Aprovada', RECUSADA: 'Recusada', CANCELADA: 'Cancelada', SUBSTITUIDA: 'Substituída' };
+const PROP_CLS = { PENDENTE: 'ALERTA', APROVADA: 'OK', RECUSADA: 'ERRO', CANCELADA: 'SEM', SUBSTITUIDA: 'SEM' };
+function celDia(x) { return !x ? '<td class="pz">—</td>' : x.tipo === 'T' ? `<td class="pt">${esc(x.ent)}<small>${esc(x.sai)}</small></td>` : '<td class="pf">folga</td>'; }
+function detalheProp(p, c) {
+  const d = p.dados;
+  if (p.tipo === 'ajuste') {
+    const aj = Object.assign({}, c ? ajustesDe(c.matricula) : {}), atual = c ? diaEfetivo(c.escala, d.data, feriasDe(c.matricula), feriadosDe(c.revenda), aj) : null;
+    if (d.tipoDia) aj[d.data] = { tipo: d.tipoDia, ent: d.ent, sai: d.sai, int: d.int }; else delete aj[d.data];
+    const v = c ? validarSemanaReal(semanaEfetiva(c.escala, inicioSemana(d.data), feriasDe(c.matricula), feriadosDe(c.revenda), aj), { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }) : null;
+    const txt = x => !x || x.tipo === 'N' ? 'sem escala' : x.tipo === 'T' ? `trabalho ${esc(x.ent)}–${esc(x.sai)}` : x.tipo === 'FER' ? 'férias' : 'folga';
+    return `<div class="pp-t"><b>Só o dia ${DIAS_SEMANA[diaSemanaIso(d.data)].toLowerCase()}, ${dataBr(d.data)}</b>${v ? `<span class="pill p-${v.status}">${v.status === 'OK' ? 'semana dentro das regras' : v.status === 'ALERTA' ? 'semana com alerta' : 'semana com erro'}</span>` : ''}</div>
+      <div class="pp-dia"><span>Hoje: <b>${txt(atual)}</b></span><span class="ar">→</span><span>Proposta: <b>${d.tipoDia ? txt({ tipo: d.tipoDia, ent: d.ent, sai: d.sai }) + (d.tipoDia === 'T' ? ' · intervalo ' + minParaHm(+d.int || 0) : '') : 'voltar ao padrão semanal'}</b></span></div>`;
+  }
+  const at = c && c.escala ? periodoNaData(c.escala, d.vigencia) : null;
+  const v = validarEscala({ vigencia: d.vigencia, dias: d.dias }, { tele: c && c.tele, cfg: S.cfg, entrega: c ? ehEntregaCampo(c) : false });
+  const muda = i => !at || JSON.stringify(at.dias[i] || {}) !== JSON.stringify(d.dias[i] || {});
+  return `<div class="pp-t"><b>Escala a partir de ${dataBr(d.vigencia)}${d.ate ? ' até ' + dataBr(d.ate) : ''}</b><span class="pill p-${v.status}">${minParaHm(v.total)} · ${v.status === 'OK' ? 'dentro das regras' : v.status === 'ALERTA' ? 'com alerta' : 'com erro'}</span></div>
+    <div class="ovf"><table class="pp-tb"><tr><th></th>${ORDEM_SEMANA.map(i => `<th>${DIAS_CURTO[i]}</th>`).join('')}</tr>
+      <tr><th>Hoje</th>${ORDEM_SEMANA.map(i => at ? celDia(at.dias[i]) : '<td class="pz">—</td>').join('')}</tr>
+      <tr class="nv"><th>Proposta</th>${ORDEM_SEMANA.map(i => celDia(d.dias[i]).replace('<td class="', `<td class="${muda(i) ? 'mu ' : ''}`)).join('')}</tr></table></div>`;
+}
+function cartaoProp(p) {
+  const c = S.cols.find(x => x.matricula === p.matricula), an = ehAnalista(), pend = p.status === 'PENDENTE';
+  const quem = an ? (c && c.supervisor ? 'Aprovação: <b>' + esc(nomeSup(c.supervisor) || 'supervisor') + '</b>' : '<b>Sem supervisor vinculado</b>: só o administrador aprova') : `Proposta de <b>${esc(p.criadoPorNome)}</b>`;
+  return `<div class="pp" data-pp="${esc(p.id)}"><div class="pp-h"><div><b>${esc(c ? c.nome : p.matricula)}</b><small>${c ? esc(codigoMatricula(c.matricula) + ' · ' + c.funcao + ' · ' + c.revenda) : ''}</small></div>
+      <span class="pill p-${PROP_CLS[p.status] || 'SEM'}">${PROP_TXT[p.status] || p.status}</span></div>
+    ${detalheProp(p, c)}
+    ${p.obs ? `<p class="pp-o">“${esc(p.obs)}”</p>` : ''}
+    <p class="hint">${quem} · enviada em ${esc(dh(p.criadoEm))}${p.decididoEm && !pend ? ` · ${p.status === 'APROVADA' ? 'aprovada' : p.status === 'RECUSADA' ? 'recusada' : 'encerrada'}${p.decididoPor ? ' por ' + esc(p.decididoPor) : ''} em ${esc(dh(p.decididoEm))}` : ''}${p.motivo ? ` · motivo: <b>${esc(p.motivo)}</b>` : ''}</p>
+    ${pend ? (an ? '<div class="pp-a"><button type="button" class="btn sm" data-pc>Cancelar proposta</button></div>'
+      : `<div class="pp-a"><div class="pp-r" hidden><input data-pm maxlength="500" placeholder="Motivo da recusa (o analista vê)"><button type="button" class="btn sm er" data-pr2>Confirmar recusa</button></div>
+        <button type="button" class="btn sm" data-pr>Recusar</button><button type="button" class="btn sm ok" data-pa>Aprovar e aplicar</button></div>`) : ''}</div>`;
+}
+function vPropostas(m) {
+  const L = (S.propostas || []).slice().sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)));
+  const pend = L.filter(p => p.status === 'PENDENTE'), feitas = L.filter(p => p.status !== 'PENDENTE' && p.status !== 'SUBSTITUIDA'), an = ehAnalista();
+  m.innerHTML = `<section class="card"><div class="card-h"><h3>${an ? 'Minhas propostas aguardando o supervisor' : 'Propostas aguardando sua aprovação'} (${pend.length})</h3>
+      <span class="hint">${an ? 'Abra um colaborador em Escalas (ou um dia no Mês) e toque em <b>Propor</b>.' : 'Ao aprovar, a escala é gravada em seu nome. Se já tinha sido liberada, reenvie ao DP.'}</span></div>
+      <div class="pp-l">${pend.map(cartaoProp).join('') || '<p class="empty">Nenhuma proposta pendente.</p>'}</div></section>
+    <section class="card"><div class="card-h"><h3>Decididas nos últimos 45 dias (${feitas.length})</h3></div><div class="pp-l">${feitas.map(cartaoProp).join('') || '<p class="empty">Nada por aqui.</p>'}</div></section>`;
+  m.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const card = b.closest('[data-pp]'); if (!card) return;
+    const id = card.dataset.pp, p = S.propostas.find(x => x.id === id); if (!p) return;
+    const troca = q => { S.propostas = S.propostas.map(x => x.id === q.id ? q : x); };
+    if (b.hasAttribute('data-pr')) { card.querySelector('.pp-r').hidden = false; b.hidden = true; card.querySelector('[data-pm]').focus(); return; }
+    if (b.hasAttribute('data-pc')) return ocupado(b, async () => { troca(await call('cancelarProposta', { id })); toast('Proposta cancelada.'); render(); });
+    if (b.hasAttribute('data-pr2')) {
+      const motivo = card.querySelector('[data-pm]').value.trim(); if (!motivo) return toast('Informe o motivo da recusa.', true);
+      return ocupado(b, async () => { const r = await call('decidirProposta', { id, aprovar: false, motivo }); troca(r.proposta); toast('Proposta recusada.'); render(); });
+    }
+    if (b.hasAttribute('data-pa')) return ocupado(b, async () => {
+      const r = await call('decidirProposta', { id, aprovar: true }), c = S.cols.find(x => x.matricula === p.matricula);
+      troca(r.proposta);
+      if (c && p.tipo === 'escala' && r.resultado) c.escala = r.resultado.escala;
+      if (p.tipo === 'ajuste') { S.ajustes = S.ajustes.filter(a => !(a.matricula === p.matricula && a.data === p.dados.data)); if (r.resultado) S.ajustes.push(r.resultado); }
+      revalida();
+      const pendDP = c && c.escala && situacaoLiberacao(c.escala, c.lib) === 'PEND';
+      toast(`Proposta aprovada e aplicada${c ? ' na escala de <b>' + esc(c.nome) + '</b>' : ''}.${pendDP ? ' Ela já tinha sido liberada: <b>reenvie ao DP</b>.' : ''}`, pendDP); render();
+    });
   };
 }
 
