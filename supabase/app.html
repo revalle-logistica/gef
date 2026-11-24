@@ -401,6 +401,21 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .prt-pz small{display:block;color:var(--mut);font-size:12px;margin-top:2px}.prt-pz.venc{background:#fde6e3;border-color:#f5c2bc}.prt-pz .er{color:var(--er)}
 .prt-pzf{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.prt-pzf label{display:grid;gap:2px;font-size:11px;color:var(--mut);font-weight:700}.prt-pzf input{height:32px;border:1px solid var(--ln);border-radius:8px;padding:0 8px;font:inherit;color:var(--ink)}.prt-pzf input[type=number]{width:76px}
 .prt-ac{display:flex;gap:6px;justify-content:flex-end}.prt-ac .ic{color:#128c4a}
+
+/* resumo da semana */
+.rs-tab{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;min-width:820px}
+.rs-tab th,.rs-tab td{padding:6px 8px;border-bottom:1px solid var(--ln);text-align:center;white-space:nowrap}
+.rs-tab thead th{background:#0b2a6b;color:#fff;font-weight:700;position:sticky;top:0;z-index:1}.rs-tab thead th small{display:block;font-weight:500;opacity:.75;font-size:11px}
+.rs-tab thead th.fer{background:#7a1f1a}
+.rs-tab .rn{text-align:left;position:sticky;left:0;background:var(--sf);z-index:1}.rs-tab thead .rn{background:#0b2a6b}.rs-tab td.rt{color:var(--mut)}
+.rs-tab tr.rs-g th{background:#e3eafb;color:#0b2a6b;text-align:left;font-size:13px;padding:8px}.rs-tab tr.rs-g th span{background:#0b2a6b;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:6px}
+.rs-tab tbody tr[data-ed]{cursor:pointer}.rs-tab tbody tr[data-ed]:hover td{filter:brightness(.96)}
+.rs-tab td.r-T,.rs-leg .r-T{background:#fff3b0;color:#5c4a00}.rs-tab td.r-F,.rs-leg .r-F{background:#e5c6f5;color:#5b1d7a;font-weight:700}
+.rs-tab td.r-FER,.rs-leg .r-FER{background:#cfe3ff;color:#1446c8;font-weight:700}.rs-tab td.r-N{color:var(--mut);background:var(--sunk)}
+.rs-tab tr.rs-c td{background:transparent;color:var(--mut);font-size:11.5px;border-bottom:2px solid var(--ln)}.rs-tab tr.rs-c td.rn{text-align:right;font-weight:600}
+.rs-leg{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px}.rs-leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
+.rs-tab .ct{display:none}
+@media(max-width:700px){.rs-tab{min-width:0;font-size:12px}.rs-tab .lg{display:none}.rs-tab .ct{display:inline}.rs-tab th,.rs-tab td{padding:6px 4px}.rs-tab .rt{display:none}.rs-tab tr.rs-c td.rn{text-align:left}.rs-tab .rn{max-width:120px;white-space:normal}.rs-tab tr.rs-g th{position:sticky;left:0}}
 </style>
 
 </head>
@@ -692,7 +707,7 @@ function validarSemanaReal(sem, ctx) {
 'use strict';
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
-  f: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', q: '', tele: '', vis: 'todos' }, sel: new Set(), pnl: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' },
+  f: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', q: '', tele: '', vis: 'todos' }, sel: new Set(), pnl: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' }, res: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' },
   imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], ajustes: [], semana: '', mes: '',
   cad: { aba: 'col', rev: '', dep: 'arm', fn: '', tipo: '', loc: '', tur: '', area: 'arm', f: 'pend', q: '', sel: new Set() },
   rel: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', sit: '', sup: '', q: '' } };
@@ -875,7 +890,7 @@ function render() {
   const adm = S.user.perfil === 'ADMIN', dp = soLer(), an = ehAnalista();
   document.body.classList.toggle('so-ler', dp || an);
   document.body.classList.toggle('analista', an);
-  const tabs = [['painel', 'chart', 'Painel'], ['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['relacao', 'list', 'Colaboradores']])
+  const tabs = [['painel', 'chart', 'Painel'], ['resumo', 'list', 'Resumo'], ['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['relacao', 'list', 'Colaboradores']])
     .concat(an ? [] : [['cadastro', 'users', 'Cadastro']])
     .concat(an || (aprovaProp() && S.propostas.length) ? [['propostas', 'edit', 'Propostas']] : [])
     .concat(adm || dp ? [['importar', 'up', 'Importar DP']] : []).concat(adm ? [['usuarios', 'key', 'Usuários']] : [])
@@ -890,7 +905,7 @@ function render() {
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras, propostas: vPropostas })[S.view]($('#main'));
+  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras, propostas: vPropostas, resumo: vResumo })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -1682,6 +1697,42 @@ function textoCobranca(sid, L) {
   if (n.NAOLIB) lin.push(`⏳ ${n.NAOLIB} montadas, mas não liberadas ao DP`);
   if (n.REENV) lin.push(`🔁 ${n.REENV} alteradas, falta reenviar ao DP`);
   return `Olá, ${nome}! ${pa && pa.tipo === 'mensal' ? `O prazo para liberar ao DP as ${pa.rotulo} é ${dataBr(pz)}.` : `${dias ? `Faltam ${dias} dia${dias > 1 ? 's' : ''}` : 'Hoje é o dia'} para a escala 5x2 começar (${dataBr(ini)}).${pz ? ` O prazo para liberar ao DP é ${dataBr(pz)}.` : ''}`}\n\nNa sua equipe (${a.length} pessoas), ✅ ${n.VISTA + n.LIB} já estão prontas. Falta:\n${lin.join('\n')}\n\nAcesse o GEF e finalize: ${S.cfg.LINK_SISTEMA || location.href}`;
+}
+/* ---------- resumo da semana: quem trabalha e quem folga, por função ---------- */
+const RES_TXT = { T: 'Trabalho', F: 'Folga', FER: 'Férias', N: '—' };
+function vResumo(m) {
+  const R = S.res, base = colsEsc();
+  arrumaH(R, base);
+  const L = base.filter(c => passaH(R, c));
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => isoMaisDias(S.semana, i));
+  const grupos = new Map();
+  L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || a.nome.localeCompare(b.nome))
+    .forEach(c => { const g = c.vis.funcao || c.funcao; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(c); });
+  const fer = new Set(S.feriados.filter(f => f.data >= dias[0] && f.data <= dias[6]).map(f => f.data));
+  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="lg">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="ct">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
+  let corpo = '';
+  grupos.forEach((a, g) => {
+    const trab = [0, 0, 0, 0, 0, 0, 0];
+    const linhas = a.map(c => {
+      const sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), ajustesDe(c.matricula));
+      return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b></td><td class="rt">${esc(localidadeC(c) || '—')}</td>${sem.map((d, i) => {
+        const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
+        const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
+        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="lg">${RES_TXT[t] || '—'}</span><span class="ct">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    corpo += `<tbody><tr class="rs-g"><th colspan="9">${esc(g)} <span>${a.length}</span></th></tr>${linhas}
+      <tr class="rs-c"><td class="rn">Trabalhando no dia</td><td class="rt"></td>${trab.map(n => `<td>${n}/${a.length}</td>`).join('')}</tr></tbody>`;
+  });
+  m.innerHTML = `<section class="card">${barraSemana()}<div class="fx">${cascataHtml(R, base, { n: L.length })}</div></section>
+    <section class="card"><div class="card-h"><h3>Resumo da semana</h3><span class="leg rs-leg"><span><i class="r-T"></i>Trabalho (T)</span><span><i class="r-F"></i>Folga (F)</span><span><i class="r-FER"></i>Férias (Fé)</span><span class="hint">toque no nome para abrir a escala</span></span></div>
+      <div class="card-b ovf">${L.length ? `<table class="rs-tab"><thead><tr>${cab}</tr></thead>${corpo}</table>` : '<p class="empty">Ninguém nesta seleção.</p>'}</div></section>`;
+  m.onchange = e => { if (trataCascata(R, base, e.target)) vResumo(m); };
+  ligaSemana(m, () => vResumo(m));
+  m.onclick = e => {
+    const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(R, base, v)) return vResumo(m);
+    const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
+  };
 }
 function vPainel(m) {
   const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));

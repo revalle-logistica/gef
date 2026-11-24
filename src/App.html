@@ -3,7 +3,7 @@
 'use strict';
 /* ================= estado e utilidades ================= */
 const S = { token: null, user: null, cfg: {}, cols: [], view: 'escalas', pend: 0, allRevs: [], allSets: [],
-  f: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', q: '', tele: '', vis: 'todos' }, sel: new Set(), pnl: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' },
+  f: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', st: '', q: '', tele: '', vis: 'todos' }, sel: new Set(), pnl: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' }, res: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', vis: '' },
   imp: null, users: null, ed: null, lote: null, editUser: null, sups: [], ferias: [], feriados: [], ajustes: [], semana: '', mes: '',
   cad: { aba: 'col', rev: '', dep: 'arm', fn: '', tipo: '', loc: '', tur: '', area: 'arm', f: 'pend', q: '', sel: new Set() },
   rel: { rev: '', dep: '', fn: '', tipo: '', loc: '', tur: '', sit: '', sup: '', q: '' } };
@@ -186,7 +186,7 @@ function render() {
   const adm = S.user.perfil === 'ADMIN', dp = soLer(), an = ehAnalista();
   document.body.classList.toggle('so-ler', dp || an);
   document.body.classList.toggle('analista', an);
-  const tabs = [['painel', 'chart', 'Painel'], ['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['relacao', 'list', 'Colaboradores']])
+  const tabs = [['painel', 'chart', 'Painel'], ['resumo', 'list', 'Resumo'], ['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['relacao', 'list', 'Colaboradores']])
     .concat(an ? [] : [['cadastro', 'users', 'Cadastro']])
     .concat(an || (aprovaProp() && S.propostas.length) ? [['propostas', 'edit', 'Propostas']] : [])
     .concat(adm || dp ? [['importar', 'up', 'Importar DP']] : []).concat(adm ? [['usuarios', 'key', 'Usuários']] : [])
@@ -201,7 +201,7 @@ function render() {
   root.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => { S.view = b.dataset.v; render(); }; });
   root.querySelector('[data-a=sair]').onclick = sair;
   root.querySelector('[data-a=senha]').onclick = modalSenha;
-  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras, propostas: vPropostas })[S.view]($('#main'));
+  ({ escalas: vEscalas, qlp: vQlp, mes: vMes, ferias: vFeriasSis, painel: vPainel, relacao: vRelacao, cadastro: vCadastro, importar: vImportar, usuarios: vUsuarios, regras: vRegras, propostas: vPropostas, resumo: vResumo })[S.view]($('#main'));
 }
 function abrirModal(html, sm) {
   modal.innerHTML = `<div class="mdl${sm ? ' sm' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -993,6 +993,42 @@ function textoCobranca(sid, L) {
   if (n.NAOLIB) lin.push(`⏳ ${n.NAOLIB} montadas, mas não liberadas ao DP`);
   if (n.REENV) lin.push(`🔁 ${n.REENV} alteradas, falta reenviar ao DP`);
   return `Olá, ${nome}! ${pa && pa.tipo === 'mensal' ? `O prazo para liberar ao DP as ${pa.rotulo} é ${dataBr(pz)}.` : `${dias ? `Faltam ${dias} dia${dias > 1 ? 's' : ''}` : 'Hoje é o dia'} para a escala 5x2 começar (${dataBr(ini)}).${pz ? ` O prazo para liberar ao DP é ${dataBr(pz)}.` : ''}`}\n\nNa sua equipe (${a.length} pessoas), ✅ ${n.VISTA + n.LIB} já estão prontas. Falta:\n${lin.join('\n')}\n\nAcesse o GEF e finalize: ${S.cfg.LINK_SISTEMA || location.href}`;
+}
+/* ---------- resumo da semana: quem trabalha e quem folga, por função ---------- */
+const RES_TXT = { T: 'Trabalho', F: 'Folga', FER: 'Férias', N: '—' };
+function vResumo(m) {
+  const R = S.res, base = colsEsc();
+  arrumaH(R, base);
+  const L = base.filter(c => passaH(R, c));
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => isoMaisDias(S.semana, i));
+  const grupos = new Map();
+  L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || a.nome.localeCompare(b.nome))
+    .forEach(c => { const g = c.vis.funcao || c.funcao; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(c); });
+  const fer = new Set(S.feriados.filter(f => f.data >= dias[0] && f.data <= dias[6]).map(f => f.data));
+  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="lg">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="ct">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
+  let corpo = '';
+  grupos.forEach((a, g) => {
+    const trab = [0, 0, 0, 0, 0, 0, 0];
+    const linhas = a.map(c => {
+      const sem = semanaEfetiva(c.escala, S.semana, feriasDe(c.matricula), feriadosDe(c.revenda), ajustesDe(c.matricula));
+      return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b></td><td class="rt">${esc(localidadeC(c) || '—')}</td>${sem.map((d, i) => {
+        const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
+        const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
+        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="lg">${RES_TXT[t] || '—'}</span><span class="ct">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    corpo += `<tbody><tr class="rs-g"><th colspan="9">${esc(g)} <span>${a.length}</span></th></tr>${linhas}
+      <tr class="rs-c"><td class="rn">Trabalhando no dia</td><td class="rt"></td>${trab.map(n => `<td>${n}/${a.length}</td>`).join('')}</tr></tbody>`;
+  });
+  m.innerHTML = `<section class="card">${barraSemana()}<div class="fx">${cascataHtml(R, base, { n: L.length })}</div></section>
+    <section class="card"><div class="card-h"><h3>Resumo da semana</h3><span class="leg rs-leg"><span><i class="r-T"></i>Trabalho (T)</span><span><i class="r-F"></i>Folga (F)</span><span><i class="r-FER"></i>Férias (Fé)</span><span class="hint">toque no nome para abrir a escala</span></span></div>
+      <div class="card-b ovf">${L.length ? `<table class="rs-tab"><thead><tr>${cab}</tr></thead>${corpo}</table>` : '<p class="empty">Ninguém nesta seleção.</p>'}</div></section>`;
+  m.onchange = e => { if (trataCascata(R, base, e.target)) vResumo(m); };
+  ligaSemana(m, () => vResumo(m));
+  m.onclick = e => {
+    const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(R, base, v)) return vResumo(m);
+    const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
+  };
 }
 function vPainel(m) {
   const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));
