@@ -413,8 +413,8 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .rs-tab td.r-FER,.rs-leg .r-FER{background:#cfe3ff;color:#1446c8;font-weight:700}.rs-tab td.r-N{color:var(--mut);background:var(--sunk)}
 .rs-tab tr.rs-c td{background:transparent;color:var(--mut);font-size:11.5px;border-bottom:2px solid var(--ln)}.rs-tab tr.rs-c td.rn{text-align:right;font-weight:600}
 .rs-leg{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px}.rs-leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
-.rs-tab .ct{display:none}
-@media(max-width:700px){.rs-tab{min-width:0;font-size:12px}.rs-tab .lg{display:none}.rs-tab .ct{display:inline}.rs-tab th,.rs-tab td{padding:6px 4px}.rs-tab .rt{display:none}.rs-tab tr.rs-c td.rn{text-align:left}.rs-tab .rn{max-width:120px;white-space:normal}.rs-tab tr.rs-g th{position:sticky;left:0}}
+.rs-tab .rs-s{display:none}
+@media(max-width:700px){.rs-tab{min-width:0;font-size:12px}.rs-tab .rs-l{display:none}.rs-tab .rs-s{display:inline}.rs-tab th,.rs-tab td{padding:6px 4px}.rs-tab .rt{display:none}.rs-tab tr.rs-c td.rn{text-align:left}.rs-tab .rn{max-width:120px;white-space:normal}.rs-tab tr.rs-g th{position:sticky;left:0}}
 </style>
 
 </head>
@@ -1430,7 +1430,7 @@ function vResumo(m) {
   L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || a.nome.localeCompare(b.nome))
     .forEach(c => { const g = c.vis.funcao || c.funcao; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(c); });
   const fer = new Set(S.feriados.filter(f => f.data >= dias[0] && f.data <= dias[6]).map(f => f.data));
-  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="lg">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="ct">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
+  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="rs-l">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="rs-s">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
   let corpo = '';
   grupos.forEach((a, g) => {
     const trab = [0, 0, 0, 0, 0, 0, 0];
@@ -1439,7 +1439,7 @@ function vResumo(m) {
       return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b></td><td class="rt">${esc(localidadeC(c) || '—')}</td>${sem.map((d, i) => {
         const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
         const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
-        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="lg">${RES_TXT[t] || '—'}</span><span class="ct">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
+        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="rs-l">${RES_TXT[t] || '—'}</span><span class="rs-s">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
       }).join('')}</tr>`;
     }).join('');
     corpo += `<tbody><tr class="rs-g"><th colspan="9">${esc(g)} <span>${a.length}</span></th></tr>${linhas}

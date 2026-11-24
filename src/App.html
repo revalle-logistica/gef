@@ -1005,7 +1005,7 @@ function vResumo(m) {
   L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || a.nome.localeCompare(b.nome))
     .forEach(c => { const g = c.vis.funcao || c.funcao; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(c); });
   const fer = new Set(S.feriados.filter(f => f.data >= dias[0] && f.data <= dias[6]).map(f => f.data));
-  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="lg">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="ct">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
+  const cab = `<th class="rn">Colaborador</th><th class="rt">Turno / local</th>${dias.map((d, i) => `<th class="${fer.has(d) ? 'fer' : ''}"><span class="rs-l">${DIAS_SEMANA[diaDoOffset(i)]}</span><span class="rs-s">${DIAS_CURTO[diaDoOffset(i)]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`).join('')}`;
   let corpo = '';
   grupos.forEach((a, g) => {
     const trab = [0, 0, 0, 0, 0, 0, 0];
@@ -1014,7 +1014,7 @@ function vResumo(m) {
       return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b></td><td class="rt">${esc(localidadeC(c) || '—')}</td>${sem.map((d, i) => {
         const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
         const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
-        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="lg">${RES_TXT[t] || '—'}</span><span class="ct">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
+        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaDoOffset(i)] + ' ' + ddmm(dias[i]) + ': ' + tt)}"><span class="rs-l">${RES_TXT[t] || '—'}</span><span class="rs-s">${({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—'}</span></td>`;
       }).join('')}</tr>`;
     }).join('');
     corpo += `<tbody><tr class="rs-g"><th colspan="9">${esc(g)} <span>${a.length}</span></th></tr>${linhas}
