@@ -1237,7 +1237,7 @@ function vMes(m) {
     <div class="esc-top"><span></span><label class="busca">${ic('search')}<input type="search" data-f="q" value="${esc(f.q)}" placeholder="Buscar nome, matrícula ou função" aria-label="Buscar"></label></div>
     <div class="fx" id="fbar">${barraFiltros(false)}</div>
     <div class="acts"><span class="hint">Clique num dia para trocar só aquela data (trabalho, folga ou horário). Clique no nome para mudar o padrão semanal. Número = hora de entrada, <b>F</b> = folga, <b>V</b> = férias, borda vermelha = feriado, ponto amarelo = dia alterado.</span><span class="sp"></span>
-      ${podeLote ? `<span class="mlote ${S.mSel.size ? 'on' : ''}"><label class="ck"><input type="checkbox" data-mtodos ${L.length && S.mSel.size === L.length ? 'checked' : ''}> Selecionar todos</label>${S.mSel.size ? `<b>${S.mSel.size} selecionado${S.mSel.size > 1 ? 's' : ''}</b><button type="button" class="btn sm pr" data-mlote>Trocar dias em lote</button><button type="button" class="fx-lk" data-mlimpa>limpar</button>` : '<span class="hint">marque as pessoas para trocar folgas em lote</span>'}</span>` : ''}
+      ${podeLote ? `<span class="mlote ${S.mSel.size ? 'on' : ''}"><label class="ck"><input type="checkbox" data-mtodos ${L.length && S.mSel.size === L.length ? 'checked' : ''}> Selecionar todos</label>${S.mSel.size ? `<b>${S.mSel.size} selecionado${S.mSel.size > 1 ? 's' : ''}</b><button type="button" class="btn sm pr" data-mlote>Trocar dias em lote</button><button type="button" class="btn sm" data-mrep title="Cada pessoa selecionada repete a própria semana no período todo">Repetir uma semana</button><button type="button" class="fx-lk" data-mlimpa>limpar</button>` : '<span class="hint">marque as pessoas para trocar folgas em lote</span>'}</span>` : ''}
       <button type="button" class="btn sm" data-mx>${ic('xls')}Excel do mês</button>
       <button type="button" class="btn sm" data-mp="fichas">${ic('pdf')}PDF do mês por colaborador</button>
       <button type="button" class="btn sm" data-mp="quadro">${ic('pdf')}PDF quadro do mês</button></div>
@@ -1259,9 +1259,34 @@ function vMes(m) {
     else if (b.dataset.sv) { const c = S.cols.find(x => x.matricula === b.dataset.sv), s = mesColab(c).semanas[+b.dataset.si]; toast(s.val ? `<b>${esc(c.nome)}</b> · semana de ${ddmm(s.ini)}: ${esc(ROT[s.val.status])}${s.val.msgs.filter(x => x.nivel !== 'info').length ? '<br>' + s.val.msgs.filter(x => x.nivel !== 'info').map(x => esc(x.texto)).join('<br>') : ''}` : 'Semana com férias ou sem escala: não é conferida.', s.val && s.val.status === 'ERRO'); }
     else if (b.hasAttribute('data-mlimpa')) { S.mSel.clear(); vMes(m); }
     else if (b.hasAttribute('data-mlote')) loteDias([...S.mSel], () => vMes(m));
+    else if (b.hasAttribute('data-mrep')) repetirSemana([...S.mSel], () => vMes(m));
     else if (b.hasAttribute('data-mx')) ocupado(b, () => excelMes(L));
     else if (b.dataset.mp) ocupado(b, async () => { if (!L.length) throw new Error('Ninguém na lista.'); const r = await call('exportPdf', { matriculas: L.map(c => c.matricula), modo: b.dataset.mp, mes: S.mes }); await baixarPdf(r); toast(`PDF gerado: <b>${esc(r.nome)}</b>`); });
   };
+}
+/** Cada pessoa selecionada repete a própria semana escolhida no período todo (vira o padrão semanal dela). */
+function repetirSemana(mats, depois) {
+  const ini = inicioEscala(S.cfg), dm = S.mes + '-01';
+  const st = { sem: inicioSemana(ini && ini.slice(0, 7) === S.mes ? ini : dm) };
+  if (!S.cols.some(c => mats.includes(c.matricula))) return;
+  abrirModal(`<div class="mdl-h"><div><h2>Repetir uma semana</h2><small>${mats.length} pessoa${mats.length > 1 ? 's' : ''} selecionada${mats.length > 1 ? 's' : ''}</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><label class="f" style="max-width:260px">Semana que vai se repetir (qualquer dia dela)<input type="date" data-rsem value="${esc(st.sem)}"></label>
+      <p id="rep-txt" style="margin:10px 0 6px;font-weight:600"></p>
+      <p class="hint">Cada pessoa repete <b>a própria</b> semana, do jeito que ela está hoje (padrão + trocas de dia). Essa semana passa a ser o padrão semanal dela daqui pra frente, e as trocas de dia depois dela são apagadas. Férias e feriados continuam valendo normalmente.</p></div>
+    <div class="mdl-f"><span style="flex:1"></span><button type="button" class="btn" data-x>Cancelar</button><button type="button" class="btn pr" data-rsalva>Repetir</button></div>`, true);
+  const box = modal.querySelector('.mdl');
+  const txt = () => { $('#rep-txt').textContent = `Semana de ${ddmm(st.sem)} a ${ddmm(isoMaisDias(st.sem, 6))} vai valer para todo o período.`; };
+  box.querySelector('[data-rsem]').onchange = e => { if (e.target.value) { st.sem = inicioSemana(e.target.value); e.target.value = st.sem; txt(); } };
+  box.querySelector('[data-rsalva]').onclick = ev => ocupado(ev.currentTarget, async () => {
+    const r = await call('replicarSemana', { matriculas: mats, semana: st.sem });
+    fecharModal(true); await carregar(); S.mSel.clear(); depois && depois();
+    if (r.falhas.length) {
+      abrirModal(`<div class="mdl-h"><div><h2>${r.salvos} feito${r.salvos === 1 ? '' : 's'} · ${r.falhas.length} não feito${r.falhas.length > 1 ? 's' : ''}</h2><small>Confira estes individualmente</small></div><button type="button" class="x" data-x>×</button></div>
+        <div class="mdl-b ovf"><table class="tb"><tr><th>Colaborador</th><th>Motivo</th></tr>${r.falhas.map(x => `<tr><td><b>${esc(x.nome)}</b><br>${esc(x.matricula)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</table></div>
+        <div class="mdl-f"><button type="button" class="btn pr" data-x>Entendi</button></div>`);
+    } else toast(`Semana repetida para <b>${r.salvos}</b> colaborador${r.salvos > 1 ? 'es' : ''}.`);
+  });
+  txt();
 }
 /** Troca de dias em lote: as mesmas datas para várias pessoas (folga, trabalho com horário ou volta ao padrão). */
 function loteDias(mats, depois) {

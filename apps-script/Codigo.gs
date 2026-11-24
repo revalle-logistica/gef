@@ -136,6 +136,7 @@ function rotas_() {
   importarFerias: { f: importarFerias_, admin: true, dp: true },
   salvarAjuste: { f: salvarAjuste_ },
   salvarAjustesLote: { f: salvarAjustesLote_ },
+  replicarSemana: { f: replicarSemana_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
   salvarConfig: { f: salvarConfig_, admin: true, dp: true },
@@ -260,7 +261,7 @@ function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
 /** Administrador e DP veem todos os colaboradores. */
 function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
 /** Ações de escala/férias/QLP que o DP não faz (ele só consulta). */
-var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarAjustesLote: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
+var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarAjustesLote: 1, replicarSemana: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
   if (veTudo_(u)) return true;
   if (u.perfil === 'ANALISTA') {
@@ -1139,6 +1140,48 @@ function salvarAjustesLote_(u, d) {
     });
   });
   return out;
+}
+
+
+/**
+ * Repete a semana escolhida de cada colaborador para o período todo: a semana como ela está (padrão + trocas de dia)
+ * vira o padrão semanal da pessoa a partir dessa semana, e as trocas de dia dali em diante são apagadas.
+ * Cada pessoa fica com a SUA semana (não copia de uma pessoa para outra). d = {matriculas, semana}
+ */
+function replicarSemana_(u, d) {
+  const mats = (d.matriculas || []).map(String), sem = dataOk_(d.semana, 'semana');
+  if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
+  return comLock_(function () {
+    const cfg = cfg_(), cols = {};
+    ler_('Colaboradores').forEach(function (c) { cols[c.matricula] = c; });
+    const todas = ler_('Escalas'), ajs = ler_('Ajustes'), res = { salvos: 0, falhas: [], trocasApagadas: 0 }, limpar = {};
+    mats.forEach(function (m) {
+      const c = cols[m];
+      if (!c || c.ativo === 'N' || !podeVer_(u, c)) { res.falhas.push({ matricula: m, nome: c ? c.nome : m, motivo: 'Sem acesso ou inativo.' }); return; }
+      const esc = escalaObj_(todas.filter(function (r) { return r.matricula === m; }), sem);
+      const aj = {}; ajs.forEach(function (a) { if (a.matricula === m) aj[a.data] = a; });
+      const dias = [], datas = [];
+      for (let i = 0; i < 7; i++) {
+        const dt = isoMaisDias(sem, i);
+        let x = diaEfetivo(esc, dt, [], [], aj);
+        if (x.tipo !== 'N') datas.push(dt);
+        // escala que começa no meio da semana (ex.: segunda 14/12): o dia que falta vem da semana seguinte
+        for (let k = 1; x.tipo === 'N' && k <= 2; k++) x = diaEfetivo(esc, isoMaisDias(dt, 7 * k), [], [], aj);
+        if (x.tipo === 'N') continue;
+        dias[diaSemanaIso(dt)] = x.tipo === 'T' ? { tipo: 'T', ent: x.ent, sai: x.sai, int: x.int } : { tipo: 'F' };
+      }
+      if (!datas.length || dias.filter(Boolean).length < 7) { res.falhas.push({ matricula: m, nome: c.nome, motivo: datas.length ? 'A semana escolhida não está completa na escala.' : 'Sem escala nessa semana.' }); return; }
+      for (let i = 0; i < 7; i++) if (!dias[i]) dias[i] = { tipo: 'F' };
+      const r = gravaEscala_(u, c, { vigencia: datas[0], ate: '', dias: limpaDias_(dias) }, cfg, todas, '');
+      if (!r.gravou) { res.falhas.push({ matricula: m, nome: c.nome, motivo: r.val.msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }).join(' ') }); return; }
+      limpar[m] = datas[0]; res.salvos++;
+    });
+    const resto = ajs.filter(function (a) { const ini = limpar[a.matricula]; if (ini && a.data >= ini) { res.trocasApagadas++; return false; } return true; });
+    gravarTudo_('Escalas', todas);
+    if (res.trocasApagadas) gravarTudo_('Ajustes', resto);
+    log_(u, '', 'repetiu a semana', sem + ' · ' + res.salvos + ' colaborador(es) · ' + res.trocasApagadas + ' troca(s) de dia apagada(s) · ' + res.falhas.length + ' não feito(s)');
+    return res;
+  });
 }
 
 
