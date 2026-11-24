@@ -12,7 +12,7 @@ const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 4,
 const banco = bancoPg(sql);
 // Versão do sistema: commit do repositório revalle-logistica/gef (imutável).
 // Para publicar: update gef.controle set v = '<commit>' where k = 'versao'  (vale em até 1 minuto, sem reimplantar).
-const VERSAO_PADRAO = '5006a38caf50c5295f3b8a154fabfdc8ce5c61f6';
+const VERSAO_PADRAO = 'ff7a1edc28c2ecf07f951303b017fc072d8bedbf';
 let VERSAO = '', runner: any = null, APP = '', carregando: Promise<void> | null = null, conferido = 0;
 async function versaoAtual() {
   try { const [r] = await sql`select v from gef.controle where k = 'versao'`; return (r && /^[0-9a-f]{40}$/.test(r.v)) ? r.v : VERSAO_PADRAO; } catch (_) { return VERSAO || VERSAO_PADRAO; }
@@ -55,7 +55,7 @@ const aoEnviarEmails = async (ids: string[]) => {
 /** Entrega o e-mail ao Apps Script uma única vez (depois disso o id não devolve mais nada). */
 async function retirarEmail(id: string) {
   if (!/^[0-9a-f-]{36}$/.test(id)) return { ok: false };
-  const [e] = await sql`update gef.emails set status = 'RETIRADO', retirado = now() where id = ${id} and status = 'PENDENTE' and criado > now() - interval '2 hours' returning para, assunto, html, nome`;
+  const [e] = await sql`update gef.emails set status = 'RETIRADO', retirado = now() where id = ${id} and status = 'PENDENTE' and criado > now() - interval '2 hours' returning para, assunto, html, nome, cc, responder`;
   return e ? { ok: true, email: e } : { ok: false };
 }
 

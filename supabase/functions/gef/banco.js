@@ -20,8 +20,8 @@ export function bancoPg(sql) {
       }
     },
     async gravarEmails(lista) {
-      const linhas = lista.map((e) => ({ para: String(e.to || ''), assunto: String(e.subject || ''), html: String(e.htmlBody || e.body || ''), nome: String(e.name || '') }));
-      const r = await q`insert into gef.emails ${q(linhas, 'para', 'assunto', 'html', 'nome')} returning id`;
+      const linhas = lista.map((e) => ({ para: String(e.to || ''), assunto: String(e.subject || ''), html: String(e.htmlBody || e.body || ''), nome: String(e.name || ''), cc: String(e.cc || ''), responder: String(e.replyTo || '') }));
+      const r = await q`insert into gef.emails ${q(linhas, 'para', 'assunto', 'html', 'nome', 'cc', 'responder')} returning id`;
       return r.map((x) => x.id);
     },
     async gravar(estado, inst) {

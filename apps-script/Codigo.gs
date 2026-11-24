@@ -48,7 +48,7 @@ const CFG_PADRAO = [
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['DATA_INICIO_INTERNO', '2026-12-13', 'Início da escala 5x2 na Revalle (antecipado em relação ao oficial)'],
   ['PRAZO_LIBERACAO_DP', '', 'Data limite para liberar ao DP as escalas do início (largada). Alertas por e-mail 15, 7 e 1 dia antes'],
-  ['PRAZO_DIA_MES', '10', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
+  ['PRAZO_DIA_MES', '', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
   ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
@@ -138,6 +138,7 @@ function rotas_() {
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
   salvarConfig: { f: salvarConfig_, admin: true, dp: true },
+  cobrarSupervisor: { f: cobrarSupervisor_, admin: true, dp: true },
   propor: { f: propor_ },
   cancelarProposta: { f: cancelarProposta_ },
   decidirProposta: { f: decidirProposta_ }
@@ -1799,47 +1800,76 @@ function alertasPrazoDP_() {
   return { prazos: res, enviado: res.reduce(function (s, x) { return s + (x.enviado || 0); }, 0) };
 }
 
-function enviarAlertasPrazo_(cfg, pz, dias) {
-  const prazo = pz.data, ini = pz.ref, esc = escalasPorMatricula_(), libs = {};
+/** Agrupa por supervisor a situação de cada colaborador ativo na data ref. {sid: {total, prontos, pend:{SEM:[..],..}}} */
+function gruposPendencias_(cfg, ref) {
+  const esc = escalasPorMatricula_(), libs = {}, grupos = {};
   ler_('LiberacoesDP').forEach(function (l) { libs[l.matricula] = { assinatura: l.assinatura, visto: l.vistoAssinatura }; });
-  const users = {}; ler_('Usuarios').forEach(function (u) { users[u.id] = u; });
-  const grupos = {};
   ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor; }).forEach(function (c) {
-    const s = prontidaoColab(esc[c.matricula] || null, libs[c.matricula] || null, ini, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
+    const s = prontidaoColab(esc[c.matricula] || null, libs[c.matricula] || null, ref, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
     const g = grupos[c.supervisor] = grupos[c.supervisor] || { total: 0, prontos: 0, pend: {} };
     g.total++;
     if (s === 'LIB' || s === 'VISTA') g.prontos++; else (g.pend[s] = g.pend[s] || []).push(c);
   });
+  return grupos;
+}
+function emailDe_(u) { return u ? String(u.email || (/@/.test(u.login) ? u.login : '')).trim() : ''; }
+
+/** HTML do e-mail de pendências. intro = parágrafo de abertura (HTML). */
+function htmlPendencias_(cfg, u, g, intro) {
   const h = function (x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
-  const br = function (d) { return d.split('-').reverse().join('/'); };
   const link = cfg.LINK_SISTEMA || 'https://revalle-logistica.github.io/gef/';
+  const nPend = g.total - g.prontos, pc = Math.round(g.prontos / g.total * 100);
+  const blocos = ['SEM', 'ERRO', 'NAOLIB', 'REENV'].filter(function (k) { return g.pend[k]; }).map(function (k) {
+    const L = g.pend[k].slice().sort(function (a, b) { return a.nome.localeCompare(b.nome); });
+    return '<p style="margin:16px 0 6px;font-weight:bold;color:#0b2a6b">' + PRT_TXT_[k] + ' (' + L.length + ')</p><ul style="margin:0;padding-left:20px;font-size:13px;color:#0c1a33">' +
+      L.map(function (c) { return '<li>' + h(c.nome) + ' <span style="color:#44526b">· ' + h(c.funcao) + '</span></li>'; }).join('') + '</ul>';
+  }).join('');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;color:#0c1a33">' +
+    '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">GEF · escalas a liberar ao DP</b></div>' +
+    '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
+    '<p>Olá, <b>' + h(String(u.nome || '').split(' ')[0]) + '</b>!</p>' + intro +
+    '<div style="background:#eef2f9;border-radius:10px;padding:12px 14px;margin:14px 0"><b style="font-size:22px;color:#0b2a6b">' + pc + '%</b> da sua equipe pronta · ' + g.prontos + ' de ' + g.total + ' pessoas<br><span style="font-size:13px;color:#44526b">Falta resolver <b>' + nPend + '</b>:</span></div>' +
+    blocos +
+    '<p style="text-align:center;margin:24px 0 8px"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o GEF e finalizar</a></p>' +
+    '<p style="font-size:12px;color:#44526b">Pronto = escala montada, dentro das regras e liberada ao DP (botão "Liberar para o DP").</p></div></div>';
+}
+const brData_ = function (d) { return String(d).split('-').reverse().join('/'); };
+
+function enviarAlertasPrazo_(cfg, pz, dias) {
+  const grupos = gruposPendencias_(cfg, pz.ref), users = {};
+  ler_('Usuarios').forEach(function (u) { users[u.id] = u; });
   let enviados = 0;
   Object.keys(grupos).forEach(function (sid) {
-    const g = grupos[sid], u = users[sid];
-    const para = u && u.status === 'ATIVO' ? (u.email || (/@/.test(u.login) ? u.login : '')) : '';
-    const nPend = g.total - g.prontos;
-    if (!para || !nPend) return;
-    const blocos = ['SEM', 'ERRO', 'NAOLIB', 'REENV'].filter(function (k) { return g.pend[k]; }).map(function (k) {
-      const L = g.pend[k].sort(function (a, b) { return a.nome.localeCompare(b.nome); });
-      return '<p style="margin:16px 0 6px;font-weight:bold;color:#0b2a6b">' + PRT_TXT_[k] + ' (' + L.length + ')</p><ul style="margin:0;padding-left:20px;font-size:13px;color:#0c1a33">' +
-        L.map(function (c) { return '<li>' + h(c.nome) + ' <span style="color:#44526b">· ' + h(c.funcao) + '</span></li>'; }).join('') + '</ul>';
-    }).join('');
-    const pc = Math.round(g.prontos / g.total * 100);
-    const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;color:#0c1a33">' +
-      '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">GEF · prazo para liberar as escalas ao DP</b></div>' +
-      '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
-      '<p>Olá, <b>' + h(String(u.nome || '').split(' ')[0]) + '</b>!</p>' +
-      '<p>' + (dias === 1 ? '<b style="color:#b42318">Amanhã</b> termina' : 'Faltam <b>' + dias + ' dias</b> para terminar') + ' o prazo para liberar ao DP as <b>' + pz.rotulo + '</b>: <b>' + br(prazo) + '</b>.</p>' +
-      '<div style="background:#eef2f9;border-radius:10px;padding:12px 14px;margin:14px 0"><b style="font-size:22px;color:#0b2a6b">' + pc + '%</b> da sua equipe pronta · ' + g.prontos + ' de ' + g.total + ' pessoas<br><span style="font-size:13px;color:#44526b">Falta resolver <b>' + nPend + '</b>:</span></div>' +
-      blocos +
-      '<p style="text-align:center;margin:24px 0 8px"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o GEF e finalizar</a></p>' +
-      '<p style="font-size:12px;color:#44526b">Pronto = escala montada, dentro das regras e liberada ao DP (botão "Liberar para o DP").</p></div></div>';
+    const g = grupos[sid], u = users[sid], para = u && u.status === 'ATIVO' ? emailDe_(u) : '';
+    if (!para || g.total === g.prontos) return;
+    const intro = '<p>' + (dias === 1 ? '<b style="color:#b42318">Amanhã</b> termina' : 'Faltam <b>' + dias + ' dias</b> para terminar') + ' o prazo para liberar ao DP as <b>' + pz.rotulo + '</b>: <b>' + brData_(pz.data) + '</b>.</p>';
     try {
-      MailApp.sendEmail({ to: para, subject: 'GEF · prazo ' + br(prazo) + ': liberar ao DP as ' + pz.rotulo + ' · ' + (dias === 1 ? 'termina amanhã' : 'faltam ' + dias + ' dias'), htmlBody: html, name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
+      MailApp.sendEmail({ to: para, subject: 'GEF · prazo ' + brData_(pz.data) + ': liberar ao DP as ' + pz.rotulo + ' · ' + (dias === 1 ? 'termina amanhã' : 'faltam ' + dias + ' dias'), htmlBody: htmlPendencias_(cfg, u, g, intro), name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
       enviados++;
     } catch (e) { log_(null, '', 'falha no alerta de prazo', para + ' · ' + e.message); }
   });
   return { enviados: enviados };
+}
+
+/** Botão "Cobrar" (administrador ou DP): e-mail ao supervisor com as pendências, com cópia para quem cobrou. */
+function cobrarSupervisor_(u, d) {
+  const cfg = cfg_(), sid = String(d.supervisor || '');
+  const sup = ler_('Usuarios').filter(function (x) { return x.id === sid; })[0];
+  if (!sup || sup.status !== 'ATIVO') throw new Error('Supervisor não encontrado ou sem acesso ativo.');
+  const para = emailDe_(sup), cc = emailDe_(u);
+  if (!para) throw new Error(sup.nome + ' não tem e-mail no cadastro.');
+  const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), pa = prazoAtual(cfg, hoje), ref = pa ? pa.ref : inicioEscala(cfg);
+  const g = gruposPendencias_(cfg, ref)[sid];
+  if (!g || g.total === g.prontos) throw new Error('A equipe de ' + sup.nome + ' já está com tudo liberado ao DP.');
+  const h = function (x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
+  const dias = pa ? Math.round((Date.parse(pa.data) - Date.parse(hoje)) / 864e5) : null;
+  const quando = !pa ? '' : dias > 1 ? ' Faltam <b>' + dias + ' dias</b>.' : dias === 1 ? ' <b style="color:#b42318">Termina amanhã.</b>' : dias === 0 ? ' <b style="color:#b42318">Termina hoje.</b>' : ' <b style="color:#b42318">O prazo já venceu.</b>';
+  const intro = '<p><b>' + h(u.nome) + '</b>' + (u.perfil === 'DP' ? ' (DP)' : '') + ' está cobrando a liberação das escalas da sua equipe ao DP' +
+    (pa ? ': o prazo para as <b>' + pa.rotulo + '</b> é <b>' + brData_(pa.data) + '</b>.' + quando : ' (escala a partir de <b>' + brData_(ref) + '</b>).') + '</p>' +
+    (d.obs ? '<p style="background:#fff7e6;border-left:4px solid #e8a317;padding:8px 12px;border-radius:6px"><b>Recado:</b> ' + h(String(d.obs).slice(0, 500)) + '</p>' : '');
+  MailApp.sendEmail({ to: para, cc: cc && cc !== para ? cc : undefined, replyTo: cc || undefined, subject: 'GEF · cobrança: liberar ao DP as escalas da sua equipe' + (pa ? ' (prazo ' + brData_(pa.data) + ')' : ''), htmlBody: htmlPendencias_(cfg, sup, g, intro), name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
+  log_(u, '', 'cobrou supervisor', sup.nome + ' · ' + (g.total - g.prontos) + ' pendências' + (cc ? ' · cópia ' + cc : ''));
+  return { para: para, cc: cc, pendencias: g.total - g.prontos };
 }
 
 
@@ -1881,7 +1911,10 @@ function enviarEmailFila_(d) {
   const r = JSON.parse(UrlFetchApp.fetch(SUPABASE_GEF + '?email=' + encodeURIComponent(id), { muteHttpExceptions: true }).getContentText() || '{}');
   if (!r.ok || !r.email) return { ok: false, erro: 'e-mail não encontrado ou já enviado' };
   const e = r.email;
-  MailApp.sendEmail({ to: e.para, subject: e.assunto, htmlBody: e.html, name: e.nome || 'GEF' });
+  const o = { to: e.para, subject: e.assunto, htmlBody: e.html, name: e.nome || 'GEF' };
+  if (e.cc) o.cc = e.cc;
+  if (e.responder) o.replyTo = e.responder;
+  MailApp.sendEmail(o);
   return { ok: true };
 }
 

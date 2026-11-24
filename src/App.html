@@ -980,7 +980,7 @@ function cardProntidao(L) {
       <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
       <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
         ${barra(l.n, l.a.length)}<span class="pill p-${l.pc === 100 ? 'OK' : l.pc >= 60 ? 'ALERTA' : 'ERRO'}">${l.pc}%</span>
-        ${veTudo() && l.sid && l.pc < 100 ? `<button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">Cobrar</button>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
+        ${veTudo() && l.sid && l.pc < 100 ? `<span class="prt-ac"><button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Envia e-mail ao supervisor com as pendências, com cópia para você">Cobrar</button><button type="button" class="btn sm ic" data-zap="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">WhatsApp</button></span>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
 }
 function textoCobranca(sid, L) {
   const pa = prazoAtual(S.cfg, hoje()), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
@@ -1037,10 +1037,17 @@ function vPainel(m) {
       if (d && !(+d >= 1 && +d <= 28)) return toast('O dia do mês deve ser de 1 a 28.', true);
       return ocupado(ps, async () => { S.cfg = await call('salvarConfig', { PRAZO_LIBERACAO_DP: v, PRAZO_DIA_MES: d ? String(+d) : '' }); toast('Prazos salvos. Os supervisores com pendências recebem e-mail 15, 7 e 1 dia antes de cada prazo.'); vPainel(m); });
     }
-    const cb = e.target.closest('[data-cobra]');
+    const ce = e.target.closest('[data-cobra]');
+    if (ce) {
+      const sid = ce.dataset.cobra, nome = nomeSup(sid) || 'o supervisor';
+      const obs = prompt(`Enviar e-mail de cobrança para ${nome}, com cópia para você?\n\nRecado opcional (deixe em branco se não quiser):`, '');
+      if (obs === null) return;
+      return ocupado(ce, async () => { const r = await call('cobrarSupervisor', { supervisor: sid, obs }); toast(`Cobrança enviada para <b>${esc(r.para)}</b>${r.cc ? ` com cópia para <b>${esc(r.cc)}</b>` : ''} (${r.pendencias} pendência${r.pendencias > 1 ? 's' : ''}).`); });
+    }
+    const cb = e.target.closest('[data-zap]');
     if (cb) {
       const LC = soLer() ? S.cols.filter(c => passaH(P, c)) : L;
-      const sid = cb.dataset.cobra, txt = textoCobranca(sid, LC), sup = S.sups.find(x => x.id === sid), tel = String((sup && sup.telefone) || '').replace(/\D/g, '');
+      const sid = cb.dataset.zap, txt = textoCobranca(sid, LC), sup = S.sups.find(x => x.id === sid), tel = String((sup && sup.telefone) || '').replace(/\D/g, '');
       if (tel.length >= 10) { window.open('https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(txt), '_blank'); return; }
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Mensagem copiada. Cole no WhatsApp do supervisor.'), () => { prompt('Copie a mensagem:', txt); });
       return;

@@ -35,7 +35,10 @@ function enviarEmailFila_(d) {
   const r = JSON.parse(UrlFetchApp.fetch(SUPABASE_GEF + '?email=' + encodeURIComponent(id), { muteHttpExceptions: true }).getContentText() || '{}');
   if (!r.ok || !r.email) return { ok: false, erro: 'e-mail não encontrado ou já enviado' };
   const e = r.email;
-  MailApp.sendEmail({ to: e.para, subject: e.assunto, htmlBody: e.html, name: e.nome || 'GEF' });
+  const o = { to: e.para, subject: e.assunto, htmlBody: e.html, name: e.nome || 'GEF' };
+  if (e.cc) o.cc = e.cc;
+  if (e.responder) o.replyTo = e.responder;
+  MailApp.sendEmail(o);
   return { ok: true };
 }
 

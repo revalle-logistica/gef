@@ -45,7 +45,7 @@ const CFG_PADRAO = [
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['DATA_INICIO_INTERNO', '2026-12-13', 'Início da escala 5x2 na Revalle (antecipado em relação ao oficial)'],
   ['PRAZO_LIBERACAO_DP', '', 'Data limite para liberar ao DP as escalas do início (largada). Alertas por e-mail 15, 7 e 1 dia antes'],
-  ['PRAZO_DIA_MES', '10', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
+  ['PRAZO_DIA_MES', '', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
   ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
@@ -135,6 +135,7 @@ function rotas_() {
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
   salvarConfig: { f: salvarConfig_, admin: true, dp: true },
+  cobrarSupervisor: { f: cobrarSupervisor_, admin: true, dp: true },
   propor: { f: propor_ },
   cancelarProposta: { f: cancelarProposta_ },
   decidirProposta: { f: decidirProposta_ }

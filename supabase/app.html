@@ -393,13 +393,14 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .stk.prt{flex:1;height:14px;display:flex;border-radius:7px;overflow:hidden;background:var(--sunk)}.stk.prt i{display:block;height:100%}
 .pt-VISTA{background:#0f7b4a}.pt-LIB{background:#4cc38a}.pt-REENV{background:#e8a317}.pt-NAOLIB{background:#7da2f0}.pt-ERRO{background:var(--er)}.pt-SEM{background:#c9d1de}
 .prt-leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--mut);margin-bottom:12px}.prt-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}.prt-leg b{color:var(--ink)}
-.prt-l{display:grid;gap:8px}.prt-r{display:grid;grid-template-columns:minmax(170px,1.1fr) 2fr 56px 76px;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--ln)}
+.prt-l{display:grid;gap:8px}.prt-r{display:grid;grid-template-columns:minmax(170px,1.1fr) 2fr 56px auto;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--ln)}
 .prt-n b{display:block;font-size:13.5px}.prt-n small{font-size:12px;color:var(--mut)}.prt-n .er{color:var(--er);font-weight:700}.prt-r .stk.prt{height:10px}.prt-r .pill{justify-self:center}
 @media(max-width:700px){.prt-r{grid-template-columns:1fr auto auto;gap:6px 8px}.prt-r .stk.prt{grid-column:1/-1;grid-row:2}.prt-top{flex-direction:column;align-items:stretch}}
 
 .prt-pz{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#eef2f9;border:1px solid var(--ln);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13.5px}
 .prt-pz small{display:block;color:var(--mut);font-size:12px;margin-top:2px}.prt-pz.venc{background:#fde6e3;border-color:#f5c2bc}.prt-pz .er{color:var(--er)}
 .prt-pzf{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.prt-pzf label{display:grid;gap:2px;font-size:11px;color:var(--mut);font-weight:700}.prt-pzf input{height:32px;border:1px solid var(--ln);border-radius:8px;padding:0 8px;font:inherit;color:var(--ink)}.prt-pzf input[type=number]{width:76px}
+.prt-ac{display:flex;gap:6px;justify-content:flex-end}.prt-ac .ic{color:#128c4a}
 </style>
 
 </head>
@@ -1668,7 +1669,7 @@ function cardProntidao(L) {
       <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
       <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
         ${barra(l.n, l.a.length)}<span class="pill p-${l.pc === 100 ? 'OK' : l.pc >= 60 ? 'ALERTA' : 'ERRO'}">${l.pc}%</span>
-        ${veTudo() && l.sid && l.pc < 100 ? `<button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">Cobrar</button>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
+        ${veTudo() && l.sid && l.pc < 100 ? `<span class="prt-ac"><button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Envia e-mail ao supervisor com as pendências, com cópia para você">Cobrar</button><button type="button" class="btn sm ic" data-zap="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">WhatsApp</button></span>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
 }
 function textoCobranca(sid, L) {
   const pa = prazoAtual(S.cfg, hoje()), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
@@ -1725,10 +1726,17 @@ function vPainel(m) {
       if (d && !(+d >= 1 && +d <= 28)) return toast('O dia do mês deve ser de 1 a 28.', true);
       return ocupado(ps, async () => { S.cfg = await call('salvarConfig', { PRAZO_LIBERACAO_DP: v, PRAZO_DIA_MES: d ? String(+d) : '' }); toast('Prazos salvos. Os supervisores com pendências recebem e-mail 15, 7 e 1 dia antes de cada prazo.'); vPainel(m); });
     }
-    const cb = e.target.closest('[data-cobra]');
+    const ce = e.target.closest('[data-cobra]');
+    if (ce) {
+      const sid = ce.dataset.cobra, nome = nomeSup(sid) || 'o supervisor';
+      const obs = prompt(`Enviar e-mail de cobrança para ${nome}, com cópia para você?\n\nRecado opcional (deixe em branco se não quiser):`, '');
+      if (obs === null) return;
+      return ocupado(ce, async () => { const r = await call('cobrarSupervisor', { supervisor: sid, obs }); toast(`Cobrança enviada para <b>${esc(r.para)}</b>${r.cc ? ` com cópia para <b>${esc(r.cc)}</b>` : ''} (${r.pendencias} pendência${r.pendencias > 1 ? 's' : ''}).`); });
+    }
+    const cb = e.target.closest('[data-zap]');
     if (cb) {
       const LC = soLer() ? S.cols.filter(c => passaH(P, c)) : L;
-      const sid = cb.dataset.cobra, txt = textoCobranca(sid, LC), sup = S.sups.find(x => x.id === sid), tel = String((sup && sup.telefone) || '').replace(/\D/g, '');
+      const sid = cb.dataset.zap, txt = textoCobranca(sid, LC), sup = S.sups.find(x => x.id === sid), tel = String((sup && sup.telefone) || '').replace(/\D/g, '');
       if (tel.length >= 10) { window.open('https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(txt), '_blank'); return; }
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Mensagem copiada. Cole no WhatsApp do supervisor.'), () => { prompt('Copie a mensagem:', txt); });
       return;
