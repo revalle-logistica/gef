@@ -28,7 +28,7 @@ function alertasPrazoDP_() {
 function gruposPendencias_(cfg, ref) {
   const esc = escalasPorMatricula_(), libs = {}, grupos = {};
   ler_('LiberacoesDP').forEach(function (l) { libs[l.matricula] = { assinatura: l.assinatura, visto: l.vistoAssinatura }; });
-  ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor; }).forEach(function (c) {
+  ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor && contaNaProntidao(c.situacao); }).forEach(function (c) {
     const s = prontidaoColab(esc[c.matricula] || null, libs[c.matricula] || null, ref, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
     const g = grupos[c.supervisor] = grupos[c.supervisor] || { total: 0, prontos: 0, pend: {} };
     g.total++;

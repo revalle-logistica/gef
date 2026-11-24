@@ -90,7 +90,7 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
     ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';var MESES_NOME=' + JSON.stringify(MESES_NOME) + ';\n' +
-    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, nomeMesAno, prazosLiberacao, prazoAtual, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, contaNaProntidao, nomeMesAno, prazosLiberacao, prazoAtual, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -99,7 +99,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
@@ -1080,6 +1080,50 @@ function anteciparInicioInterno() {
 }
 
 
+/**
+ * Muda o início de todas as escalas para uma nova data, sem mexer nos dias montados.
+ * Só roda quando liberado por quem administra o banco (propriedade AJUSTE_INICIO_PARA = aaaa-mm-dd); roda uma vez.
+ * - o 1º período de cada colaborador que começa perto do início (até 20 dias antes / 7 depois) passa a começar na data nova;
+ * - quem já tem outro período até a data nova fica como está;
+ * - liberações ao DP que estavam em dia continuam em dia (assinatura atualizada junto);
+ * - DATA_INICIO_INTERNO passa a ser a data nova.
+ */
+function ajusteInicioEscala_() {
+  const props = PropertiesService.getScriptProperties(), para = String(props.getProperty('AJUSTE_INICIO_PARA') || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(para)) throw new Error('Ajuste de início não liberado.');
+  props.deleteProperty('AJUSTE_INICIO_PARA');
+  const antes = escalasPorMatricula_(para), linhas = ler_('Escalas'), g = {};
+  linhas.forEach(function (e) { (g[e.matricula] = g[e.matricula] || []).push(e); });
+  const ini = isoMaisDias(para, -20), fim = isoMaisDias(para, 7);
+  let n = 0, pulados = 0, ja = 0;
+  Object.keys(g).forEach(function (m) {
+    const P = g[m].sort(function (a, b) { return a.vigencia < b.vigencia ? -1 : 1; }), p1 = P[0];
+    if (p1.vigencia === para) { ja++; return; }
+    if (p1.vigencia < ini || p1.vigencia > fim) return;
+    if (P[1] && P[1].vigencia <= para) { pulados++; return; }
+    if (p1.ate && p1.ate < para) { pulados++; return; }
+    p1.vigencia = para; n++;
+  });
+  if (n) gravarTudo_('Escalas', linhas);
+  const depois = escalasPorMatricula_(para), libs = ler_('LiberacoesDP');
+  let nl = 0;
+  libs.forEach(function (l) {
+    const a = antes[l.matricula], d = depois[l.matricula]; if (!a || !d) return;
+    const sa = assinaturaEscala(a), sd = assinaturaEscala(d);
+    if (sa === sd) return;
+    if (l.assinatura === sa) { l.assinatura = sd; l.escala = JSON.stringify(d.periodos || []); nl++; }
+    if (l.vistoAssinatura === sa) l.vistoAssinatura = sd;
+  });
+  if (nl) gravarTudo_('LiberacoesDP', libs);
+  const cfgL = ler_('Config'), c = cfgL.filter(function (x) { return x.chave === 'DATA_INICIO_INTERNO'; })[0];
+  if (c) { c.valor = para; gravarLinha_('Config', c); }
+  else gravarLinha_('Config', { chave: 'DATA_INICIO_INTERNO', valor: para, descricao: 'Início da escala 5x2 na Revalle' });
+  const msg = n + ' escala(s) passaram a começar em ' + para + '; ' + ja + ' já começavam nessa data; ' + nl + ' liberação(ões) ao DP acompanharam' + (pulados ? '; ' + pulados + ' ficaram como estavam (já tinham outro período até essa data).' : '.');
+  log_({ login: 'sistema' }, '', 'ajuste do início da escala', msg);
+  return msg;
+}
+
+
 // ===================== Ferias.gs =====================
 /**
  * Gestão de Férias: programação das férias por período aquisitivo, dentro da Gestão.
@@ -1804,7 +1848,7 @@ function alertasPrazoDP_() {
 function gruposPendencias_(cfg, ref) {
   const esc = escalasPorMatricula_(), libs = {}, grupos = {};
   ler_('LiberacoesDP').forEach(function (l) { libs[l.matricula] = { assinatura: l.assinatura, visto: l.vistoAssinatura }; });
-  ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor; }).forEach(function (c) {
+  ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor && contaNaProntidao(c.situacao); }).forEach(function (c) {
     const s = prontidaoColab(esc[c.matricula] || null, libs[c.matricula] || null, ref, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
     const g = grupos[c.supervisor] = grupos[c.supervisor] || { total: 0, prontos: 0, pend: {} };
     g.total++;
@@ -2130,6 +2174,8 @@ function prazoAtual(cfg, hoje) {
  * NAOLIB (montada, não liberada), ERRO (erro nas regras) ou SEM (sem escala na data de início).
  * lib = {assinatura, visto}; op = opções do validarEscala ({tele, cfg, entrega}).
  */
+/** Entra no percentual de prontidão quem está trabalhando ou de férias; afastados (doença, acidente, licença...) ficam de fora. */
+function contaNaProntidao(situacao) { var s = String(situacao || ''); return !s || /trabalhando|f[ée]rias/i.test(s); }
 function prontidaoColab(esc, lib, ini, op) {
   var p = esc ? periodoNaData(esc, ini) : null;
   if (!p) return 'SEM';

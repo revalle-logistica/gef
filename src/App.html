@@ -956,7 +956,8 @@ async function excelLote(list) {
 const PRT = [['VISTA', 'Vista pelo DP'], ['LIB', 'Liberada ao DP'], ['REENV', 'Alterada · reenviar'], ['NAOLIB', 'Montada, não liberada'], ['ERRO', 'Com erro'], ['SEM', 'Sem escala']];
 // o DP recebe a situação real (c.prt) do servidor, porque na tela dele só aparece a versão liberada da escala
 const prontidao = (c, ini) => c.prt || prontidaoColab(c.escala, c.lib, ini, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
-function cardProntidao(L) {
+function cardProntidao(L0) {
+  const L = L0.filter(c => contaNaProntidao(c.situacao)), fora = L0.length - L.length;
   const hj = hoje(), pa = prazoAtual(S.cfg, hj), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.round((Date.parse(ini) - Date.parse(hj)) / 864e5);
   const grupos = new Map();
   L.forEach(c => { const k = c.supervisor || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(c); });
@@ -977,14 +978,14 @@ function cardProntidao(L) {
       ${['ADMIN', 'DP'].includes(S.user.perfil) ? `<span class="prt-pzf"><label>Largada<input type="date" data-prazo value="${esc(lg)}"></label><label>Todo mês, dia<input type="number" min="1" max="28" data-prazodia value="${esc(dm)}" placeholder="10"></label><button type="button" class="btn sm pr" data-prazosalva>Salvar prazos</button></span>` : ''}</div>`;
   return `<section class="card prt-c"><div class="card-h"><h3>${pa && pa.tipo === 'mensal' ? `Prontidão das escalas de ${nomeMesAno(ini)}` : `Prontidão para o início da escala · ${dataBr(ini)}`}</h3><span class="hint">${pa && pa.tipo === 'mensal' ? 'pronto = escala válida em ' + dataBr(ini) + ' e liberada ao DP' : `${quando} · pronto = escala válida e liberada ao DP`}</span></div>
     <div class="card-b">${prazoBox}<div class="prt-top"><div class="prt-big"><b>${pcT}%</b><small>${prontoT} de ${T} prontos</small></div>${barra(tot, Math.max(T, 1))}</div>
-      <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
+      <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}${fora ? `<span class="hint">· ${fora} afastado${fora > 1 ? 's' : ''} fora da conta (só entram ativos e férias)</span>` : ''}</div>
       <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
         ${barra(l.n, l.a.length)}<span class="pill p-${l.pc === 100 ? 'OK' : l.pc >= 60 ? 'ALERTA' : 'ERRO'}">${l.pc}%</span>
         ${veTudo() && l.sid && l.pc < 100 ? `<span class="prt-ac"><button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Envia e-mail ao supervisor com as pendências, com cópia para você">Cobrar</button><button type="button" class="btn sm ic" data-zap="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">WhatsApp</button></span>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
 }
 function textoCobranca(sid, L) {
   const pa = prazoAtual(S.cfg, hoje()), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
-  const a = L.filter(c => (c.supervisor || '') === sid), n = {}; PRT.forEach(([k]) => { n[k] = 0; }); a.forEach(c => n[prontidao(c, ini)]++);
+  const a = L.filter(c => (c.supervisor || '') === sid && contaNaProntidao(c.situacao)), n = {}; PRT.forEach(([k]) => { n[k] = 0; }); a.forEach(c => n[prontidao(c, ini)]++);
   const pz = pa && pa.data;
   const nome = (nomeSup(sid) || '').split(' ')[0];
   const lin = [];

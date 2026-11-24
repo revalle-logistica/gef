@@ -564,3 +564,47 @@ function anteciparInicioInterno() {
     return msg;
   });
 }
+
+
+/**
+ * Muda o início de todas as escalas para uma nova data, sem mexer nos dias montados.
+ * Só roda quando liberado por quem administra o banco (propriedade AJUSTE_INICIO_PARA = aaaa-mm-dd); roda uma vez.
+ * - o 1º período de cada colaborador que começa perto do início (até 20 dias antes / 7 depois) passa a começar na data nova;
+ * - quem já tem outro período até a data nova fica como está;
+ * - liberações ao DP que estavam em dia continuam em dia (assinatura atualizada junto);
+ * - DATA_INICIO_INTERNO passa a ser a data nova.
+ */
+function ajusteInicioEscala_() {
+  const props = PropertiesService.getScriptProperties(), para = String(props.getProperty('AJUSTE_INICIO_PARA') || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(para)) throw new Error('Ajuste de início não liberado.');
+  props.deleteProperty('AJUSTE_INICIO_PARA');
+  const antes = escalasPorMatricula_(para), linhas = ler_('Escalas'), g = {};
+  linhas.forEach(function (e) { (g[e.matricula] = g[e.matricula] || []).push(e); });
+  const ini = isoMaisDias(para, -20), fim = isoMaisDias(para, 7);
+  let n = 0, pulados = 0, ja = 0;
+  Object.keys(g).forEach(function (m) {
+    const P = g[m].sort(function (a, b) { return a.vigencia < b.vigencia ? -1 : 1; }), p1 = P[0];
+    if (p1.vigencia === para) { ja++; return; }
+    if (p1.vigencia < ini || p1.vigencia > fim) return;
+    if (P[1] && P[1].vigencia <= para) { pulados++; return; }
+    if (p1.ate && p1.ate < para) { pulados++; return; }
+    p1.vigencia = para; n++;
+  });
+  if (n) gravarTudo_('Escalas', linhas);
+  const depois = escalasPorMatricula_(para), libs = ler_('LiberacoesDP');
+  let nl = 0;
+  libs.forEach(function (l) {
+    const a = antes[l.matricula], d = depois[l.matricula]; if (!a || !d) return;
+    const sa = assinaturaEscala(a), sd = assinaturaEscala(d);
+    if (sa === sd) return;
+    if (l.assinatura === sa) { l.assinatura = sd; l.escala = JSON.stringify(d.periodos || []); nl++; }
+    if (l.vistoAssinatura === sa) l.vistoAssinatura = sd;
+  });
+  if (nl) gravarTudo_('LiberacoesDP', libs);
+  const cfgL = ler_('Config'), c = cfgL.filter(function (x) { return x.chave === 'DATA_INICIO_INTERNO'; })[0];
+  if (c) { c.valor = para; gravarLinha_('Config', c); }
+  else gravarLinha_('Config', { chave: 'DATA_INICIO_INTERNO', valor: para, descricao: 'Início da escala 5x2 na Revalle' });
+  const msg = n + ' escala(s) passaram a começar em ' + para + '; ' + ja + ' já começavam nessa data; ' + nl + ' liberação(ões) ao DP acompanharam' + (pulados ? '; ' + pulados + ' ficaram como estavam (já tinham outro período até essa data).' : '.');
+  log_({ login: 'sistema' }, '', 'ajuste do início da escala', msg);
+  return msg;
+}

@@ -191,6 +191,8 @@ function prazoAtual(cfg, hoje) {
  * NAOLIB (montada, não liberada), ERRO (erro nas regras) ou SEM (sem escala na data de início).
  * lib = {assinatura, visto}; op = opções do validarEscala ({tele, cfg, entrega}).
  */
+/** Entra no percentual de prontidão quem está trabalhando ou de férias; afastados (doença, acidente, licença...) ficam de fora. */
+function contaNaProntidao(situacao) { var s = String(situacao || ''); return !s || /trabalhando|f[ée]rias/i.test(s); }
 function prontidaoColab(esc, lib, ini, op) {
   var p = esc ? periodoNaData(esc, ini) : null;
   if (!p) return 'SEM';
