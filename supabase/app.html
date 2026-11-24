@@ -427,6 +427,7 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .lcal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-width:360px}.lcal .h{font-size:11px;color:var(--mut);text-align:center;font-weight:700}
 .lcal button{border:1px solid var(--ln);background:var(--sf);border-radius:8px;height:36px;font:inherit;font-weight:600;cursor:pointer}.lcal button.dom{color:#b42318}.lcal button.on{background:#7e22ce;color:#fff;border-color:#7e22ce}
 .rs-modo .seg{display:inline-flex;background:var(--sunk);border-radius:10px;padding:3px;gap:2px}.rs-modo .seg button{border:0;background:transparent;padding:7px 16px;border-radius:8px;font:inherit;font-weight:700;font-size:13px;color:var(--mut);cursor:pointer}.rs-modo .seg button.on{background:#fff;color:var(--b8);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.rs-tab tr.rs-sg th{background:#f3f6fd;color:#3b4a6b;text-align:left;font-size:12px;font-weight:700;padding:5px 10px;border-top:1px solid var(--ln)}.rs-tab tr.rs-sg th span{color:var(--mut);font-weight:600;margin-left:4px}
 </style>
 
 </head>
@@ -1820,31 +1821,40 @@ function vResumo(m) {
   const L = base.filter(c => passaH(R, c));
   const dias = mes ? diasDoMes(S.mes) : [0, 1, 2, 3, 4, 5, 6].map(i => isoMaisDias(S.semana, i)), nd = dias.length;
   const grupos = new Map();
-  L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || a.nome.localeCompare(b.nome))
+  const locC = c => localidadeC(c) || '—';
+  L.slice().sort((a, b) => (a.vis.funcao || a.funcao).localeCompare(b.vis.funcao || b.funcao) || (/^(—|não informad)/i.test(locC(a)) - /^(—|não informad)/i.test(locC(b)) || locC(a).localeCompare(locC(b), 'pt', { numeric: true })) || a.nome.localeCompare(b.nome))
     .forEach(c => { const g = c.vis.funcao || c.funcao; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(c); });
   const fer = new Set(S.feriados.filter(f => f.data >= dias[0] && f.data <= dias[nd - 1] && (!R.rev || f.revenda === R.rev)).map(f => f.data));
   const cab = `<th class="rn">Colaborador</th>${mes ? '' : '<th class="rt">Turno / local</th>'}${dias.map(d => { const ds = diaSemanaIso(d);
     return mes ? `<th class="${fer.has(d) ? 'fer' : ds === 6 ? 'dm' : ''}">${+d.slice(8)}<small>${DIAS_CURTO[ds].charAt(0)}</small></th>`
       : `<th class="${fer.has(d) ? 'fer' : ''}"><span class="rs-l">${DIAS_SEMANA[ds]}</span><span class="rs-s">${DIAS_CURTO[ds]}</span><small>${ddmm(d)}${fer.has(d) ? ' · feriado' : ''}</small></th>`; }).join('')}`;
   let corpo = '';
+  const ncol = nd + (mes ? 1 : 2);
+  const linhaCol = (c, trab) => {
+    const fe = feriasDe(c.matricula), fd = feriadosDe(c.revenda), aj = ajustesDe(c.matricula);
+    const ds = mes ? dias.map(d => diaEfetivo(c.escala, d, fe, fd, aj)) : semanaEfetiva(c.escala, S.semana, fe, fd, aj);
+    return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b>${mes ? `<small>${esc(localidadeC(c) || '')}</small>` : ''}</td>${mes ? '' : `<td class="rt">${esc(localidadeC(c) || '—')}</td>`}${ds.map((d, i) => {
+      const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
+      const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
+      const curto = ({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—';
+      return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaSemanaIso(dias[i])] + ' ' + ddmm(dias[i]) + ': ' + tt)}">${mes ? curto : `<span class="rs-l">${RES_TXT[t] || '—'}</span><span class="rs-s">${curto}</span>`}</td>`;
+    }).join('')}</tr>`;
+  };
+  const conta = (rot, trab, n) => `<tr class="rs-c"><td class="rn">${esc(rot)}</td>${mes ? '' : '<td class="rt"></td>'}${trab.map(x => `<td>${x}${mes ? '' : '/' + n}</td>`).join('')}</tr>`;
   grupos.forEach((a, g) => {
-    const trab = dias.map(() => 0);
-    const linhas = a.map(c => {
-      const fe = feriasDe(c.matricula), fd = feriadosDe(c.revenda), aj = ajustesDe(c.matricula);
-      const ds = mes ? dias.map(d => diaEfetivo(c.escala, d, fe, fd, aj)) : semanaEfetiva(c.escala, S.semana, fe, fd, aj);
-      return `<tr data-ed="${esc(c.matricula)}"><td class="rn"><b>${esc(c.nome)}</b>${mes ? `<small>${esc(localidadeC(c) || '')}</small>` : ''}</td>${mes ? '' : `<td class="rt">${esc(localidadeC(c) || '—')}</td>`}${ds.map((d, i) => {
-        const t = d && d.tipo ? d.tipo : 'N'; if (t === 'T') trab[i]++;
-        const tt = t === 'T' ? `${d.ent}–${d.sai}` : t === 'FER' ? 'Férias' : t === 'F' ? 'Folga' : 'Sem escala';
-        const curto = ({ T: 'T', F: 'F', FER: 'Fé', N: '—' })[t] || '—';
-        return `<td class="r-${t}" title="${esc(DIAS_SEMANA[diaSemanaIso(dias[i])] + ' ' + ddmm(dias[i]) + ': ' + tt)}">${mes ? curto : `<span class="rs-l">${RES_TXT[t] || '—'}</span><span class="rs-s">${curto}</span>`}</td>`;
-      }).join('')}</tr>`;
-    }).join('');
-    corpo += `<tbody><tr class="rs-g"><th colspan="${nd + (mes ? 1 : 2)}">${esc(g)} <span>${a.length}</span></th></tr>${linhas}
-      <tr class="rs-c"><td class="rn">Trabalhando no dia</td>${mes ? '' : '<td class="rt"></td>'}${trab.map(n => `<td>${n}${mes ? '' : '/' + a.length}</td>`).join('')}</tr></tbody>`;
+    // dentro da função, um bloco por localidade (turno / sede), em ordem alfabética, cada um com a sua contagem
+    const locs = new Map(); a.forEach(c => { const k = locC(c); if (!locs.has(k)) locs.set(k, []); locs.get(k).push(c); });
+    let linhas = '';
+    if (locs.size === 1) { const trab = dias.map(() => 0); linhas = a.map(c => linhaCol(c, trab)).join('') + conta('Trabalhando no dia', trab, a.length); }
+    else locs.forEach((lc, k) => {
+      const trab = dias.map(() => 0);
+      linhas += `<tr class="rs-sg"><th colspan="${ncol}">${esc(k)} <span>${lc.length}</span></th></tr>` + lc.map(c => linhaCol(c, trab)).join('') + conta('Trabalhando · ' + k, trab, lc.length);
+    });
+    corpo += `<tbody><tr class="rs-g"><th colspan="${ncol}">${esc(g)} <span>${a.length}</span></th></tr>${linhas}</tbody>`;
   });
   const nav = mes ? `<div class="sw2"><button type="button" class="btn sm" data-rmm="-1" aria-label="Mês anterior">‹</button><label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês<input type="month" data-rmes value="${esc(S.mes)}" style="width:auto"></label><button type="button" class="btn sm" data-rmm="1" aria-label="Próximo mês">›</button><b style="color:var(--b8)">${esc(nomeMes(S.mes))}</b></div>` : barraSemana();
   m.innerHTML = `<section class="card"><div class="rs-modo"><div class="seg"><button type="button" class="${mes ? '' : 'on'}" data-rmodo="sem">Semana</button><button type="button" class="${mes ? 'on' : ''}" data-rmodo="mes">Mês</button></div>${nav}</div><div class="fx">${cascataHtml(R, base, { n: L.length })}</div></section>
-    <section class="card"><div class="card-h"><h3>${mes ? 'Resumo do mês · ' + esc(nomeMes(S.mes)) : 'Resumo da semana'}</h3><span class="leg rs-leg"><span><i class="r-T"></i>Trabalho (T)</span><span><i class="r-F"></i>Folga (F)</span><span><i class="r-FER"></i>Férias (Fé)</span><span class="hint">${mes ? 'última linha de cada função = quantos trabalham no dia' : 'toque no nome para abrir a escala'}</span></span></div>
+    <section class="card"><div class="card-h"><h3>${mes ? 'Resumo do mês · ' + esc(nomeMes(S.mes)) : 'Resumo da semana'}</h3><span class="leg rs-leg"><span><i class="r-T"></i>Trabalho (T)</span><span><i class="r-F"></i>Folga (F)</span><span><i class="r-FER"></i>Férias (Fé)</span><span class="hint">${mes ? 'última linha de cada bloco = quantos trabalham no dia' : 'toque no nome para abrir a escala'}</span></span></div>
       <div class="card-b ovf">${L.length ? `<table class="rs-tab ${mes ? 'mes' : ''}"><thead><tr>${cab}</tr></thead>${corpo}</table>` : '<p class="empty">Ninguém nesta seleção.</p>'}</div></section>`;
   m.onchange = e => {
     if (e.target.hasAttribute('data-rmes')) { if (e.target.value) { S.mes = e.target.value; vResumo(m); } return; }
