@@ -19,6 +19,11 @@ export function bancoPg(sql) {
         else await q`insert into gef.cache (k, v, expira) values (${k}, ${x.v}, to_timestamp(${x.exp / 1000})) on conflict (k) do update set v = excluded.v, expira = excluded.expira`;
       }
     },
+    async gravarEmails(lista) {
+      const linhas = lista.map((e) => ({ para: String(e.to || ''), assunto: String(e.subject || ''), html: String(e.htmlBody || e.body || ''), nome: String(e.name || '') }));
+      const r = await q`insert into gef.emails ${q(linhas, 'para', 'assunto', 'html', 'nome')} returning id`;
+      return r.map((x) => x.id);
+    },
     async gravar(estado, inst) {
       for (const n of inst.sujas) {
         await q`insert into gef.abas (nome, linhas, atualizado) values (${n}, ${q.json(estado.abas[n])}, now()) on conflict (nome) do update set linhas = excluded.linhas, atualizado = now()`;

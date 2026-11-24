@@ -25,6 +25,20 @@ function desvio_(token, acao, dados) {
   return null;
 }
 
+/**
+ * E-mails do sistema novo: o Supabase avisa o id; este Apps Script busca o e-mail lá (cada id só pode ser retirado
+ * uma vez) e envia pela conta Google dona do projeto — o mesmo remetente de antes.
+ */
+function enviarEmailFila_(d) {
+  const id = String((d && d.id) || '');
+  if (!/^[0-9a-f-]{36}$/.test(id)) return { ok: false, erro: 'id inválido' };
+  const r = JSON.parse(UrlFetchApp.fetch(SUPABASE_GEF + '?email=' + encodeURIComponent(id), { muteHttpExceptions: true }).getContentText() || '{}');
+  if (!r.ok || !r.email) return { ok: false, erro: 'e-mail não encontrado ou já enviado' };
+  const e = r.email;
+  MailApp.sendEmail({ to: e.para, subject: e.assunto, htmlBody: e.html, name: e.nome || 'GEF' });
+  return { ok: true };
+}
+
 function migrarParaSupabase() {
   const s = ss_(), abas = {};
   Object.keys(ABAS).forEach(function (n) {

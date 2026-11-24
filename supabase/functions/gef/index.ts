@@ -27,6 +27,27 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods
 const resp = (corpo: string, tipo = 'application/json', status = 200) => new Response(corpo, { status, headers: { ...CORS, 'Content-Type': tipo + '; charset=utf-8', 'Cache-Control': 'no-store' } });
 const buscar = async (u: string) => { const r = await fetch(u, { redirect: 'follow' }); return await r.text(); };
 
+// E-mails: o Apps Script antigo (mesma conta Google que enviava antes) busca cada e-mail da fila uma única vez e envia.
+const RELE_EMAIL = 'https://script.google.com/macros/s/AKfycbyeGlvF5tbICPZGpNLu6FOmSRj4k-5q9trZbEKekanPrRRjJ7Q0Zdmflh7yTIAb9M9H7g/exec';
+async function chamarRele(id: string) {
+  try {
+    const r = await fetch(RELE_EMAIL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: '__enviarEmail', dados: { id } }) });
+    const t = await r.text();
+    if (!/"ok":true/.test(t)) await sql`update gef.emails set erro = ${t.slice(0, 500)} where id = ${id}`;
+  } catch (e) { await sql`update gef.emails set erro = ${String(e).slice(0, 500)} where id = ${id}`; }
+}
+const aoEnviarEmails = async (ids: string[]) => {
+  const p = Promise.all(ids.map(chamarRele));
+  // @ts-ignore EdgeRuntime existe no Supabase: envia sem segurar a resposta da tela
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(p); else await p;
+};
+/** Entrega o e-mail ao Apps Script uma única vez (depois disso o id não devolve mais nada). */
+async function retirarEmail(id: string) {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return { ok: false };
+  const [e] = await sql`update gef.emails set status = 'RETIRADO', retirado = now() where id = ${id} and status = 'PENDENTE' and criado > now() - interval '2 hours' returning para, assunto, html, nome`;
+  return e ? { ok: true, email: e } : { ok: false };
+}
+
 /** Migração da planilha: só aceita enquanto gef.controle.migracao_aberta = '1' (liberado por SQL na hora da virada). */
 async function importar(b: any) {
   const [ctl] = await sql`select v from gef.controle where k = 'migracao_aberta'`;
@@ -66,12 +87,13 @@ Deno.serve(async (req) => {
     await preparar();
     if (req.method === 'GET') {
       if (url.searchParams.get('raw')) return resp(APP, 'text/plain');
+      if (url.searchParams.get('email')) return resp(JSON.stringify(await retirarEmail(String(url.searchParams.get('email')))));
       if (url.searchParams.get('cron') === 'ferias') return resp(JSON.stringify(await executar(runner, banco, { token: '', acao: '__sincAuto', dados: {} }, buscar)));
       return resp(JSON.stringify({ ok: true, sistema: 'GEF', versao: VERSAO }));
     }
     const b = JSON.parse((await req.text()) || '{}');
     if (b.acao === '__importar') return resp(JSON.stringify(await importar(b)));
-    const r = await executar(runner, banco, { token: b.token, acao: String(b.acao || ''), dados: b.dados || {} }, buscar);
+    const r = await executar(runner, banco, { token: b.token, acao: String(b.acao || ''), dados: b.dados || {} }, buscar, aoEnviarEmails);
     return resp(JSON.stringify(r));
   } catch (e) {
     console.error(e);

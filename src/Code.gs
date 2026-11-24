@@ -141,6 +141,7 @@ function rotas_() {
 
 function api(token, acao, dados) {
   try {
+    if (acao === '__enviarEmail' && typeof enviarEmailFila_ === 'function') return enviarEmailFila_(dados || {});
     if (typeof desvio_ === 'function') { const dv = desvio_(token, acao, dados); if (dv) return dv; }
     dados = dados || {};
     const R = rotas_(), PUBLICAS = R.PUBLICAS, PRIVADAS = R.PRIVADAS;

@@ -16,6 +16,7 @@ function gravarLinha_(n, o) { o._row = __DB.linha(n, o._row, linha_(n, o)); }
 function log_(u, mat, acao, det) { __DB.historico([agora_(), u ? u.login : '', mat || '', acao, det || '']); }
 function comLock_(fn) { return fn(); }
 function desvio_() { return null; }
+function enviarEmailFila_() { return { ok: false, erro: 'Os e-mails saem pelo Apps Script.' }; }
 function converterPlanilha_(u, d) { return __XLSX_ABAS(d); }
 `;
 
@@ -130,7 +131,7 @@ export function urlsDoSistemaFerias(cfgLinhas) {
  * Executa uma chamada da API. `banco` faz a persistência:
  *  banco.carregar() -> estado; banco.gravar(estado, mudancas) ; banco.travado(fn) roda fn dentro de transação com trava.
  */
-export async function executar(runner, banco, { token, acao, dados }, buscar) {
+export async function executar(runner, banco, { token, acao, dados }, buscar, aoEnviarEmails) {
   const rodar = async (b) => {
     const estado = await b.carregar();
     estado.urls = {};
@@ -148,10 +149,17 @@ export async function executar(runner, banco, { token, acao, dados }, buscar) {
     const mudou = x.inst.sujas.size || x.inst.historico.length || Object.keys(x.inst.propsMud).length;
     if (!mudou) { await banco.gravarCache(x.inst.cacheMud); return x.r; }
   }
-  return banco.travado(async (tx) => {
+  let fila = [];
+  const r = await banco.travado(async (tx) => {
     const x = await rodar(tx);
     await tx.gravarCache(x.inst.cacheMud);
-    if (x.r && x.r.ok !== false) await tx.gravar(x.estado, x.inst);
+    if (x.r && x.r.ok !== false) {
+      await tx.gravar(x.estado, x.inst);
+      // e-mails: entram na fila junto com os dados; quem envia é o Apps Script (mesma conta Google de antes)
+      if (x.inst.emails.length && tx.gravarEmails) fila = await tx.gravarEmails(x.inst.emails);
+    }
     return x.r;
   });
+  if (fila.length && aoEnviarEmails) await aoEnviarEmails(fila);
+  return r;
 }
