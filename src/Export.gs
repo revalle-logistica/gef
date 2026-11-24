@@ -131,6 +131,8 @@ function exportPdf_(u, d) {
     ? 'Escala_' + slug_(codigoMatricula(cols[0].matricula)) + '_' + slug_(cols[0].nome) + '.pdf'
     : 'Escalas_5x2_' + (d.modo === 'quadro' ? 'Quadro_' : 'Fichas_') + cols.length + '_colab_' + hoje + '.pdf';
   log_(u, cols.length === 1 ? cols[0].matricula : '', 'exportou PDF', (d.modo || 'fichas') + ' · ' + cols.length);
+  // fora do Google (Supabase) o PDF é montado no navegador a partir do mesmo HTML
+  if (pdf.__html) return { nome: nome, html: pdf.__html };
   return { nome: nome, base64: Utilities.base64Encode(pdf.getBytes()) };
 }
 

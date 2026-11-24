@@ -1204,7 +1204,7 @@ function vMes(m) {
     else if (b.dataset.dm) abrirDia(b.dataset.dm, b.dataset.dd, () => vMes(m));
     else if (b.dataset.sv) { const c = S.cols.find(x => x.matricula === b.dataset.sv), s = mesColab(c).semanas[+b.dataset.si]; toast(s.val ? `<b>${esc(c.nome)}</b> · semana de ${ddmm(s.ini)}: ${esc(ROT[s.val.status])}${s.val.msgs.filter(x => x.nivel !== 'info').length ? '<br>' + s.val.msgs.filter(x => x.nivel !== 'info').map(x => esc(x.texto)).join('<br>') : ''}` : 'Semana com férias ou sem escala: não é conferida.', s.val && s.val.status === 'ERRO'); }
     else if (b.hasAttribute('data-mx')) ocupado(b, () => excelMes(L));
-    else if (b.dataset.mp) ocupado(b, async () => { if (!L.length) throw new Error('Ninguém na lista.'); const r = await call('exportPdf', { matriculas: L.map(c => c.matricula), modo: b.dataset.mp, mes: S.mes }); baixar(r.base64, r.nome, 'application/pdf'); toast(`PDF gerado: <b>${esc(r.nome)}</b>`); });
+    else if (b.dataset.mp) ocupado(b, async () => { if (!L.length) throw new Error('Ninguém na lista.'); const r = await call('exportPdf', { matriculas: L.map(c => c.matricula), modo: b.dataset.mp, mes: S.mes }); await baixarPdf(r); toast(`PDF gerado: <b>${esc(r.nome)}</b>`); });
   };
 }
 /** Troca de um dia específico. */
@@ -1276,6 +1276,19 @@ function loadXLSX() {
   });
   return XP;
 }
+/** PDF: o servidor do Google devolve o arquivo pronto; o do Supabase devolve o HTML e o PDF é montado aqui. */
+let _h2p = null;
+async function baixarPdf(r) {
+  if (r.base64) return baixar(r.base64, r.nome, 'application/pdf');
+  _h2p = _h2p || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = ok; s.onerror = () => { _h2p = null; ko(new Error('Não consegui carregar o gerador de PDF. Verifique a internet.')); }; document.head.appendChild(s); });
+  await _h2p;
+  const fr = document.createElement('div'); fr.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff';
+  const doc = new DOMParser().parseFromString(r.html, 'text/html');
+  fr.innerHTML = [...doc.querySelectorAll('style')].map(x => x.outerHTML).join('') + doc.body.innerHTML; document.body.appendChild(fr);
+  try {
+    await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css'], after: '.pg:not(.ult)' } }).from(fr).save();
+  } finally { fr.remove(); }
+}
 function baixar(b64, nome, mime) {
   const bin = atob(b64), u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
@@ -1286,7 +1299,7 @@ function baixar(b64, nome, mime) {
 async function pdfServidor(mats, modo, semana) {
   if (!mats.length) throw new Error('Nenhum colaborador na lista.');
   const r = await call('exportPdf', { matriculas: mats, modo, semana });
-  baixar(r.base64, r.nome, 'application/pdf');
+  await baixarPdf(r);
   toast(`PDF gerado: <b>${esc(r.nome)}</b>`);
 }
 function linhasDia(e) {

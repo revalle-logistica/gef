@@ -141,6 +141,7 @@ function rotas_() {
 
 function api(token, acao, dados) {
   try {
+    if (typeof desvio_ === 'function') { const dv = desvio_(token, acao, dados); if (dv) return dv; }
     dados = dados || {};
     const R = rotas_(), PUBLICAS = R.PUBLICAS, PRIVADAS = R.PRIVADAS;
     if (PUBLICAS[acao]) return { ok: true, data: PUBLICAS[acao](dados) };
