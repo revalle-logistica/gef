@@ -953,11 +953,11 @@ async function excelLote(list) {
 
 /* ================= painel ================= */
 /* ---------- prontidão para o início da escala (por supervisor) ---------- */
-const PRT = [['VISTA', 'Vista pelo DP'], ['LIB', 'Liberada ao DP'], ['REENV', 'Alterada · reenviar'], ['NAOLIB', 'Montada, não liberada'], ['ERRO', 'Com erro'], ['SEM', 'Sem escala no início']];
+const PRT = [['VISTA', 'Vista pelo DP'], ['LIB', 'Liberada ao DP'], ['REENV', 'Alterada · reenviar'], ['NAOLIB', 'Montada, não liberada'], ['ERRO', 'Com erro'], ['SEM', 'Sem escala']];
 // o DP recebe a situação real (c.prt) do servidor, porque na tela dele só aparece a versão liberada da escala
 const prontidao = (c, ini) => c.prt || prontidaoColab(c.escala, c.lib, ini, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) });
 function cardProntidao(L) {
-  const ini = inicioEscala(S.cfg), dias = Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5);
+  const hj = hoje(), pa = prazoAtual(S.cfg, hj), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.round((Date.parse(ini) - Date.parse(hj)) / 864e5);
   const grupos = new Map();
   L.forEach(c => { const k = c.supervisor || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(c); });
   const linhas = [...grupos.entries()].map(([sid, a]) => {
@@ -969,11 +969,13 @@ function cardProntidao(L) {
   const T = L.length, prontoT = tot.VISTA + tot.LIB, pcT = T ? Math.round(prontoT / T * 100) : 0;
   const barra = (n, total) => `<div class="stk prt">${PRT.map(([k, t]) => n[k] ? `<i class="pt-${k}" style="width:${n[k] / total * 100}%" title="${t}: ${n[k]}"></i>` : '').join('')}</div>`;
   const quando = dias > 1 ? `faltam <b>${dias} dias</b>` : dias === 1 ? 'falta <b>1 dia</b>' : dias === 0 ? '<b>começa hoje</b>' : `começou há ${-dias} dias`;
-  const pz = String(S.cfg.PRAZO_LIBERACAO_DP || ''), dpz = pz ? Math.round((Date.parse(pz) - Date.parse(hoje())) / 864e5) : null;
-  const txtPz = !pz ? 'Prazo para liberar ao DP <b>não definido</b>' : `Prazo para liberar ao DP: <b>${dataBr(pz)}</b> · ${dpz > 1 ? `faltam <b>${dpz} dias</b>` : dpz === 1 ? '<b>termina amanhã</b>' : dpz === 0 ? '<b>termina hoje</b>' : `<b class="er">venceu há ${-dpz} dia${dpz < -1 ? 's' : ''}</b>`}`;
-  const prazoBox = `<div class="prt-pz ${pz && dpz < 0 && pcT < 100 ? 'venc' : ''}"><span>⏰ ${txtPz}${pz ? '<small>E-mail de alerta aos supervisores com pendências 15, 7 e 1 dia antes</small>' : ''}</span>
-      ${['ADMIN', 'DP'].includes(S.user.perfil) ? `<span class="prt-pzf"><input type="date" data-prazo value="${esc(pz)}"><button type="button" class="btn sm pr" data-prazosalva>${pz ? 'Alterar' : 'Definir prazo'}</button></span>` : ''}</div>`;
-  return `<section class="card prt-c"><div class="card-h"><h3>Prontidão para o início da escala · ${dataBr(ini)}</h3><span class="hint">${quando} · pronto = escala válida e liberada ao DP</span></div>
+  const dpz = pa ? Math.round((Date.parse(pa.data) - Date.parse(hj)) / 864e5) : null;
+  const txtPz = !pa ? 'Nenhum prazo de liberação ao DP definido' : `Prazo para liberar ao DP as ${pa.rotulo}: <b>${dataBr(pa.data)}</b> · ${dpz > 1 ? `faltam <b>${dpz} dias</b>` : dpz === 1 ? '<b>termina amanhã</b>' : dpz === 0 ? '<b>termina hoje</b>' : `<b class="er">venceu há ${-dpz} dia${dpz < -1 ? 's' : ''}</b>`}`;
+  const dm = String(S.cfg.PRAZO_DIA_MES || ''), lg = String(S.cfg.PRAZO_LIBERACAO_DP || '');
+  const regra = [lg ? `largada até ${dataBr(lg)}` : '', +dm ? `todo dia ${+dm}, as escalas do mês seguinte` : ''].filter(Boolean).join(' · ');
+  const prazoBox = `<div class="prt-pz ${pa && dpz < 0 && pcT < 100 ? 'venc' : ''}"><span>⏰ ${txtPz}<small>${regra ? regra + ' · ' : ''}e-mail aos supervisores com pendências 15, 7 e 1 dia antes de cada prazo</small></span>
+      ${['ADMIN', 'DP'].includes(S.user.perfil) ? `<span class="prt-pzf"><label>Largada<input type="date" data-prazo value="${esc(lg)}"></label><label>Todo mês, dia<input type="number" min="1" max="28" data-prazodia value="${esc(dm)}" placeholder="10"></label><button type="button" class="btn sm pr" data-prazosalva>Salvar prazos</button></span>` : ''}</div>`;
+  return `<section class="card prt-c"><div class="card-h"><h3>${pa && pa.tipo === 'mensal' ? `Prontidão das escalas de ${nomeMesAno(ini)}` : `Prontidão para o início da escala · ${dataBr(ini)}`}</h3><span class="hint">${pa && pa.tipo === 'mensal' ? 'pronto = escala válida em ' + dataBr(ini) + ' e liberada ao DP' : `${quando} · pronto = escala válida e liberada ao DP`}</span></div>
     <div class="card-b">${prazoBox}<div class="prt-top"><div class="prt-big"><b>${pcT}%</b><small>${prontoT} de ${T} prontos</small></div>${barra(tot, Math.max(T, 1))}</div>
       <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
       <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
@@ -981,16 +983,16 @@ function cardProntidao(L) {
         ${veTudo() && l.sid && l.pc < 100 ? `<button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">Cobrar</button>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
 }
 function textoCobranca(sid, L) {
-  const ini = inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
+  const pa = prazoAtual(S.cfg, hoje()), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
   const a = L.filter(c => (c.supervisor || '') === sid), n = {}; PRT.forEach(([k]) => { n[k] = 0; }); a.forEach(c => n[prontidao(c, ini)]++);
-  const pz = S.cfg.PRAZO_LIBERACAO_DP;
+  const pz = pa && pa.data;
   const nome = (nomeSup(sid) || '').split(' ')[0];
   const lin = [];
   if (n.SEM) lin.push(`⚪ ${n.SEM} sem escala montada`);
   if (n.ERRO) lin.push(`❌ ${n.ERRO} com erro nas regras`);
   if (n.NAOLIB) lin.push(`⏳ ${n.NAOLIB} montadas, mas não liberadas ao DP`);
   if (n.REENV) lin.push(`🔁 ${n.REENV} alteradas, falta reenviar ao DP`);
-  return `Olá, ${nome}! ${dias ? `Faltam ${dias} dia${dias > 1 ? 's' : ''}` : 'Hoje é o dia'} para a escala 5x2 começar (${dataBr(ini)}).${pz ? ` O prazo para liberar ao DP é ${dataBr(pz)}.` : ''}\n\nNa sua equipe (${a.length} pessoas), ✅ ${n.VISTA + n.LIB} já estão prontas. Falta:\n${lin.join('\n')}\n\nAcesse o GEF e finalize: ${S.cfg.LINK_SISTEMA || location.href}`;
+  return `Olá, ${nome}! ${pa && pa.tipo === 'mensal' ? `O prazo para liberar ao DP as ${pa.rotulo} é ${dataBr(pz)}.` : `${dias ? `Faltam ${dias} dia${dias > 1 ? 's' : ''}` : 'Hoje é o dia'} para a escala 5x2 começar (${dataBr(ini)}).${pz ? ` O prazo para liberar ao DP é ${dataBr(pz)}.` : ''}`}\n\nNa sua equipe (${a.length} pessoas), ✅ ${n.VISTA + n.LIB} já estão prontas. Falta:\n${lin.join('\n')}\n\nAcesse o GEF e finalize: ${S.cfg.LINK_SISTEMA || location.href}`;
 }
 function vPainel(m) {
   const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));
@@ -1031,9 +1033,9 @@ function vPainel(m) {
     const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(P, colsEsc(), v)) return vPainel(m);
     const ps = e.target.closest('[data-prazosalva]');
     if (ps) {
-      const v = m.querySelector('[data-prazo]').value;
-      if (!v) return toast('Escolha a data limite.', true);
-      return ocupado(ps, async () => { S.cfg = await call('salvarConfig', { PRAZO_LIBERACAO_DP: v }); toast(`Prazo definido: <b>${dataBr(v)}</b>. Os supervisores com pendências recebem e-mail 15, 7 e 1 dia antes.`); vPainel(m); });
+      const v = m.querySelector('[data-prazo]').value, d = m.querySelector('[data-prazodia]').value.trim();
+      if (d && !(+d >= 1 && +d <= 28)) return toast('O dia do mês deve ser de 1 a 28.', true);
+      return ocupado(ps, async () => { S.cfg = await call('salvarConfig', { PRAZO_LIBERACAO_DP: v, PRAZO_DIA_MES: d ? String(+d) : '' }); toast('Prazos salvos. Os supervisores com pendências recebem e-mail 15, 7 e 1 dia antes de cada prazo.'); vPainel(m); });
     }
     const cb = e.target.closest('[data-cobra]');
     if (cb) {

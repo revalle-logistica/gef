@@ -44,7 +44,8 @@ const CFG_PADRAO = [
   ['FERIAS_API_URL', 'https://script.google.com/macros/s/AKfycbz-weII57gIVYlcJOdiJeQXV3Zei_n-xqAaATOLKxxViKO_R50csjZ8IDXPqLlR34s24w/exec', 'Endereço de dados do sistema de férias (sincronização)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['DATA_INICIO_INTERNO', '2026-12-13', 'Início da escala 5x2 na Revalle (antecipado em relação ao oficial)'],
-  ['PRAZO_LIBERACAO_DP', '', 'Data limite para os supervisores liberarem as escalas ao DP (alertas por e-mail 15, 7 e 1 dia antes)'],
+  ['PRAZO_LIBERACAO_DP', '', 'Data limite para liberar ao DP as escalas do início (largada). Alertas por e-mail 15, 7 e 1 dia antes'],
+  ['PRAZO_DIA_MES', '10', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
   ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
@@ -85,8 +86,8 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 /** Envia as regras de Regras.gs para o navegador (mesma validação nos dois lados). */
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
-    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';\n' +
-    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';var MESES_NOME=' + JSON.stringify(MESES_NOME) + ';\n' +
+    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, nomeMesAno, prazosLiberacao, prazoAtual, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -315,7 +316,8 @@ function carregar_(u) {
   const libs = {}; ler_('LiberacoesDP').forEach(function (l) { if (vis[l.matricula]) libs[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm }; });
   cols.forEach(function (c) { c.lib = libs[c.matricula] || null; });
   if (u.perfil === 'DP') {
-    const real = escalasPorMatricula_(), ini = inicioEscala(cfg), porMat = {};
+    const pa = prazoAtual(cfg, Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));
+    const real = escalasPorMatricula_(), ini = pa ? pa.ref : inicioEscala(cfg), porMat = {};
     todos.forEach(function (c) { porMat[c.matricula] = c; });
     cols.forEach(function (c) {
       const l = c.lib, o = porMat[c.matricula] || {};

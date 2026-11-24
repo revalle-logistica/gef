@@ -158,6 +158,34 @@ function situacaoLiberacao(esc, lib) {
   return assinaturaEscala(esc) === lib.assinatura ? 'OK' : 'PEND';
 }
 
+var MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function nomeMesAno(iso) { return MESES_NOME[+String(iso).slice(5, 7) - 1] + '/' + String(iso).slice(0, 4); }
+/**
+ * Prazos para liberar as escalas ao DP:
+ *  - largada: data única (PRAZO_LIBERACAO_DP) para as escalas do início (ref = início da escala);
+ *  - mensal: todo dia PRAZO_DIA_MES, as escalas do mês seguinte (ref = dia 1 do mês seguinte).
+ * Devolve [{tipo, data, ref, rotulo}] (o mensal é sempre o próximo a partir de hoje).
+ */
+function prazosLiberacao(cfg, hoje) {
+  var out = [], ini = inicioEscala(cfg), dois = function (n) { return (n < 10 ? '0' : '') + n; };
+  var pz = String(cfg.PRAZO_LIBERACAO_DP || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(pz)) out.push({ tipo: 'largada', data: pz, ref: ini, rotulo: 'escalas da largada (' + ini.split('-').reverse().join('/') + ')' });
+  var dia = parseInt(cfg.PRAZO_DIA_MES, 10);
+  if (dia >= 1 && dia <= 28) {
+    var y = +hoje.slice(0, 4), m = +hoje.slice(5, 7);
+    if (+hoje.slice(8, 10) > dia) { m++; if (m > 12) { m = 1; y++; } }
+    var y2 = m === 12 ? y + 1 : y, m2 = m === 12 ? 1 : m + 1, ref = y2 + '-' + dois(m2) + '-01';
+    if (ref > ini) out.push({ tipo: 'mensal', data: y + '-' + dois(m) + '-' + dois(dia), ref: ref, rotulo: 'escalas de ' + nomeMesAno(ref) });
+  }
+  return out;
+}
+/** O prazo que vale agora: o próximo que ainda não venceu; se só sobrou a largada vencida (antes do início), ela. */
+function prazoAtual(cfg, hoje) {
+  var L = prazosLiberacao(cfg, hoje), fut = L.filter(function (p) { return p.data >= hoje; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+  if (fut.length) return fut[0];
+  return L.filter(function (p) { return p.tipo === 'largada' && hoje < p.ref; })[0] || null;
+}
+
 /**
  * Prontidão para o início da escala: VISTA (liberada e vista pelo DP), LIB (liberada), REENV (alterada, reenviar),
  * NAOLIB (montada, não liberada), ERRO (erro nas regras) ou SEM (sem escala na data de início).

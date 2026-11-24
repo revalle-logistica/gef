@@ -182,3 +182,19 @@ test('semana de domingo a sábado: folga dom + qui, trabalha o resto é OK', () 
   assert.ok(r, 'semana conferida');
   assert.notStrictEqual(r.status, 'ERRO', JSON.stringify(r.msgs));
 });
+
+test('prazos de liberação ao DP: largada + todo dia 10 (escalas do mês seguinte)', () => {
+  const { prazosLiberacao, prazoAtual } = ctxVm;
+  const c = Object.assign({}, cfg, { DATA_INICIO_INTERNO: '2026-12-13', PRAZO_LIBERACAO_DP: '2026-12-01', PRAZO_DIA_MES: '10' });
+  let p = prazoAtual(c, '2026-11-24');
+  assert.deepStrictEqual([p.tipo, p.data, p.ref], ['largada', '2026-12-01', '2026-12-13']);
+  p = prazoAtual(c, '2026-12-02');
+  assert.deepStrictEqual([p.tipo, p.data, p.ref], ['mensal', '2026-12-10', '2027-01-01']);
+  p = prazoAtual(c, '2026-12-11');
+  assert.deepStrictEqual([p.tipo, p.data, p.ref], ['mensal', '2027-01-10', '2027-02-01']);
+  p = prazoAtual(c, '2027-12-15');
+  assert.deepStrictEqual([p.data, p.ref], ['2028-01-10', '2028-02-01']);
+  // antes da largada, o mensal de novembro (escalas de dezembro, antes do início) não conta
+  assert.ok(!prazosLiberacao(c, '2026-11-05').some((x) => x.tipo === 'mensal' && x.ref <= '2026-12-13'));
+  assert.strictEqual(prazoAtual(Object.assign({}, c, { PRAZO_LIBERACAO_DP: '', PRAZO_DIA_MES: '' }), '2026-11-24'), null);
+});

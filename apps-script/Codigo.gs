@@ -47,7 +47,8 @@ const CFG_PADRAO = [
   ['FERIAS_API_URL', 'https://script.google.com/macros/s/AKfycbz-weII57gIVYlcJOdiJeQXV3Zei_n-xqAaATOLKxxViKO_R50csjZ8IDXPqLlR34s24w/exec', 'Endereço de dados do sistema de férias (sincronização)'],
   ['DATA_INICIO_5X2', '2026-12-15', 'Início da nova jornada (EC 141/2026)'],
   ['DATA_INICIO_INTERNO', '2026-12-13', 'Início da escala 5x2 na Revalle (antecipado em relação ao oficial)'],
-  ['PRAZO_LIBERACAO_DP', '', 'Data limite para os supervisores liberarem as escalas ao DP (alertas por e-mail 15, 7 e 1 dia antes)'],
+  ['PRAZO_LIBERACAO_DP', '', 'Data limite para liberar ao DP as escalas do início (largada). Alertas por e-mail 15, 7 e 1 dia antes'],
+  ['PRAZO_DIA_MES', '10', 'Todo mês, até este dia, as escalas do mês seguinte devem estar liberadas ao DP (1 a 28; vazio = sem prazo mensal)'],
   ['LIMITE_SEMANAL_TRANSICAO', '42', 'Horas semanais máximas na transição'],
   ['DIARIO_MAX_TRANSICAO', '10:24', 'Jornada diária máxima na transição (hh:mm)'],
   ['DIARIO_MAX_ENTREGA', '12:24', 'Jornada diária máxima de motoristas e ajudantes de entrega (hh:mm)'],
@@ -88,8 +89,8 @@ function include(nome) { return HtmlService.createHtmlOutputFromFile(nome).getCo
 /** Envia as regras de Regras.gs para o navegador (mesma validação nos dois lados). */
 function regrasFonte() {
   return 'var DIAS_SEMANA=' + JSON.stringify(DIAS_SEMANA) + ';var DIAS_CURTO=' + JSON.stringify(DIAS_CURTO) +
-    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';\n' +
-    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
+    ';var VISOES=' + JSON.stringify(VISOES) + ';var PREFIXO_DEPTO=' + JSON.stringify(PREFIXO_DEPTO) + ';var TURNOS_ORDEM=' + JSON.stringify(TURNOS_ORDEM) + ';var ORDEM_SEMANA=' + JSON.stringify(ORDEM_SEMANA) + ';var MESES_NOME=' + JSON.stringify(MESES_NOME) + ';\n' +
+    [inicioSemana, diaDoOffset, inicioEscala, assinaturaEscala, prontidaoColab, nomeMesAno, prazosLiberacao, prazoAtual, situacaoLiberacao, hmParaMin, minParaHm, calcDia, minutosCfg, ehEntregaCampo, parametrosRegra, validarEscala, semanaModelo, periodosDe, periodoNaData, aplicarPeriodo, normTxt, turnoTag, deptoProprio, areaDeptoProprio, areaSetor, papelEntrega, ehSede, pendenciasCadastro, visaoColaborador, codigoMatricula, isoMaisDias, diaSemanaIso, segundaDaSemana, diasDoMes, feriadoConta, diaEfetivo, semanaEfetiva, avisosSemana, validarSemanaReal].map(function (f) { return f.toString(); }).join('\n');
 }
 
 /** Rode uma vez no editor para criar a base e ver o link da planilha. */
@@ -318,7 +319,8 @@ function carregar_(u) {
   const libs = {}; ler_('LiberacoesDP').forEach(function (l) { if (vis[l.matricula]) libs[l.matricula] = { assinatura: l.assinatura, por: l.liberadoPor, em: l.liberadoEm, visto: l.vistoAssinatura, vistoPor: l.vistoPor, vistoEm: l.vistoEm }; });
   cols.forEach(function (c) { c.lib = libs[c.matricula] || null; });
   if (u.perfil === 'DP') {
-    const real = escalasPorMatricula_(), ini = inicioEscala(cfg), porMat = {};
+    const pa = prazoAtual(cfg, Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));
+    const real = escalasPorMatricula_(), ini = pa ? pa.ref : inicioEscala(cfg), porMat = {};
     todos.forEach(function (c) { porMat[c.matricula] = c; });
     cols.forEach(function (c) {
       const l = c.lib, o = porMat[c.matricula] || {};
@@ -864,8 +866,8 @@ function converterPlanilha_(u, d) {
 
 function salvarConfig_(u, d) {
   // o DP só ajusta como os departamentos do relatório entram na importação
-  if (u.perfil === 'DP' && Object.keys(d || {}).some(function (k) { return ['DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'PRAZO_LIBERACAO_DP'].indexOf(k) < 0; }))
-    throw new Error('O perfil DP só altera os departamentos da importação e o prazo de liberação ao DP.');
+  if (u.perfil === 'DP' && Object.keys(d || {}).some(function (k) { return ['DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'PRAZO_LIBERACAO_DP', 'PRAZO_DIA_MES'].indexOf(k) < 0; }))
+    throw new Error('O perfil DP só altera os departamentos da importação e os prazos de liberação ao DP.');
   return comLock_(function () {
     const linhas = ler_('Config');
     Object.keys(d || {}).forEach(function (k) {
@@ -1772,29 +1774,33 @@ function decidirProposta_(u, d) {
 
 // ===================== Alertas.gs =====================
 /**
- * Alertas do prazo de liberação ao DP (parâmetro PRAZO_LIBERACAO_DP).
+ * Alertas dos prazos de liberação ao DP: largada (PRAZO_LIBERACAO_DP) e mensal (todo dia PRAZO_DIA_MES, escalas do mês seguinte).
  * Roda uma vez por dia (agendado no Supabase). Faltando 15, 7 e 1 dia, manda a cada supervisor um e-mail com o que
  * ainda falta na equipe dele. Cada marco é enviado uma única vez (se um dia falhar, o próximo dia cobre).
  */
-const PRT_TXT_ = { SEM: 'Sem escala na data de início', ERRO: 'Com erro nas regras', NAOLIB: 'Montada, mas não liberada ao DP', REENV: 'Alterada depois de liberada · falta reenviar ao DP' };
+const PRT_TXT_ = { SEM: 'Sem escala montada', ERRO: 'Com erro nas regras', NAOLIB: 'Montada, mas não liberada ao DP', REENV: 'Alterada depois de liberada · falta reenviar ao DP' };
 
 function alertasPrazoDP_() {
-  const cfg = cfg_(), prazo = String(cfg.PRAZO_LIBERACAO_DP || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(prazo)) return { enviado: 0, motivo: 'sem prazo cadastrado' };
-  const hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-  const dias = Math.round((Date.parse(prazo) - Date.parse(hoje)) / 864e5);
-  const devidos = [15, 7, 1].filter(function (m) { return dias >= 1 && dias <= m; });
-  if (!devidos.length) return { enviado: 0, dias: dias };
-  const marco = Math.min.apply(null, devidos), props = PropertiesService.getScriptProperties();
-  if (props.getProperty('ALERTA_PRAZO_' + prazo + '_' + marco)) return { enviado: 0, dias: dias, ja: true };
-  const res = enviarAlertasPrazo_(cfg, prazo, dias);
-  devidos.forEach(function (m) { props.setProperty('ALERTA_PRAZO_' + prazo + '_' + m, agora_()); });
-  log_(null, '', 'alerta do prazo ao DP', dias + ' dias · ' + res.enviados + ' supervisores avisados');
-  return { enviado: res.enviados, dias: dias };
+  const cfg = cfg_(), hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), props = PropertiesService.getScriptProperties();
+  const prazos = prazosLiberacao(cfg, hoje).filter(function (p) { return p.data >= hoje; });
+  if (!prazos.length) return { enviado: 0, motivo: 'sem prazo a vencer' };
+  const res = [];
+  prazos.forEach(function (p) {
+    const dias = Math.round((Date.parse(p.data) - Date.parse(hoje)) / 864e5);
+    const devidos = [15, 7, 1].filter(function (m) { return dias >= 1 && dias <= m; });
+    if (!devidos.length) { res.push({ prazo: p.data, dias: dias }); return; }
+    const marco = Math.min.apply(null, devidos);
+    if (props.getProperty('ALERTA_PRAZO_' + p.data + '_' + marco)) { res.push({ prazo: p.data, dias: dias, ja: true }); return; }
+    const r = enviarAlertasPrazo_(cfg, p, dias);
+    devidos.forEach(function (m) { props.setProperty('ALERTA_PRAZO_' + p.data + '_' + m, agora_()); });
+    log_(null, '', 'alerta do prazo ao DP', p.rotulo + ' · prazo ' + p.data + ' · ' + dias + ' dias · ' + r.enviados + ' supervisores avisados');
+    res.push({ prazo: p.data, dias: dias, enviado: r.enviados });
+  });
+  return { prazos: res, enviado: res.reduce(function (s, x) { return s + (x.enviado || 0); }, 0) };
 }
 
-function enviarAlertasPrazo_(cfg, prazo, dias) {
-  const ini = inicioEscala(cfg), esc = escalasPorMatricula_(), libs = {};
+function enviarAlertasPrazo_(cfg, pz, dias) {
+  const prazo = pz.data, ini = pz.ref, esc = escalasPorMatricula_(), libs = {};
   ler_('LiberacoesDP').forEach(function (l) { libs[l.matricula] = { assinatura: l.assinatura, visto: l.vistoAssinatura }; });
   const users = {}; ler_('Usuarios').forEach(function (u) { users[u.id] = u; });
   const grupos = {};
@@ -1823,13 +1829,13 @@ function enviarAlertasPrazo_(cfg, prazo, dias) {
       '<div style="background:#0b2a6b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><b style="font-size:18px">GEF · prazo para liberar as escalas ao DP</b></div>' +
       '<div style="border:1px solid #dbe2ee;border-top:0;border-radius:0 0 12px 12px;padding:20px">' +
       '<p>Olá, <b>' + h(String(u.nome || '').split(' ')[0]) + '</b>!</p>' +
-      '<p>' + (dias === 1 ? '<b style="color:#b42318">Amanhã</b> termina' : 'Faltam <b>' + dias + ' dias</b> para terminar') + ' o prazo para liberar as escalas ao DP (<b>' + br(prazo) + '</b>). A escala 5x2 começa em <b>' + br(ini) + '</b>.</p>' +
+      '<p>' + (dias === 1 ? '<b style="color:#b42318">Amanhã</b> termina' : 'Faltam <b>' + dias + ' dias</b> para terminar') + ' o prazo para liberar ao DP as <b>' + pz.rotulo + '</b>: <b>' + br(prazo) + '</b>.</p>' +
       '<div style="background:#eef2f9;border-radius:10px;padding:12px 14px;margin:14px 0"><b style="font-size:22px;color:#0b2a6b">' + pc + '%</b> da sua equipe pronta · ' + g.prontos + ' de ' + g.total + ' pessoas<br><span style="font-size:13px;color:#44526b">Falta resolver <b>' + nPend + '</b>:</span></div>' +
       blocos +
       '<p style="text-align:center;margin:24px 0 8px"><a href="' + h(link) + '" style="background:#1446c8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Abrir o GEF e finalizar</a></p>' +
       '<p style="font-size:12px;color:#44526b">Pronto = escala montada, dentro das regras e liberada ao DP (botão "Liberar para o DP").</p></div></div>';
     try {
-      MailApp.sendEmail({ to: para, subject: 'GEF · ' + (dias === 1 ? 'amanhã termina' : 'faltam ' + dias + ' dias para') + ' o prazo de liberar as escalas ao DP (' + br(prazo) + ')', htmlBody: html, name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
+      MailApp.sendEmail({ to: para, subject: 'GEF · prazo ' + br(prazo) + ': liberar ao DP as ' + pz.rotulo + ' · ' + (dias === 1 ? 'termina amanhã' : 'faltam ' + dias + ' dias'), htmlBody: html, name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
       enviados++;
     } catch (e) { log_(null, '', 'falha no alerta de prazo', para + ' · ' + e.message); }
   });
@@ -2056,6 +2062,34 @@ function situacaoLiberacao(esc, lib) {
   if (!esc) return 'SEM';
   if (!lib || !lib.assinatura) return 'NAO';
   return assinaturaEscala(esc) === lib.assinatura ? 'OK' : 'PEND';
+}
+
+var MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function nomeMesAno(iso) { return MESES_NOME[+String(iso).slice(5, 7) - 1] + '/' + String(iso).slice(0, 4); }
+/**
+ * Prazos para liberar as escalas ao DP:
+ *  - largada: data única (PRAZO_LIBERACAO_DP) para as escalas do início (ref = início da escala);
+ *  - mensal: todo dia PRAZO_DIA_MES, as escalas do mês seguinte (ref = dia 1 do mês seguinte).
+ * Devolve [{tipo, data, ref, rotulo}] (o mensal é sempre o próximo a partir de hoje).
+ */
+function prazosLiberacao(cfg, hoje) {
+  var out = [], ini = inicioEscala(cfg), dois = function (n) { return (n < 10 ? '0' : '') + n; };
+  var pz = String(cfg.PRAZO_LIBERACAO_DP || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(pz)) out.push({ tipo: 'largada', data: pz, ref: ini, rotulo: 'escalas da largada (' + ini.split('-').reverse().join('/') + ')' });
+  var dia = parseInt(cfg.PRAZO_DIA_MES, 10);
+  if (dia >= 1 && dia <= 28) {
+    var y = +hoje.slice(0, 4), m = +hoje.slice(5, 7);
+    if (+hoje.slice(8, 10) > dia) { m++; if (m > 12) { m = 1; y++; } }
+    var y2 = m === 12 ? y + 1 : y, m2 = m === 12 ? 1 : m + 1, ref = y2 + '-' + dois(m2) + '-01';
+    if (ref > ini) out.push({ tipo: 'mensal', data: y + '-' + dois(m) + '-' + dois(dia), ref: ref, rotulo: 'escalas de ' + nomeMesAno(ref) });
+  }
+  return out;
+}
+/** O prazo que vale agora: o próximo que ainda não venceu; se só sobrou a largada vencida (antes do início), ela. */
+function prazoAtual(cfg, hoje) {
+  var L = prazosLiberacao(cfg, hoje), fut = L.filter(function (p) { return p.data >= hoje; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+  if (fut.length) return fut[0];
+  return L.filter(function (p) { return p.tipo === 'largada' && hoje < p.ref; })[0] || null;
 }
 
 /**
