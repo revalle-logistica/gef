@@ -23,8 +23,8 @@
 <div class="l" id="l"><img src="logo-180.png" width="84" height="84" alt="GEF" style="border-radius:20px;display:block;margin:0 auto 14px"><div class="s"></div>Carregando o GEF…</div>
 <script>
 (function(){
-// Link /exec do app da Web publicado no Apps Script
-const U="https://script.google.com/macros/s/AKfycbyeGlvF5tbICPZGpNLu6FOmSRj4k-5q9trZbEKekanPrRRjJ7Q0Zdmflh7yTIAb9M9H7g/exec";
+// Servidor do GEF (Supabase Edge Function). O Apps Script antigo só encaminha para cá.
+const U="https://krlkencgakuaisyrxeho.supabase.co/functions/v1/gef";
 const K="esc5x2_app_html";
 const prep=h=>h.replace('<base target="_top">','').replace(/<head>/i,'<head><script>window.API_URL='+JSON.stringify(U)+'<\/script>');
 const mostra=h=>{ document.open(); document.write(h); document.close(); };
