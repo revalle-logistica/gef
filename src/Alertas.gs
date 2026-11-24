@@ -95,3 +95,30 @@ function cobrarSupervisor_(u, d) {
   log_(u, '', 'cobrou supervisor', sup.nome + ' · ' + (g.total - g.prontos) + ' pendências' + (cc ? ' · cópia ' + cc : ''));
   return { para: para, cc: cc, pendencias: g.total - g.prontos };
 }
+
+/** Diagnóstico da prontidão de um supervisor (uso interno, liberado uma vez pela propriedade DIAG_SUP = parte do nome). */
+function diagProntidao_() {
+  const props = PropertiesService.getScriptProperties(), alvo = String(props.getProperty('DIAG_SUP') || '').toLowerCase();
+  if (!alvo) throw new Error('Diagnóstico não liberado.');
+  props.deleteProperty('DIAG_SUP');
+  const cfg = cfg_(), hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), pa = prazoAtual(cfg, hoje), ref = pa ? pa.ref : inicioEscala(cfg);
+  const sup = ler_('Usuarios').filter(function (x) { return String(x.nome).toLowerCase().indexOf(alvo) >= 0; })[0];
+  if (!sup) throw new Error('Supervisor não encontrado.');
+  const esc = escalasPorMatricula_(), libs = {};
+  ler_('LiberacoesDP').forEach(function (l) { libs[l.matricula] = l; });
+  const out = { supervisor: sup.nome, ref: ref, prazo: pa, cat: {}, exemplos: {} };
+  ler_('Colaboradores').filter(function (c) { return c.ativo !== 'N' && c.supervisor === sup.id && contaNaProntidao(c.situacao); }).forEach(function (c) {
+    const l = libs[c.matricula], e = esc[c.matricula];
+    const s = prontidaoColab(e || null, l ? { assinatura: l.assinatura, visto: l.vistoAssinatura } : null, ref, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) });
+    out.cat[s] = (out.cat[s] || 0) + 1;
+    const ex = out.exemplos[s] = out.exemplos[s] || [];
+    if (ex.length < 4) {
+      const p = e ? periodoNaData(e, ref) : null;
+      ex.push({ m: c.matricula, periodos: e ? e.periodos.map(function (x) { return x.vigencia + (x.ate ? '>' + x.ate : ''); }).join(' | ') : '',
+        liberadoEm: l ? l.liberadoEm : '', snapshot: l ? parse_(l.escala, []).map(function (x) { return x.vigencia; }).join(' | ') : '',
+        assinaturaAtual: e ? assinaturaEscala(e) : '', assinaturaLiberada: l ? l.assinatura : '',
+        msgs: p ? validarEscala(p, { tele: c.teleatendimento === 'S', cfg: cfg, entrega: ehEntregaCampo(c) }).msgs.filter(function (x) { return x.nivel === 'erro'; }).map(function (x) { return x.texto; }) : [] });
+    }
+  });
+  return out;
+}

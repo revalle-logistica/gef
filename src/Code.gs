@@ -96,7 +96,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },

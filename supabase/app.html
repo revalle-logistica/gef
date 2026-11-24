@@ -1591,12 +1591,11 @@ async function baixarPdf(r) {
   if (r.base64) return baixar(r.base64, r.nome, 'application/pdf');
   _h2p = _h2p || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = ok; s.onerror = () => { _h2p = null; ko(new Error('Não consegui carregar o gerador de PDF. Verifique a internet.')); }; document.head.appendChild(s); });
   await _h2p;
-  const fr = document.createElement('div'); fr.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff';
-  const doc = new DOMParser().parseFromString(r.html, 'text/html');
-  fr.innerHTML = [...doc.querySelectorAll('style')].map(x => x.outerHTML).join('') + doc.body.innerHTML; document.body.appendChild(fr);
-  try {
-    await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css'], after: '.pg:not(.ult)' } }).from(fr).save();
-  } finally { fr.remove(); }
+  // o HTML vai como texto: o gerador monta sozinho a área de desenho (um elemento fora da tela sai em branco)
+  const doc = new DOMParser().parseFromString(r.html, 'text/html'), largo = /Quadro/i.test(r.nome);
+  const conteudo = `<div style="background:#fff;color:#000;width:${largo ? 1060 : 720}px">${[...doc.querySelectorAll('style')].map(x => x.outerHTML).join('')}${doc.body.innerHTML}</div>`;
+  await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: largo ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css', 'legacy'], after: '.pg:not(:last-child)' } }).from(conteudo, 'string').save();
 }
 function baixar(b64, nome, mime) {
   const bin = atob(b64), u8 = new Uint8Array(bin.length);
@@ -2810,16 +2809,21 @@ function blocoPeriodo(p, k, n, base) {
 const saldoF = p => Math.min(30, Math.max(5, +p.saldo || 30));
 /** Divisão em 2 partes respeitando a regra (uma parte ≥ 14 e a outra ≥ 5): 15+15, 15+10, 14+5… */
 const partesF = s => s >= 30 ? [15, 15] : s >= 20 ? [15, s - 15] : s >= 19 ? [14, s - 14] : null;
+/** Divisão 20 + resto (ex.: 20 + 10): precisa sobrar ao menos 5 dias para o 2º período. */
+const partes20F = s => s >= 25 ? [20, s - 20] : null;
+const ehDiv = m => m === 'div' || m === 'div20';
+const partesModo = (m, s) => m === 'div20' ? partes20F(s) : m === 'div' ? partesF(s) : null;
 /** Opções de dias conforme o saldo: tudo de uma vez, 20 (vendeu 10) só com saldo de 30, e dividir quando der. */
 function opcoesDias(p) {
   const s = saldoF(p), pt = partesF(s), o = [['tudo', s + ' dias' + (s < 30 ? ' (todo o saldo)' : '')]];
   if (s === 30) o.push(['20', '20 dias (vendeu 10)']);
   if (pt) o.push(['div', pt[0] + ' + ' + pt[1]]);
+  const p20 = partes20F(s); if (p20) o.push(['div20', p20[0] + ' + ' + p20[1]]);
   return o;
 }
 function rascunho(p) {
   const e = FX.ed; if (!e.ms[0]) return [];
-  const s = saldoF(p), pt = partesF(s), div = e.modo === 'div' && pt;
+  const s = saldoF(p), pt = partesModo(e.modo, s), div = ehDiv(e.modo) && pt;
   const y = +FX.ano, a = { ini: isoDe(y, e.ms[0], e.d[0]), dias: div ? pt[0] : e.modo === '20' && s === 30 ? 20 : s };
   if (!div || !e.ms[1]) return [a];
   return [a, { ini: isoDe(y, e.ms[1], e.d[1]), dias: pt[1] }].sort((x, z) => x.ini.localeCompare(z.ini));
@@ -2827,17 +2831,17 @@ function rascunho(p) {
 function iniciaEdicao(p) {
   const pl = plano(p), noAno = x => x && x.ini.slice(0, 4) === FX.ano;
   const s = saldoF(p);
-  FX.ed = { id: p.id, modo: pl.length === 2 && partesF(s) ? 'div' : (s === 30 && pl[0] && pl[0].dias === 20 ? '20' : 'tudo'), ms: [noAno(pl[0]) ? +pl[0].ini.slice(5, 7) : 0, noAno(pl[1]) ? +pl[1].ini.slice(5, 7) : 0], d: [pl[0] ? +pl[0].ini.slice(8, 10) : 1, pl[1] ? +pl[1].ini.slice(8, 10) : 1] };
+  FX.ed = { id: p.id, modo: pl.length === 2 && partes20F(s) && Math.max(pl[0].dias, pl[1].dias) === 20 ? 'div20' : pl.length === 2 && partesF(s) ? 'div' : (s === 30 && pl[0] && pl[0].dias === 20 ? '20' : 'tudo'), ms: [noAno(pl[0]) ? +pl[0].ini.slice(5, 7) : 0, noAno(pl[1]) ? +pl[1].ini.slice(5, 7) : 0], d: [pl[0] ? +pl[0].ini.slice(8, 10) : 1, pl[1] ? +pl[1].ini.slice(8, 10) : 1] };
 }
 function foraEquipe(rows, exceto) { const out = Array.from({ length: 12 }, () => new Set()); rows.forEach(r => { if (!r.ativo || r.id === exceto) return; plano(r).forEach(x => porMes(x).forEach((d, i) => { if (d) out[i].add(r.matricula); })); }); return out.map(s => s.size); }
 function editorPeriodo(p, base) {
   const e = FX.ed, fora = foraEquipe(base, p.id), pk = picos(p.revenda), equipe = Math.max(1, new Set(base.map(x => x.matricula)).size), pl = rascunho(p);
   const linhaM = k => `<div class="fx-mp">${FM.map((x, i) => { const c = corMes(p, i), busy = fora[i] / equipe >= 0.2; return `<button type="button" class="mb ${e.ms[k] === i + 1 ? 'on' : ''} ${pk[i] ? 'pk' : ''} ${c} ${busy ? 'busy' : ''}" data-fxmk="${k}" data-fxmm="${i + 1}" title="${fora[i]} da equipe já de férias${pk[i] ? ' · pico de volume' : ''}"><span>${x}</span><small>${fora[i]} fora</small></button>`; }).join('')}</div>`;
   let h = `<div class="fx-ed"><div class="lbl">Quantos dias? <span class="hint">· saldo deste período: ${saldoF(p)} dias</span>${S.user.perfil === 'ADMIN' ? ' <button type="button" class="fx-lk" data-fxa="saldo">corrigir saldo</button>' : ''}</div><div class="chips" style="padding:0">${opcoesDias(p).map(([k, l]) => `<button type="button" class="chip" data-fxmodoed="${k}" aria-pressed="${e.modo === k}">${l}</button>`).join('')}</div>
-    <div class="lbl">${e.modo === 'div' ? '1º período: mês' : 'Mês de início'} <span class="hint">· número = quantos da equipe já estão fora · borda laranja = pico de volume</span></div>${linhaM(0)}`;
-  if (e.modo === 'div') h += `<div class="lbl">2º período: mês</div>${linhaM(1)}`;
-  if (e.ms[0]) h += `<div class="lbl">Dia de início${e.modo === 'div' ? ' (1º período)' : ''} <span class="hint">· riscado = não pode começar (domingo, sexta/sábado antes da folga, feriado ou 2 dias antes)</span></div>` + calendarioF(p, 0, e.ms[0], e.d[0]);
-  if (e.modo === 'div' && e.ms[1]) h += '<div class="lbl">Dia de início (2º período)</div>' + calendarioF(p, 1, e.ms[1], e.d[1]);
+    <div class="lbl">${ehDiv(e.modo) ? `1º período (${partesModo(e.modo, saldoF(p))[0]} dias): mês` : 'Mês de início'} <span class="hint">· número = quantos da equipe já estão fora · borda laranja = pico de volume</span></div>${linhaM(0)}`;
+  if (ehDiv(e.modo)) h += `<div class="lbl">2º período (${partesModo(e.modo, saldoF(p))[1]} dias): mês</div>${linhaM(1)}`;
+  if (e.ms[0]) h += `<div class="lbl">Dia de início${ehDiv(e.modo) ? ' (1º período)' : ''} <span class="hint">· riscado = não pode começar (domingo, sexta/sábado antes da folga, feriado ou 2 dias antes)</span></div>` + calendarioF(p, 0, e.ms[0], e.d[0]);
+  if (ehDiv(e.modo) && e.ms[1]) h += '<div class="lbl">Dia de início (2º período)</div>' + calendarioF(p, 1, e.ms[1], e.d[1]);
   h += `<div class="lbl">Fica assim</div><div class="fx-per">${pl.length ? perTxt(pl) : 'escolha o mês'}</div>`;
   if (pl.length) h += mesmaFuncao(p, pl);
   h += (pl.length ? alertasF(p, pl).filter(a => a[0] === 'c') : []).map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('');
@@ -3184,7 +3188,7 @@ function ligaFerias(m) {
       pl.sort((a, c) => a.ini.localeCompare(c.ini)); FX.ed = null;
       return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) ? null : pl, conf: true }, '✓ ' + p.nome.split(' ')[0] + ': início em ' + MESES[mm - 1]);
     }
-    if (d.fxmodoed) { FX.ed.modo = d.fxmodoed; if (FX.ed.modo === 'div' && !FX.ed.ms[1] && FX.ed.ms[0]) FX.ed.ms[1] = Math.min(12, FX.ed.ms[0] + 3); return renderFerias(); }
+    if (d.fxmodoed) { FX.ed.modo = d.fxmodoed; if (ehDiv(FX.ed.modo) && !FX.ed.ms[1] && FX.ed.ms[0]) FX.ed.ms[1] = Math.min(12, FX.ed.ms[0] + 3); return renderFerias(); }
     if (d.fxmk !== undefined) { const k = +d.fxmk, mm = +d.fxmm; FX.ed.ms[k] = mm; FX.ed.d[k] = diaBomPerto(p.revenda, +FX.ano, mm, Math.min(FX.ed.d[k] || 1, diasMes(+FX.ano, mm - 1))); return renderFerias(); }
     if (d.fxcd) { FX.ed.d[+d.fxck] = +d.fxcd; return renderFerias(); }
   };

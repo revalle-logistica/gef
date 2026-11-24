@@ -886,12 +886,11 @@ async function baixarPdf(r) {
   if (r.base64) return baixar(r.base64, r.nome, 'application/pdf');
   _h2p = _h2p || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = ok; s.onerror = () => { _h2p = null; ko(new Error('Não consegui carregar o gerador de PDF. Verifique a internet.')); }; document.head.appendChild(s); });
   await _h2p;
-  const fr = document.createElement('div'); fr.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff';
-  const doc = new DOMParser().parseFromString(r.html, 'text/html');
-  fr.innerHTML = [...doc.querySelectorAll('style')].map(x => x.outerHTML).join('') + doc.body.innerHTML; document.body.appendChild(fr);
-  try {
-    await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css'], after: '.pg:not(.ult)' } }).from(fr).save();
-  } finally { fr.remove(); }
+  // o HTML vai como texto: o gerador monta sozinho a área de desenho (um elemento fora da tela sai em branco)
+  const doc = new DOMParser().parseFromString(r.html, 'text/html'), largo = /Quadro/i.test(r.nome);
+  const conteudo = `<div style="background:#fff;color:#000;width:${largo ? 1060 : 720}px">${[...doc.querySelectorAll('style')].map(x => x.outerHTML).join('')}${doc.body.innerHTML}</div>`;
+  await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: largo ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css', 'legacy'], after: '.pg:not(:last-child)' } }).from(conteudo, 'string').save();
 }
 function baixar(b64, nome, mime) {
   const bin = atob(b64), u8 = new Uint8Array(bin.length);
