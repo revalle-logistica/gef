@@ -401,6 +401,7 @@ function vEscalas(m) {
     else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', S.semana));
     else if (t.dataset.ac === 'pdfmes') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', '', mesDaSemana()));
     else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
+    else if (t.dataset.ac === 'quadromes') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', '', mesDaSemana()));
   };
   m.onchange = e => {
     if (e.target.dataset.ff) { trataFiltro(e.target); lista(); return; }
@@ -433,7 +434,8 @@ function acoes() {
     <button type="button" class="btn sm" data-ac="xls" title="Baixar em Excel">${ic('xls')}Excel</button>
     <button type="button" class="btn sm" data-ac="pdf" title="Uma ficha em PDF por colaborador, com a semana escolhida">${ic('pdf')}Fichas da semana</button>
     <button type="button" class="btn sm" data-ac="pdfmes" title="Uma ficha em PDF por colaborador, com o mês inteiro e o horário de cada dia">${ic('pdf')}Fichas do mês</button>
-    <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro</button>`;
+    <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro da semana</button>
+    <button type="button" class="btn sm" data-ac="quadromes" title="Quadro do mês inteiro em PDF, com o horário de cada dia">${ic('pdf')}Quadro do mês</button>`;
 }
 function semana(e) {
   return `<div class="wk">${ORDEM_SEMANA.map(i => {
@@ -939,11 +941,31 @@ async function baixarPdf(r) {
   if (r.base64) return baixar(r.base64, r.nome, 'application/pdf');
   _h2p = _h2p || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = ok; s.onerror = () => { _h2p = null; ko(new Error('Não consegui carregar o gerador de PDF. Verifique a internet.')); }; document.head.appendChild(s); });
   await _h2p;
-  // o HTML vai como texto: o gerador monta sozinho a área de desenho (um elemento fora da tela sai em branco)
+  // uma página por vez: o navegador não desenha uma área gigante (com muitas fichas o PDF saía em branco)
   const doc = new DOMParser().parseFromString(r.html, 'text/html'), largo = /Quadro/i.test(r.nome);
-  const conteudo = `<div style="background:#fff;color:#000;width:${largo ? 1060 : 720}px">${[...doc.querySelectorAll('style')].map(x => x.outerHTML).join('')}${doc.body.innerHTML}</div>`;
-  await html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: largo ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css', 'legacy'], after: '.pg:not(:last-child)' } }).from(conteudo, 'string').save();
+  const css = [...doc.querySelectorAll('style')].map(x => x.outerHTML).join('') + '<style>.pg{page-break-after:auto!important}</style>';
+  let pags = [...doc.body.querySelectorAll('.pg')]; if (!pags.length) pags = [doc.body];
+  // quadros com muitas linhas: parte a tabela em blocos (repetindo o cabeçalho) para cada desenho caber no navegador
+  pags = pags.flatMap(pg => {
+    const t = pg.querySelector && pg.querySelector('table.q'); if (!t || t.rows.length <= 61) return [pg];
+    const trs = [...t.rows], cab = trs[0], corpo = trs.slice(1), out = [];
+    for (let i = 0; i < corpo.length; i += 60) {
+      const c = pg.cloneNode(true), tc = c.querySelector('table.q'); tc.innerHTML = '';
+      tc.appendChild(cab.cloneNode(true)); corpo.slice(i, i + 60).forEach(r => tc.appendChild(r.cloneNode(true)));
+      if (i + 60 < corpo.length) c.querySelectorAll('table.q ~ p').forEach(x => x.remove());
+      out.push(c);
+    }
+    return out;
+  });
+  const muitas = pags.length > 60, emb = el => `<div style="background:#fff;color:#000;width:${largo ? 1060 : 720}px">${css}${el === doc.body ? el.innerHTML : el.outerHTML}</div>`;
+  let w = html2pdf().set({ margin: [8, 8, 8, 8], filename: r.nome, image: { type: 'jpeg', quality: muitas ? 0.85 : 0.95 },
+    html2canvas: { scale: muitas ? 1.5 : 2, useCORS: true, scrollX: 0, scrollY: 0 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: largo ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css'], avoid: 'tr' } }).from(emb(pags[0]), 'string').toPdf();
+  for (let i = 1; i < pags.length; i++) {
+    w = w.get('pdf').then(pdf => { pdf.addPage(); if (pags.length > 10 && i % 10 === 0) toast(`Gerando PDF… ${i} de ${pags.length} páginas`); })
+      .from(emb(pags[i]), 'string').toContainer().toCanvas().toPdf();
+  }
+  await w.save();
 }
 function baixar(b64, nome, mime) {
   const bin = atob(b64), u8 = new Uint8Array(bin.length);
@@ -1035,7 +1057,7 @@ function cardProntidao(L0) {
       <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}${fora ? `<span class="hint">· ${fora} afastado${fora > 1 ? 's' : ''} fora da conta (só entram ativos e férias)</span>` : ''}</div>
       <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
         ${barra(l.n, l.a.length)}<span class="pill p-${l.pc === 100 ? 'OK' : l.pc >= 60 ? 'ALERTA' : 'ERRO'}">${l.pc}%</span>
-        ${veTudo() && l.sid && l.pc < 100 ? `<span class="prt-ac"><button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Envia e-mail ao supervisor com as pendências, com cópia para você">Cobrar</button><button type="button" class="btn sm ic" data-zap="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">WhatsApp</button></span>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
+        ${veTudo() && l.sid && l.pc < 100 ? `<span class="prt-ac"><button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Envia e-mail ao supervisor com as pendências, com cópia para você">Cobrar</button></span>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
 }
 function textoCobranca(sid, L) {
   const pa = prazoAtual(S.cfg, hoje()), ini = pa ? pa.ref : inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
