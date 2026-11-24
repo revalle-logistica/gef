@@ -10,18 +10,29 @@ import { bancoPg } from './banco.js';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 4, idle_timeout: 20 });
 const banco = bancoPg(sql);
-// Versão do sistema: commit do repositório revalle-logistica/gef (imutável). Para publicar, troque e reimplante.
-const VERSAO = Deno.env.get('GEF_VERSAO') || '5006a38caf50c5295f3b8a154fabfdc8ce5c61f6';
-const BASE = 'https://raw.githubusercontent.com/revalle-logistica/gef/' + VERSAO + '/';
-let runner: any = null, APP = '', pronto: Promise<void> | null = null;
-function preparar() {
-  pronto = pronto || (async () => {
-    const [c, a] = await Promise.all([fetch(BASE + 'apps-script/Codigo.gs'), fetch(BASE + 'supabase/app.html')]);
-    if (!c.ok || !a.ok) throw new Error('Não consegui baixar a versão ' + VERSAO);
-    const CODE = await c.text(); APP = await a.text();
-    runner = criarRunner({ CODE, crypto, XLSX, Buffer });
-  })().catch((e) => { pronto = null; throw e; });
-  return pronto;
+// Versão do sistema: commit do repositório revalle-logistica/gef (imutável).
+// Para publicar: update gef.controle set v = '<commit>' where k = 'versao'  (vale em até 1 minuto, sem reimplantar).
+const VERSAO_PADRAO = '5006a38caf50c5295f3b8a154fabfdc8ce5c61f6';
+let VERSAO = '', runner: any = null, APP = '', carregando: Promise<void> | null = null, conferido = 0;
+async function versaoAtual() {
+  try { const [r] = await sql`select v from gef.controle where k = 'versao'`; return (r && /^[0-9a-f]{40}$/.test(r.v)) ? r.v : VERSAO_PADRAO; } catch (_) { return VERSAO || VERSAO_PADRAO; }
+}
+async function carregarVersao(v: string) {
+  const base = 'https://raw.githubusercontent.com/revalle-logistica/gef/' + v + '/';
+  const [c, a] = await Promise.all([fetch(base + 'apps-script/Codigo.gs'), fetch(base + 'supabase/app.html')]);
+  if (!c.ok || !a.ok) throw new Error('Não consegui baixar a versão ' + v);
+  const CODE = await c.text(), H = await a.text();
+  runner = criarRunner({ CODE, crypto, XLSX, Buffer }); APP = H; VERSAO = v;
+}
+async function preparar() {
+  if (runner && Date.now() - conferido < 60000) return;
+  if (!carregando) carregando = (async () => {
+    const v = await versaoAtual(); conferido = Date.now();
+    if (v !== VERSAO || !runner) {
+      try { await carregarVersao(v); } catch (e) { if (!runner) throw e; console.error(e); }
+    }
+  })().finally(() => { carregando = null; });
+  await carregando;
 }
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'content-type, authorization, apikey, x-client-info' };
 const resp = (corpo: string, tipo = 'application/json', status = 200) => new Response(corpo, { status, headers: { ...CORS, 'Content-Type': tipo + '; charset=utf-8', 'Cache-Control': 'no-store' } });
