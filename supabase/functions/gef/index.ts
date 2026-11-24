@@ -11,7 +11,7 @@ import { bancoPg } from './banco.js';
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 4, idle_timeout: 20 });
 const banco = bancoPg(sql);
 // Versão do sistema: commit do repositório revalle-logistica/gef (imutável). Para publicar, troque e reimplante.
-const VERSAO = Deno.env.get('GEF_VERSAO') || '__VERSAO__';
+const VERSAO = Deno.env.get('GEF_VERSAO') || '7c3d077d5928f3e3ef1229ad778e965786148007';
 const BASE = 'https://raw.githubusercontent.com/revalle-logistica/gef/' + VERSAO + '/';
 let runner: any = null, APP = '', pronto: Promise<void> | null = null;
 function preparar() {
