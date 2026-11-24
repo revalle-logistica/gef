@@ -135,6 +135,7 @@ function rotas_() {
   importarFeriados: { f: importarFeriados_, admin: true },
   importarFerias: { f: importarFerias_, admin: true, dp: true },
   salvarAjuste: { f: salvarAjuste_ },
+  salvarAjustesLote: { f: salvarAjustesLote_ },
   removerFeriado: { f: removerFeriado_, admin: true },
   converterPlanilha: { f: converterPlanilha_, admin: true, dp: true },
   salvarConfig: { f: salvarConfig_, admin: true, dp: true },
@@ -259,7 +260,7 @@ function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
 /** Administrador e DP veem todos os colaboradores. */
 function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
 /** Ações de escala/férias/QLP que o DP não faz (ele só consulta). */
-var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
+var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarAjustesLote: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
   if (veTudo_(u)) return true;
   if (u.perfil === 'ANALISTA') {
@@ -1121,6 +1122,23 @@ function ajusteInicioEscala_() {
   const msg = n + ' escala(s) passaram a começar em ' + para + '; ' + ja + ' já começavam nessa data; ' + nl + ' liberação(ões) ao DP acompanharam' + (pulados ? '; ' + pulados + ' ficaram como estavam (já tinham outro período até essa data).' : '.');
   log_({ login: 'sistema' }, '', 'ajuste do início da escala', msg);
   return msg;
+}
+
+
+/** Troca de dias em lote (tela Mês): os mesmos dias, para várias pessoas. tipo 'F' folga, 'T' trabalho (ent/sai/int) ou '' volta ao padrão. */
+function salvarAjustesLote_(u, d) {
+  const mats = (d.matriculas || []).map(String), datas = (d.datas || []).map(String);
+  if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
+  if (!datas.length) throw new Error('Escolha ao menos um dia.');
+  if (mats.length * datas.length > 600) throw new Error('Muitas trocas de uma vez (máximo 600). Divida em partes.');
+  const out = [];
+  mats.forEach(function (m) {
+    datas.forEach(function (dt) {
+      const r = salvarAjuste_(u, { matricula: m, data: dt, tipo: d.tipo, ent: d.ent, sai: d.sai, int: d.int });
+      out.push({ matricula: m, data: dt, ajuste: r || null });
+    });
+  });
+  return out;
 }
 
 

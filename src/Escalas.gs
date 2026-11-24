@@ -608,3 +608,20 @@ function ajusteInicioEscala_() {
   log_({ login: 'sistema' }, '', 'ajuste do início da escala', msg);
   return msg;
 }
+
+
+/** Troca de dias em lote (tela Mês): os mesmos dias, para várias pessoas. tipo 'F' folga, 'T' trabalho (ent/sai/int) ou '' volta ao padrão. */
+function salvarAjustesLote_(u, d) {
+  const mats = (d.matriculas || []).map(String), datas = (d.datas || []).map(String);
+  if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
+  if (!datas.length) throw new Error('Escolha ao menos um dia.');
+  if (mats.length * datas.length > 600) throw new Error('Muitas trocas de uma vez (máximo 600). Divida em partes.');
+  const out = [];
+  mats.forEach(function (m) {
+    datas.forEach(function (dt) {
+      const r = salvarAjuste_(u, { matricula: m, data: dt, tipo: d.tipo, ent: d.ent, sai: d.sai, int: d.int });
+      out.push({ matricula: m, data: dt, ajuste: r || null });
+    });
+  });
+  return out;
+}
