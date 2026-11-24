@@ -327,7 +327,7 @@ function carregar_(u) {
     r.todasRevendas = uniq_(todos.map(function (c) { return c.revenda; }));
     r.todosSetores = uniq_(todos.map(function (c) { return c.setor; }));
     r.supervisores = ler_('Usuarios').filter(function (x) { return x.status === 'ATIVO'; })
-      .map(function (x) { return { id: x.id, nome: x.nome, perfil: x.perfil, revendas: lista_(x.revendas) }; })
+      .map(function (x) { return { id: x.id, nome: x.nome, perfil: x.perfil, revendas: lista_(x.revendas), telefone: x.telefone || '' }; })
       .sort(function (a, b) { return a.nome.localeCompare(b.nome); });
   }
   return r;

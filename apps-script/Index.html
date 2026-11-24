@@ -386,6 +386,15 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .pp-tb td.mu{outline:2px solid #7e22ce;outline-offset:-2px}
 .pp-o{margin:0;font-style:italic;color:var(--ink);background:var(--sunk);border-radius:8px;padding:8px 10px;font-size:13px}
 .pp-a{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}.pp-r{display:flex;gap:6px;flex:1;min-width:260px}.pp-r input{flex:1}
+
+/* prontidão para o início da escala */
+.prt-top{display:flex;gap:16px;align-items:center;margin-bottom:10px}.prt-big b{font-size:34px;line-height:1;color:var(--b8);display:block}.prt-big small{color:var(--mut);font-size:12px;white-space:nowrap}
+.stk.prt{flex:1;height:14px;display:flex;border-radius:7px;overflow:hidden;background:var(--sunk)}.stk.prt i{display:block;height:100%}
+.pt-VISTA{background:#0f7b4a}.pt-LIB{background:#4cc38a}.pt-REENV{background:#e8a317}.pt-NAOLIB{background:#7da2f0}.pt-ERRO{background:var(--er)}.pt-SEM{background:#c9d1de}
+.prt-leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--mut);margin-bottom:12px}.prt-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}.prt-leg b{color:var(--ink)}
+.prt-l{display:grid;gap:8px}.prt-r{display:grid;grid-template-columns:minmax(170px,1.1fr) 2fr 56px 76px;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--ln)}
+.prt-n b{display:block;font-size:13.5px}.prt-n small{font-size:12px;color:var(--mut)}.prt-n .er{color:var(--er);font-weight:700}.prt-r .stk.prt{height:10px}.prt-r .pill{justify-self:center}
+@media(max-width:700px){.prt-r{grid-template-columns:1fr auto auto;gap:6px 8px}.prt-r .stk.prt{grid-column:1/-1;grid-row:2}.prt-top{flex-direction:column;align-items:stretch}}
 </style>
 
 </head>
@@ -1348,6 +1357,46 @@ async function excelLote(list) {
 }
 
 /* ================= painel ================= */
+/* ---------- prontidão para o início da escala (por supervisor) ---------- */
+const PRT = [['VISTA', 'Vista pelo DP'], ['LIB', 'Liberada ao DP'], ['REENV', 'Alterada · reenviar'], ['NAOLIB', 'Montada, não liberada'], ['ERRO', 'Com erro'], ['SEM', 'Sem escala no início']];
+function prontidao(c, ini) {
+  const p = c.escala ? periodoNaData(c.escala, ini) : null;
+  if (!p) return 'SEM';
+  if (validarEscala(p, { tele: c.tele, cfg: S.cfg, entrega: ehEntregaCampo(c) }).status === 'ERRO') return 'ERRO';
+  const l = situacaoLiberacao(c.escala, c.lib);
+  return l === 'NAO' ? 'NAOLIB' : l === 'PEND' ? 'REENV' : c.lib && c.lib.visto && c.lib.visto === c.lib.assinatura ? 'VISTA' : 'LIB';
+}
+function cardProntidao(L) {
+  const ini = inicioEscala(S.cfg), dias = Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5);
+  const grupos = new Map();
+  L.forEach(c => { const k = c.supervisor || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(c); });
+  const linhas = [...grupos.entries()].map(([sid, a]) => {
+    const n = {}; PRT.forEach(([k]) => { n[k] = 0; }); a.forEach(c => n[prontidao(c, ini)]++);
+    const pronto = n.VISTA + n.LIB, pc = Math.round(pronto / a.length * 100);
+    return { sid, nome: sid ? (nomeSup(sid) || 'Supervisor') : 'Sem supervisor vinculado', a, n, pronto, pc };
+  }).sort((x, y) => x.pc - y.pc || y.a.length - x.a.length);
+  const tot = {}; PRT.forEach(([k]) => { tot[k] = linhas.reduce((s, l) => s + l.n[k], 0); });
+  const T = L.length, prontoT = tot.VISTA + tot.LIB, pcT = T ? Math.round(prontoT / T * 100) : 0;
+  const barra = (n, total) => `<div class="stk prt">${PRT.map(([k, t]) => n[k] ? `<i class="pt-${k}" style="width:${n[k] / total * 100}%" title="${t}: ${n[k]}"></i>` : '').join('')}</div>`;
+  const quando = dias > 1 ? `faltam <b>${dias} dias</b>` : dias === 1 ? 'falta <b>1 dia</b>' : dias === 0 ? '<b>começa hoje</b>' : `começou há ${-dias} dias`;
+  return `<section class="card prt-c"><div class="card-h"><h3>Prontidão para o início da escala · ${dataBr(ini)}</h3><span class="hint">${quando} · pronto = escala válida e liberada ao DP</span></div>
+    <div class="card-b"><div class="prt-top"><div class="prt-big"><b>${pcT}%</b><small>${prontoT} de ${T} prontos</small></div>${barra(tot, Math.max(T, 1))}</div>
+      <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
+      <div class="prt-l">${linhas.map(l => `<div class="prt-r"><div class="prt-n"><b>${esc(l.nome)}</b><small>${l.a.length} ${l.a.length === 1 ? "pessoa" : "pessoas"} · ${l.pronto} ${l.pronto === 1 ? "pronta" : "prontas"}${l.n.SEM ? ` · <span class="er">${l.n.SEM} sem escala</span>` : ''}${l.n.ERRO ? ` · <span class="er">${l.n.ERRO} com erro</span>` : ''}${l.n.NAOLIB + l.n.REENV ? ` · ${l.n.NAOLIB + l.n.REENV} a liberar` : ''}</small></div>
+        ${barra(l.n, l.a.length)}<span class="pill p-${l.pc === 100 ? 'OK' : l.pc >= 60 ? 'ALERTA' : 'ERRO'}">${l.pc}%</span>
+        ${veTudo() && l.sid && l.pc < 100 ? `<button type="button" class="btn sm" data-cobra="${esc(l.sid)}" title="Mensagem pronta para o WhatsApp">Cobrar</button>` : '<span></span>'}</div>`).join('')}</div></div></section>`;
+}
+function textoCobranca(sid, L) {
+  const ini = inicioEscala(S.cfg), dias = Math.max(0, Math.round((Date.parse(ini) - Date.parse(hoje())) / 864e5));
+  const a = L.filter(c => (c.supervisor || '') === sid), n = {}; PRT.forEach(([k]) => { n[k] = 0; }); a.forEach(c => n[prontidao(c, ini)]++);
+  const nome = (nomeSup(sid) || '').split(' ')[0];
+  const lin = [];
+  if (n.SEM) lin.push(`⚪ ${n.SEM} sem escala montada`);
+  if (n.ERRO) lin.push(`❌ ${n.ERRO} com erro nas regras`);
+  if (n.NAOLIB) lin.push(`⏳ ${n.NAOLIB} montadas, mas não liberadas ao DP`);
+  if (n.REENV) lin.push(`🔁 ${n.REENV} alteradas, falta reenviar ao DP`);
+  return `Olá, ${nome}! ${dias ? `Faltam ${dias} dia${dias > 1 ? 's' : ''}` : 'Hoje é o dia'} para a escala 5x2 começar (${dataBr(ini)}).\n\nNa sua equipe (${a.length} pessoas), ✅ ${n.VISTA + n.LIB} já estão prontas. Falta:\n${lin.join('\n')}\n\nAcesse o GEF e finalize: ${S.cfg.LINK_SISTEMA || location.href}`;
+}
 function vPainel(m) {
   const P = S.pnl, revs = uniq(S.cols.map(c => c.revenda));
   arrumaH(P, colsEsc());
@@ -1368,6 +1417,7 @@ function vPainel(m) {
   });
   const pend = L.filter(c => ['ERRO', 'SEM'].includes(st(c))).sort((a, b) => (st(a) === 'ERRO' ? 0 : 1) - (st(b) === 'ERRO' ? 0 : 1) || a.vis.ordem.localeCompare(b.vis.ordem)).slice(0, 40);
   m.innerHTML = `<section class="card">${barraSemana()}<div class="fx">${cascataHtml(P, colsEsc(), { n: L.length })}</div></section>
+    ${!soLer() && !ehAnalista() && L.length ? cardProntidao(L) : ''}
     <div class="kpis">
       <div class="kpi"><span>Colaboradores</span><b>${tot}</b><small>${pc(k.OK + k.ALERTA)}% com escala válida</small></div>
       <div class="kpi OK"><span>Dentro das regras</span><b>${k.OK}</b><small>${pc(k.OK)}%</small></div>
@@ -1384,6 +1434,13 @@ function vPainel(m) {
   ligaSemana(m, () => vPainel(m));
   m.onclick = e => {
     const v = e.target.closest('[data-rc], [data-ac=limpaf]'); if (v && trataCascata(P, colsEsc(), v)) return vPainel(m);
+    const cb = e.target.closest('[data-cobra]');
+    if (cb) {
+      const sid = cb.dataset.cobra, txt = textoCobranca(sid, L), sup = S.sups.find(x => x.id === sid), tel = String((sup && sup.telefone) || '').replace(/\D/g, '');
+      if (tel.length >= 10) { window.open('https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(txt), '_blank'); return; }
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Mensagem copiada. Cole no WhatsApp do supervisor.'), () => { prompt('Copie a mensagem:', txt); });
+      return;
+    }
     const b = e.target.closest('[data-ed]'); if (b) abrirEditor(b.dataset.ed);
   };
 }
