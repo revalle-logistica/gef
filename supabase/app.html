@@ -1039,6 +1039,8 @@ function trataCascata(F, P, el, o = {}) {
   arrumaH(F, P, o); return true;
 }
 /** Escalas e Mês: a cascata + situação. */
+/** Situação do colaborador no relatório do DP (sem o código entre parênteses). */
+const sitDP = c => String(c.situacao || 'Trabalhando').replace(/\s*\(\s*\d+\s*\)\s*$/, '').trim() || 'Trabalhando';
 function barraFiltros(comSit) {
   const f = S.f;
   let sit = '';
@@ -1047,21 +1049,28 @@ function barraFiltros(comSit) {
     const so = (v, l, q) => `<option value="${v}" ${sitV === v ? 'selected' : ''}>${l}${q !== undefined ? ' · ' + q : ''}</option>`;
     sit = `<label class="cb sit${sitV ? ' on' : ''}"><small>Situação</small><select data-ff="sit">${so('', 'Todas')}<optgroup label="Escala">${so('SEM', 'Sem escala', n('SEM'))}${so('ERRO', 'Com erro', n('ERRO'))}${so('ALERTA', 'Com alerta', n('ALERTA'))}${so('OK', 'Dentro das regras', n('OK'))}</optgroup><optgroup label="Nesta semana">${so('ferias', 'Férias na semana', base.filter(c => c.sem.some(d => d.tipo === 'FER')).length)}${so('feriado', 'Trabalha em feriado', base.filter(c => c.avisos.length).length)}${so('tele', 'Teleatendimento', base.filter(c => c.tele).length)}</optgroup><optgroup label="Liberação para o DP">${(soLer() ? ['NOVA', 'ALT', 'VISTA'] : ['NAO', 'PEND', 'OK']).map(k => so('lib:' + k, LIB_TXT[k], base.filter(c => libSt(c) === k).length)).join('')}</optgroup></select></label>`;
   }
+  if (comSit) {
+    const bd = colsEsc().filter(c => passaHier(c)), cnt = new Map();
+    bd.forEach(c => { const k = sitDP(c); cnt.set(k, (cnt.get(k) || 0) + 1); });
+    if (f.sdp && !cnt.has(f.sdp)) cnt.set(f.sdp, 0);
+    sit += `<label class="cb sit${f.sdp ? ' on' : ''}"><small>Situação no DP</small><select data-ff="sdp"><option value="">Todas</option>${[...cnt].sort((a, b) => (b[0] === 'Trabalhando') - (a[0] === 'Trabalhando') || a[0].localeCompare(b[0], 'pt')).map(([k, q]) => `<option value="${esc(k)}" ${f.sdp === k ? 'selected' : ''}>${esc(k)} · ${q}</option>`).join('')}</select></label>`;
+  }
   if (comSit && soLer()) {
     const base = filtrados(true), n = k => base.filter(c => libSt(c) === k).length;
     sit += `</div><div class="fx-row rcs"><div class="seg dpl"><span>Liberação</span><button type="button" data-dpl="" aria-pressed="${!f.lib}">Todas<i>${base.length}</i></button>${[['ALT', 'Alteradas'], ['NOVA', 'Novas'], ['VISTA', 'Vistas']].map(([k, t]) => `<button type="button" data-dpl="${k}" aria-pressed="${f.lib === k}" class="${k === 'ALT' && n(k) ? 'alt' : ''}">${t}<i>${n(k)}</i></button>`).join('')}</div>`;
   }
-  return cascataHtml(f, colsEsc(), { direita: sit, n: (comSit ? filtrados() : filtrados(true)).length, ativo: f.st || f.lib || f.ext || f.tele || f.q });
+  return cascataHtml(f, colsEsc(), { direita: sit, n: (comSit ? filtrados() : filtrados(true)).length, ativo: f.st || f.lib || f.ext || f.tele || f.sdp || f.q });
 }
 function trataFiltro(el) {
   const f = S.f;
   if (el.dataset && el.dataset.dpl !== undefined) { f.lib = f.lib === el.dataset.dpl ? '' : el.dataset.dpl; if (f.lib) { f.st = ''; f.tele = ''; f.ext = ''; } return true; }
+  if (el.dataset && el.dataset.ff === 'sdp' && el.tagName === 'SELECT') { f.sdp = el.value; return true; }
   if (el.dataset && el.dataset.ff === 'sit' && el.tagName === 'SELECT') { const v = el.value; f.st = ''; f.tele = ''; f.ext = ''; f.lib = ''; if (/^lib:/.test(v)) f.lib = v.slice(4); else if (v === 'tele') f.tele = 'S'; else if (v === 'ferias' || v === 'feriado') f.ext = v; else f.st = v; return true; }
-  return trataCascata(f, colsEsc(), el, { limpar: () => { Object.assign(f, { st: '', lib: '', tele: '', ext: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); } });
+  return trataCascata(f, colsEsc(), el, { limpar: () => { Object.assign(f, { st: '', lib: '', tele: '', ext: '', sdp: '', q: '' }); document.querySelectorAll('input[data-f=q]').forEach(i => { i.value = ''; }); } });
 }
 function filtrados(ignSt) {
   const f = S.f, q = nrm(f.q);
-  return colsEsc().filter(c => passaHier(c) &&
+  return colsEsc().filter(c => passaHier(c) && (!f.sdp || sitDP(c) === f.sdp) &&
     (!f.tele || c.tele) && (!f.ext || (f.ext === 'ferias' ? c.sem.some(d => d.tipo === 'FER') : c.avisos.length > 0)) && (ignSt || !f.st || st(c) === f.st) && (ignSt || !f.lib || libSt(c) === f.lib) && (!q || nrm(c.nome + ' ' + c.matricula + ' ' + c.funcao + ' ' + c.lotacao).includes(q)));
 }
 function alvo() { const sel = S.cols.filter(c => S.sel.has(c.matricula)); return sel.length ? { lista: sel, tipo: 'selecionados' } : { lista: ordenar(filtrados()), tipo: 'da lista' }; }
