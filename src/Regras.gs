@@ -158,6 +158,19 @@ function situacaoLiberacao(esc, lib) {
   return assinaturaEscala(esc) === lib.assinatura ? 'OK' : 'PEND';
 }
 
+/**
+ * Prontidão para o início da escala: VISTA (liberada e vista pelo DP), LIB (liberada), REENV (alterada, reenviar),
+ * NAOLIB (montada, não liberada), ERRO (erro nas regras) ou SEM (sem escala na data de início).
+ * lib = {assinatura, visto}; op = opções do validarEscala ({tele, cfg, entrega}).
+ */
+function prontidaoColab(esc, lib, ini, op) {
+  var p = esc ? periodoNaData(esc, ini) : null;
+  if (!p) return 'SEM';
+  if (validarEscala(p, op || {}).status === 'ERRO') return 'ERRO';
+  var l = situacaoLiberacao(esc, lib);
+  return l === 'NAO' ? 'NAOLIB' : l === 'PEND' ? 'REENV' : (lib && lib.visto && lib.visto === lib.assinatura) ? 'VISTA' : 'LIB';
+}
+
 /** Monta uma semana padrão com 2 folgas (0 = segunda ... 6 = domingo). A 1ª folga é o domingo se não for informada. */
 function semanaModelo(folga2, ent, sai, int, folga1) {
   var f1 = (folga1 === undefined || folga1 === null || folga1 === '') ? 6 : +folga1;

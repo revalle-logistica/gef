@@ -358,8 +358,12 @@ function salvarConfig_(u, d) {
   return comLock_(function () {
     const linhas = ler_('Config');
     Object.keys(d || {}).forEach(function (k) {
-      const l = linhas.filter(function (x) { return x.chave === k; })[0];
-      if (!l) return;
+      let l = linhas.filter(function (x) { return x.chave === k; })[0];
+      if (!l) {
+        const pad = CFG_PADRAO.filter(function (x) { return x[0] === k; })[0];
+        if (!pad) return;
+        l = { chave: k, valor: '', descricao: pad[2] }; linhas.push(l);
+      }
       l.valor = String(d[k]).trim();
       gravarLinha_('Config', l);
     });
