@@ -20,7 +20,7 @@ const CSS_PDF = 'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;colo
   '.msg{font-size:10px;color:#44526b;margin:2px 0}.leg{font-size:9.5px;color:#44526b;margin-top:10px;border-top:1px solid #dbe2ee;padding-top:6px}' +
   '.ass td{border:0;padding-top:46px;text-align:center;font-size:11px;width:50%}.ass span{display:block;border-top:1px solid #0c1a33;margin:0 18px;padding-top:4px}' +
   '.q th{background:#0b2a6b;color:#fff;font-size:8px;padding:4px 3px;border:1px solid #0b2a6b}.q td{font-size:8px;padding:3px;border:1px solid #dbe2ee;text-align:center}' +
-  '.qm th,.qm td{font-size:6.5px;padding:2px 1px}.qm td.n{font-size:7px;min-width:120px}.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
+  '.qm th,.qm td{font-size:6.5px;padding:2px 1px;line-height:1.25}.qm td{white-space:nowrap}.qm td.n{font-size:7px;min-width:120px}.q td.n{text-align:left}.q td.f{background:#fdf0d8;color:#9a5800;font-weight:bold}.q tr.g td{background:#e3eafb;color:#0b2a6b;font-weight:bold;text-align:left;font-size:9px}';
 
 function textoDia_(d) {
   const c = calcDia(d);
@@ -190,7 +190,7 @@ function quadroMesPdf_(cols, esc, cfg, ctx) {
         if (d.tipo === 'N') return '<td>·</td>';
         if (d.tipo === 'F') return '<td class="f">F</td>';
         const cd = calcDia(d); if (cd) tot += cd.liquido;
-        return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + h_(String(d.ent).slice(0, 2)) + '</td>';
+        return '<td' + (d.feriado ? ' style="background:#fde6e3"' : '') + '>' + h_(d.ent) + '<br>' + h_(d.sai) + '</td>';
       }).join('') + '<td><b>' + minParaHm(tot) + '</b></td></tr>';
     });
   });
@@ -198,5 +198,5 @@ function quadroMesPdf_(cols, esc, cfg, ctx) {
     '<table class="q qm" style="margin-top:8px"><tr><th>Colaborador</th>' + datas.map(function (dt) {
       return '<th' + (ferAll[dt] ? ' style="background:#b42318"' : '') + '>' + (+dt.slice(8)) + '<br>' + ini[diaSemanaIso(dt)] + '</th>';
     }).join('') + '<th>Horas</th></tr>' + rows + '</table>' +
-    '<p style="font-size:8px;color:#44526b">Número = hora de entrada · F = folga · V = férias · vermelho = feriado. Cada colaborador tem a ficha do mês com os horários completos.</p></div>';
+    '<p style="font-size:8px;color:#44526b">Horário = entrada e saída · F = folga · V = férias · vermelho = feriado. Cada colaborador tem a ficha do mês com os horários completos.</p></div>';
 }
