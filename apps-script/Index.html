@@ -595,7 +595,7 @@ function render() {
   const adm = S.user.perfil === 'ADMIN', dp = soLer(), an = ehAnalista();
   document.body.classList.toggle('so-ler', dp || an);
   document.body.classList.toggle('analista', an);
-  const tabs = [['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['painel', 'chart', 'Painel'], ['relacao', 'list', 'Colaboradores']])
+  const tabs = [['painel', 'chart', 'Painel'], ['escalas', 'cal', 'Escalas']].concat(dp || an ? [] : [['qlp', 'users', 'QLP']]).concat([['mes', 'cal', 'Mês'], ['ferias', 'sun', 'Férias'], ['relacao', 'list', 'Colaboradores']])
     .concat(an ? [] : [['cadastro', 'users', 'Cadastro']])
     .concat(an || (aprovaProp() && S.propostas.length) ? [['propostas', 'edit', 'Propostas']] : [])
     .concat(adm || dp ? [['importar', 'up', 'Importar DP']] : []).concat(adm ? [['usuarios', 'key', 'Usuários']] : [])
@@ -1381,7 +1381,7 @@ function cardProntidao(L) {
   const pz = String(S.cfg.PRAZO_LIBERACAO_DP || ''), dpz = pz ? Math.round((Date.parse(pz) - Date.parse(hoje())) / 864e5) : null;
   const txtPz = !pz ? 'Prazo para liberar ao DP <b>não definido</b>' : `Prazo para liberar ao DP: <b>${dataBr(pz)}</b> · ${dpz > 1 ? `faltam <b>${dpz} dias</b>` : dpz === 1 ? '<b>termina amanhã</b>' : dpz === 0 ? '<b>termina hoje</b>' : `<b class="er">venceu há ${-dpz} dia${dpz < -1 ? 's' : ''}</b>`}`;
   const prazoBox = `<div class="prt-pz ${pz && dpz < 0 && pcT < 100 ? 'venc' : ''}"><span>⏰ ${txtPz}${pz ? '<small>E-mail de alerta aos supervisores com pendências 15, 7 e 1 dia antes</small>' : ''}</span>
-      ${S.user.perfil === 'ADMIN' ? `<span class="prt-pzf"><input type="date" data-prazo value="${esc(pz)}"><button type="button" class="btn sm pr" data-prazosalva>${pz ? 'Alterar' : 'Definir prazo'}</button></span>` : ''}</div>`;
+      ${['ADMIN', 'DP'].includes(S.user.perfil) ? `<span class="prt-pzf"><input type="date" data-prazo value="${esc(pz)}"><button type="button" class="btn sm pr" data-prazosalva>${pz ? 'Alterar' : 'Definir prazo'}</button></span>` : ''}</div>`;
   return `<section class="card prt-c"><div class="card-h"><h3>Prontidão para o início da escala · ${dataBr(ini)}</h3><span class="hint">${quando} · pronto = escala válida e liberada ao DP</span></div>
     <div class="card-b">${prazoBox}<div class="prt-top"><div class="prt-big"><b>${pcT}%</b><small>${prontoT} de ${T} prontos</small></div>${barra(tot, Math.max(T, 1))}</div>
       <div class="leg prt-leg">${PRT.map(([k, t]) => `<span><i class="pt-${k}"></i>${t} <b>${tot[k]}</b></span>`).join('')}</div>
