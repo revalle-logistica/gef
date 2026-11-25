@@ -2441,7 +2441,7 @@ async function telaMinha(tk) {
  * Plano/sugestão: [{ini:'AAAA-MM-DD', dias:N}] · até 2 períodos de gozo.
  * ===================================================================== */
 const FM = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const FX = { d: null, P: [], carregando: false, aba: 'prog', ano: '', rev: '', dep: '', sup: '', loc: '', fn: '', tab: 'pend', q: '', mes: 0, modo: 'prog', ed: null, acMes: 0, opc: false, fora: false,
+const FX = { d: null, P: [], carregando: false, aba: 'prog', ano: '', rev: '', dep: '', sup: '', h: { rev: '', dep: '', fn: '', lc: '', tipo: '', loc: '', tur: '' }, loc: '', fn: '', tab: 'pend', q: '', mes: 0, modo: 'prog', ed: null, acMes: 0, opc: false, fora: false,
   pn: { heat: 'g', setor: '', fn: '', mes: '', st: '', q: '', farol: null, area: 'LOG' }, rel: { rev: '', mes: -1, setor: '', conf: true } };
 const AVC = ['#2a78d6', '#eb6834', '#1baf7a', '#c98500', '#d55181', '#008300', '#6250d6', '#e34948'];
 const avCor = n => { let h = 0; for (const ch of String(n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AVC[h % AVC.length]; };
@@ -2594,12 +2594,16 @@ function semDadosFerias(adm) {
 /* ---------- PROGRAMAR (equipe) ---------- */
 function progFerias() {
   const P0 = doAno().filter(p => (!FX.rev || p.revenda === FX.rev) && p.origem !== 'gozado');
-  const dc = {}; P0.forEach(p => { if (p.ativo) (dc[p.setor] = dc[p.setor] || new Set()).add(p.matricula); });
-  if (FX.dep && !dc[FX.dep]) FX.dep = '';
   const supDe = p => (p.c && p.c.supervisor) || '', nmSup = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id ? 'Outro supervisor' : 'Sem supervisor');
-  const sc = {}; P0.forEach(p => { if (p.ativo && (!FX.dep || p.setor === FX.dep)) (sc[supDe(p)] = sc[supDe(p)] || new Set()).add(p.matricula); });
+  // mesmos filtros das Escalas (Revenda › Departamento › Função › Localidade + recortes), sobre os colaboradores; supervisor à parte
+  const H = FX.h; H.rev = FX.rev; H.fn = FX.fn; FX.loc = '';
+  const cm = new Map(); P0.forEach(p => { if (p.ativo && p.c) cm.set(p.matricula, p.c); });
+  const colsAll = [...cm.values()], sc = {};
+  colsAll.forEach(c => { if (passaH(H, c)) { const k = c.supervisor || ''; sc[k] = (sc[k] || 0) + 1; } });
   if (FX.sup && !sc[FX.sup]) FX.sup = '';
-  const P = P0.filter(p => (!FX.dep || p.setor === FX.dep) && (!FX.sup || supDe(p) === FX.sup));
+  const colsB = colsAll.filter(c => !FX.sup || (c.supervisor || '') === FX.sup);
+  arrumaH(H, colsB); FX.fn = H.fn;
+  const P = P0.filter(p => p.c && passaH(H, p.c) && (!FX.sup || supDe(p) === FX.sup));
   const ativos = P.filter(p => p.ativo);
   const okL = p => !FX.loc || p.localF === FX.loc, okF = p => !FX.fn || p.grupo === FX.fn;
   const base = ativos.filter(p => okL(p) && okF(p)), ob = base.filter(obrig);
@@ -2607,16 +2611,13 @@ function progFerias() {
   const cor = pc >= 100 ? 'var(--ok)' : pc >= 50 ? '#e8a317' : 'var(--er)';
   const r = 42, cc = 2 * Math.PI * r;
   let h = `<section class="card"><div class="fx-ring"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--ln)" stroke-width="10"/><circle cx="50" cy="50" r="${r}" fill="none" stroke="${cor}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${cc * pc / 100} ${cc}" transform="rotate(-90 50 50)"/><text x="50" y="56" text-anchor="middle" font-size="20" font-weight="800" fill="var(--ink)">${Math.round(pc)}%</text></svg>
-    <div><h3>${pend ? `Faltam ${pend} férias para confirmar` : ob.length ? 'Equipe toda confirmada ✓' : 'Nada para programar'}</h3><small>${val} de ${ob.length} confirmadas · ${new Set(base.map(p => p.matricula)).size} pessoas${FX.dep || FX.sup || FX.loc || FX.fn ? ' neste filtro' : ''}</small>
+    <div><h3>${pend ? `Faltam ${pend} férias para confirmar` : ob.length ? 'Equipe toda confirmada ✓' : 'Nada para programar'}</h3><small>${val} de ${ob.length} confirmadas · ${new Set(base.map(p => p.matricula)).size} pessoas${FX.sup || H.dep || H.lc || H.tipo || H.loc || H.tur || FX.fn ? ' neste filtro' : ''}</small>
     <div class="chips" style="padding:8px 0 0">${[['pend', 'Pendentes', pend], ['ok', 'Confirmadas', val], ['all', 'Todas', ob.length]].map(([k, l, n]) => `<button type="button" class="chip" data-fxtab="${k}" aria-pressed="${FX.tab === k}">${l} <b>${n}</b></button>`).join('')}</div></div></div>`;
   // filtros de local e função
   const lc = {}, fc = {}; ativos.forEach(p => { if (okF(p)) (lc[p.localF] = lc[p.localF] || new Set()).add(p.matricula); if (okL(p)) (fc[p.grupo] = fc[p.grupo] || new Set()).add(p.matricula); });
   const lk = Object.keys(lc).sort((a, b) => a === 'Sede' ? -1 : b === 'Sede' ? 1 : a.localeCompare(b)), fk = Object.keys(fc).sort();
-  h += `<div class="fx" style="border-top:1px solid var(--ln)"><div class="fx-row"><div class="cad">
-      <label class="cb${FX.dep ? ' on' : ''}"><small>Departamento</small><select data-fxdepsel><option value="">Todos</option>${Object.keys(dc).sort().map(g => `<option value="${esc(g)}" ${FX.dep === g ? 'selected' : ''}>${esc(g)} · ${dc[g].size}</option>`).join('')}</select></label><i class="sep">›</i>
-      ${Object.keys(sc).length > 1 || FX.sup ? `<label class="cb${FX.sup ? ' on' : ''}"><small>Supervisor</small><select data-fxsupsel><option value="">Todos</option>${Object.keys(sc).sort((a, b) => !a - !b || nmSup(a).localeCompare(nmSup(b), 'pt')).map(g => `<option value="${esc(g)}" ${FX.sup === g ? 'selected' : ''}>${esc(nmSup(g))} · ${sc[g].size}</option>`).join('')}</select></label><i class="sep">›</i>` : ''}
-      <label class="cb${FX.fn ? ' on' : ''}"><small>Função</small><select data-fxfnsel><option value="">Todas</option>${fk.map(g => `<option value="${esc(g)}" ${FX.fn === g ? 'selected' : ''}>${esc(g)} · ${fc[g].size}</option>`).join('')}</select></label><i class="sep">›</i>
-      <label class="cb${FX.loc ? ' on' : ''}"><small>Localidade</small><select data-fxlocsel><option value="">Todas</option>${lk.map(l => `<option value="${esc(l)}" ${FX.loc === l ? 'selected' : ''}>${esc(l)} · ${lc[l].size}</option>`).join('')}</select></label></div></div></div>`;
+  const supSel = Object.keys(sc).length > 1 || FX.sup ? `<label class="cb${FX.sup ? ' on' : ''}"><small>Supervisor</small><select data-fxsupsel><option value="">Todos</option>${Object.keys(sc).sort((a, b) => !a - !b || nmSup(a).localeCompare(nmSup(b), 'pt')).map(g => `<option value="${esc(g)}" ${FX.sup === g ? 'selected' : ''}>${esc(nmSup(g))} · ${sc[g]}</option>`).join('')}</select></label>` : '';
+  h += `<div class="fx fxh" style="border-top:1px solid var(--ln)">${cascataHtml(H, colsB, { direita: supSel, ativo: FX.sup })}</div>`;
   // função x mês
   const revPk = FX.rev || (P[0] && P[0].revenda) || '', pk = picos(revPk), bq = ativos.filter(okL), fq = {}, fo = {};
   bq.forEach(p => { (fq[p.grupo] = fq[p.grupo] || new Set()).add(p.matricula); fo[p.grupo] = fo[p.grupo] || Array.from({ length: 12 }, () => new Set()); plano(p).forEach(x => porMes(x).forEach((d, i) => { if (d) fo[p.grupo][i].add(p.matricula); })); });
@@ -3001,11 +3002,16 @@ function previaImportDP(R, nomeArq) {
 function ligaFerias(m) {
   const sel = (q, f) => { const el = m.querySelector(q); if (el) el.onchange = f; };
   sel('[data-fxfnsel]', e => { FX.fn = e.target.value; renderFerias(); });
-  sel('[data-fxdepsel]', e => { FX.dep = e.target.value; FX.sup = ''; FX.fn = ''; FX.loc = ''; FX.mes = 0; renderFerias(); });
-  sel('[data-fxsupsel]', e => { FX.sup = e.target.value; FX.fn = ''; FX.loc = ''; FX.mes = 0; renderFerias(); });
-  sel('[data-fxlocsel]', e => { FX.loc = e.target.value; renderFerias(); });
+  sel('[data-fxsupsel]', e => { FX.sup = e.target.value; FX.mes = 0; renderFerias(); });
+  const fh = m.querySelector('.fxh');
+  if (fh) {
+    const base = () => FX.P.filter(p => p.ativo && p.c && (!FX.rev || p.revenda === FX.rev)).map(p => p.c).filter(c => !FX.sup || (c.supervisor || '') === FX.sup);
+    const trata = el => { if (!trataCascata(FX.h, base(), el, { limpar: () => { FX.sup = ''; } })) return; FX.rev = FX.h.rev; FX.fn = FX.h.fn; FX.mes = 0; FX.ed = null; renderFerias(); };
+    fh.onchange = e => { if (e.target.dataset.ff) trata(e.target); };
+    fh.addEventListener('click', e => { const b = e.target.closest('[data-rc], [data-ac=limpaf]'); if (b) { e.stopPropagation(); trata(b); } });
+  }
   sel('[data-fxano]', e => { FX.ano = e.target.value; FX.ed = null; renderFerias(); });
-  sel('[data-fxrev]', e => { FX.rev = e.target.value; FX.dep = ''; FX.sup = ''; FX.loc = ''; FX.fn = ''; FX.ed = null; FX.pn.farol = null; renderFerias(); });
+  sel('[data-fxrev]', e => { FX.rev = e.target.value; FX.sup = ''; Object.assign(FX.h, { dep: '', lc: '', tipo: '', loc: '', tur: '' }); FX.loc = ''; FX.fn = ''; FX.ed = null; FX.pn.farol = null; renderFerias(); });
   const qi = m.querySelector('[data-fxq]'); if (qi) qi.oninput = () => { FX.q = qi.value; clearTimeout(qi._t); qi._t = setTimeout(() => { renderFerias(); const n = FX.m.querySelector('[data-fxq]'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
   m.querySelectorAll('[data-fxpn]').forEach(el => { const k = el.dataset.fxpn; el[k === 'q' ? 'oninput' : 'onchange'] = () => { FX.pn[k] = el.value; clearTimeout(el._t); el._t = setTimeout(() => { const y = window.scrollY; renderFerias(); window.scrollTo(0, y); if (k === 'q') { const n = FX.m.querySelector('[data-fxpn=q]'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } }, k === 'q' ? 300 : 0); }; });
   m.querySelectorAll('[data-fxrel]').forEach(el => { el.onchange = () => { const k = el.dataset.fxrel; FX.rel[k] = k === 'conf' ? el.checked : k === 'mes' ? +el.value : el.value; renderFerias(); }; });
