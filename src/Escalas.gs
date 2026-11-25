@@ -167,6 +167,10 @@ function dataOk_(v, nome) { v = String(v || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test
 function salvarFerias_(u, d) {
   const c = achaColab_(u, d.matricula), ini = dataOk_(d.inicio, 'início'), fim = dataOk_(d.fim, 'fim');
   if (fim < ini) throw new Error('O fim das férias é antes do início.');
+  // quem tem período no módulo Férias para esse ano programa por lá (senão a escala e o módulo ficam diferentes)
+  const ch = pfChaveCol_(c.revenda, codigoMatricula(c.matricula)), ano = ini.slice(0, 4);
+  if (pfLista_().some(function (p) { return pfChaveCol_(p.revenda, p.codigo) === ch && p.ano === ano && p.origem !== 'gozado'; }))
+    throw new Error('Esta pessoa tem férias de ' + ano + ' no módulo Férias. Programe por lá (menu Férias → Programar) para a escala e o módulo ficarem iguais.');
   return comLock_(function () {
     const choque = ler_('Ferias').filter(function (f) { return f.matricula === c.matricula && f.inicio <= fim && ini <= f.fim; })[0];
     if (choque) throw new Error('Já existe férias nesse período (' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim) + ').');
@@ -181,6 +185,7 @@ function removerFerias_(u, d) {
     const lst = ler_('Ferias'), f = lst.filter(function (x) { return x.id === d.id; })[0];
     if (!f) throw new Error('Férias não encontradas.');
     achaColab_(u, f.matricula);
+    if (/^PF\|/.test(String(f.id))) throw new Error('Estas férias foram programadas no módulo Férias. Altere por lá (botão "Alterar em Férias") para a programação e a escala ficarem iguais.');
     gravarTudo_('Ferias', lst.filter(function (x) { return x.id !== d.id; }));
     log_(u, f.matricula, 'removeu férias', f.inicio + ' a ' + f.fim);
     return true;

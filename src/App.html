@@ -563,7 +563,7 @@ function desenhaEditor() {
     r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal(); periodosEd();
   });
   box.addEventListener('click', ev => {
-    const b = ev.target.closest('button'); if (!b) return;
+    const b = ev.target.closest('button'); if (!b || !S.ed) return;
     const D = S.ed.e.dias;
     if (b.dataset.meses !== undefined) {
       const n = +b.dataset.meses; S.ed.e.ate = n ? maisMeses(S.ed.e.vigencia, n) : ''; modal.querySelector('#ed-ate').value = S.ed.e.ate; S.ed.sujo = true; periodosEd(); return;
@@ -661,10 +661,24 @@ function mostraLink(c, r) {
     <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm ok" target="_blank" rel="noopener" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msg)}">Enviar pelo WhatsApp</a><button type="button" class="btn sm" data-lcopia>${ic('copy')}Copiar link</button><span style="flex:1"></span><button type="button" class="btn sm" data-lnovo>Gerar novo</button><button type="button" class="btn sm er" data-lcanc>Cancelar link</button></div></div>`;
   w.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
+/** Férias vindas do módulo Férias (id PF|período|n) abrem o módulo; as cadastradas à mão podem ser removidas. */
+const botaoFer = f => /^PF\|/.test(f.id) ? `<button type="button" class="btn sm" data-irfer="${esc(String(f.id).split('|')[1])}">Alterar em Férias</button>`
+  : `<button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button>`;
+async function irParaFerias(pid) {
+  if (!modal.hidden) { if (S.ed && S.ed.sujo && !confirm('Sair sem salvar as alterações desta escala?')) return; fecharModal(true); }
+  S.view = 'ferias'; render();
+  if (!FX.d) await carregaFerias();
+  const p = FX.P.find(x => x.id === pid);
+  if (!p) return toast('Não achei esse período no módulo Férias.', true);
+  FX.ano = p.ano; FX.aba = 'prog'; FX.modo = 'prog'; FX.tab = 'all'; FX.q = p.nome; FX.sup = ''; FX.fn = '';
+  Object.assign(FX.h, { dep: '', lc: '', tipo: '', loc: '', tur: '' });
+  iniciaEdicao(p); renderFerias(); window.scrollTo(0, 0);
+}
 function listaFerias() {
   const w = $('#ed-fer'); if (!w || !S.ed) return;
   const L = feriasDe(S.ed.c.matricula).sort((a, b) => a.inicio.localeCompare(b.inicio));
-  w.innerHTML = L.length ? `<div class="ck">${L.map(f => `<label style="cursor:default">${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('')}</div>` : '<p class="hint">Nenhum período de férias cadastrado.</p>';
+  w.innerHTML = L.length ? `<div class="ck">${L.map(f => `<label style="cursor:default">${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} ${botaoFer(f)}</label>`).join('')}</div>${L.some(f => /^PF\|/.test(f.id)) ? '<p class="hint">Férias programadas no módulo Férias só mudam por lá, para não ficarem diferentes.</p>' : ''}` : '<p class="hint">Nenhum período de férias cadastrado.</p>';
+  w.querySelectorAll('[data-irfer]').forEach(b => { b.onclick = () => irParaFerias(b.dataset.irfer); });
   w.querySelectorAll('[data-delf]').forEach(b => { b.onclick = () => { if (!confirm('Remover este período de férias?')) return; ocupado(b, async () => { await call('removerFerias', { id: b.dataset.delf }); S.ferias = S.ferias.filter(f => f.id !== b.dataset.delf); revalida(); listaFerias(); }); }; });
 }
 function redesenhaDias() {
@@ -1532,7 +1546,7 @@ function vCadastro(m) {
   if (!ABAS_CAD.some(a => a[0] === C.aba)) C.aba = 'col';
   const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span>${admC ? `<label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden>` : ''}</div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       ${admC ? `<div class="sinc"><span>🔄 <b>Programação de férias:</b> ${S.sincFerias ? (S.sincFerias.erro ? `<span style="color:var(--er)">erro na última sincronização (${esc(dh(S.sincFerias.em))}): ${esc(S.sincFerias.erro)}</span>` : `última sincronização ${esc(dh(S.sincFerias.em))} · ${S.sincFerias.confirmadas} confirmadas · ${S.sincFerias.novos} novas${S.sincFerias.removidos ? ` · ${S.sincFerias.removidos} retiradas` : ''}${S.sincFerias.naoAchados ? ` · ${S.sincFerias.naoAchados} fora desta base` : ''}${S.sincFerias.conflitos && S.sincFerias.conflitos.length ? ` · <b title="${esc(S.sincFerias.conflitos.join('\n'))}">${S.sincFerias.conflitos.length} com conflito</b>` : ''}`) : 'ainda não sincronizado'}</span><button type="button" class="btn sm" data-sincf>Sincronizar agora</button></div>` : ''}
-      <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
+      <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} ${botaoFer(f)}</label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
       <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador"><option value="">— colaborador —</option>${(() => {
         const ord = doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)), tem = c => S.ferias.filter(f => f.matricula === c.matricula && f.fim >= hj).sort((a, b) => a.inicio.localeCompare(b.inicio));
         const sem = ord.filter(c => !tem(c).length), com = ord.filter(c => tem(c).length), cd = d => dataBr(d).slice(0, 6) + d.slice(2, 4);
@@ -1568,6 +1582,7 @@ function vCadastro(m) {
     if (b.dataset.aba) { C.aba = b.dataset.aba; C.sel.clear(); vCadastro(m); }
     else if ((b.dataset.rc !== undefined || b.dataset.ac === 'limpaf') && trataCascata(C, S.cols, b, OB)) { C.sel.clear(); vCadastro(m); }
     else if (b.hasAttribute('data-sincf')) ocupado(b, async () => { const r = await call('sincFerias'); S.sincFerias = r; await carregar(); toast(`Férias sincronizadas: <b>${r.novos}</b> novas${r.removidos ? `, ${r.removidos} retiradas` : ''}${r.iguais ? `, ${r.iguais} já estavam` : ''}.${r.conflitos.length ? ' ' + r.conflitos.length + ' com conflito.' : ''}`, !!r.conflitos.length); });
+    else if (b.dataset.irfer) irParaFerias(b.dataset.irfer);
     else if (b.dataset.delf) { if (confirm('Remover este período de férias?')) ocupado(b, async () => { await call('removerFerias', { id: b.dataset.delf }); S.ferias = S.ferias.filter(f => f.id !== b.dataset.delf); revalida(); vCadastro(m); }); }
     else if (b.dataset.cf) { C.f = b.dataset.cf; vCadastro(m); }
     else if (b.hasAttribute('data-btodos')) { L.forEach(c => C.sel.add(c.matricula)); vCadastro(m); }

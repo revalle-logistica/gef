@@ -1281,7 +1281,7 @@ function desenhaEditor() {
     r.querySelector('[data-hh]').textContent = horasDia(S.ed.e.dias[i]); atualizaVal(); periodosEd();
   });
   box.addEventListener('click', ev => {
-    const b = ev.target.closest('button'); if (!b) return;
+    const b = ev.target.closest('button'); if (!b || !S.ed) return;
     const D = S.ed.e.dias;
     if (b.dataset.meses !== undefined) {
       const n = +b.dataset.meses; S.ed.e.ate = n ? maisMeses(S.ed.e.vigencia, n) : ''; modal.querySelector('#ed-ate').value = S.ed.e.ate; S.ed.sujo = true; periodosEd(); return;
@@ -1379,10 +1379,24 @@ function mostraLink(c, r) {
     <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm ok" target="_blank" rel="noopener" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msg)}">Enviar pelo WhatsApp</a><button type="button" class="btn sm" data-lcopia>${ic('copy')}Copiar link</button><span style="flex:1"></span><button type="button" class="btn sm" data-lnovo>Gerar novo</button><button type="button" class="btn sm er" data-lcanc>Cancelar link</button></div></div>`;
   w.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
+/** Férias vindas do módulo Férias (id PF|período|n) abrem o módulo; as cadastradas à mão podem ser removidas. */
+const botaoFer = f => /^PF\|/.test(f.id) ? `<button type="button" class="btn sm" data-irfer="${esc(String(f.id).split('|')[1])}">Alterar em Férias</button>`
+  : `<button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button>`;
+async function irParaFerias(pid) {
+  if (!modal.hidden) { if (S.ed && S.ed.sujo && !confirm('Sair sem salvar as alterações desta escala?')) return; fecharModal(true); }
+  S.view = 'ferias'; render();
+  if (!FX.d) await carregaFerias();
+  const p = FX.P.find(x => x.id === pid);
+  if (!p) return toast('Não achei esse período no módulo Férias.', true);
+  FX.ano = p.ano; FX.aba = 'prog'; FX.modo = 'prog'; FX.tab = 'all'; FX.q = p.nome; FX.sup = ''; FX.fn = '';
+  Object.assign(FX.h, { dep: '', lc: '', tipo: '', loc: '', tur: '' });
+  iniciaEdicao(p); renderFerias(); window.scrollTo(0, 0);
+}
 function listaFerias() {
   const w = $('#ed-fer'); if (!w || !S.ed) return;
   const L = feriasDe(S.ed.c.matricula).sort((a, b) => a.inicio.localeCompare(b.inicio));
-  w.innerHTML = L.length ? `<div class="ck">${L.map(f => `<label style="cursor:default">${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('')}</div>` : '<p class="hint">Nenhum período de férias cadastrado.</p>';
+  w.innerHTML = L.length ? `<div class="ck">${L.map(f => `<label style="cursor:default">${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} ${botaoFer(f)}</label>`).join('')}</div>${L.some(f => /^PF\|/.test(f.id)) ? '<p class="hint">Férias programadas no módulo Férias só mudam por lá, para não ficarem diferentes.</p>' : ''}` : '<p class="hint">Nenhum período de férias cadastrado.</p>';
+  w.querySelectorAll('[data-irfer]').forEach(b => { b.onclick = () => irParaFerias(b.dataset.irfer); });
   w.querySelectorAll('[data-delf]').forEach(b => { b.onclick = () => { if (!confirm('Remover este período de férias?')) return; ocupado(b, async () => { await call('removerFerias', { id: b.dataset.delf }); S.ferias = S.ferias.filter(f => f.id !== b.dataset.delf); revalida(); listaFerias(); }); }; });
 }
 function redesenhaDias() {
@@ -2250,7 +2264,7 @@ function vCadastro(m) {
   if (!ABAS_CAD.some(a => a[0] === C.aba)) C.aba = 'col';
   const ferHtml = `<div class="pts" style="padding-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Férias de ${esc(C.rev)}</b><span class="sp" style="flex:1"></span>${admC ? `<label class="btn sm" for="ferias-file">${ic('up')}Importar programação de férias</label><input type="file" id="ferias-file" accept=".xlsx,.xls" hidden>` : ''}</div><span class="hint">Em andamento e próximas. Também dá para cadastrar pela escala de cada colaborador.</span>
       ${admC ? `<div class="sinc"><span>🔄 <b>Programação de férias:</b> ${S.sincFerias ? (S.sincFerias.erro ? `<span style="color:var(--er)">erro na última sincronização (${esc(dh(S.sincFerias.em))}): ${esc(S.sincFerias.erro)}</span>` : `última sincronização ${esc(dh(S.sincFerias.em))} · ${S.sincFerias.confirmadas} confirmadas · ${S.sincFerias.novos} novas${S.sincFerias.removidos ? ` · ${S.sincFerias.removidos} retiradas` : ''}${S.sincFerias.naoAchados ? ` · ${S.sincFerias.naoAchados} fora desta base` : ''}${S.sincFerias.conflitos && S.sincFerias.conflitos.length ? ` · <b title="${esc(S.sincFerias.conflitos.join('\n'))}">${S.sincFerias.conflitos.length} com conflito</b>` : ''}`) : 'ainda não sincronizado'}</span><button type="button" class="btn sm" data-sincf>Sincronizar agora</button></div>` : ''}
-      <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} <button type="button" class="xp" data-delf="${esc(f.id)}" aria-label="Remover férias">×</button></label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
+      <div class="ck">${ferRev.map(f => `<label style="cursor:default">${esc(nomeDe[f.matricula])} · ${dataBr(f.inicio)} a ${dataBr(f.fim)}${f.obs ? ' · ' + esc(f.obs) : ''} ${botaoFer(f)}</label>`).join('') || '<span class="hint">Nenhuma férias cadastrada nesta revenda.</span>'}</div>
       <form class="addp" data-addf style="max-width:none;flex-wrap:wrap"><select name="matricula" style="flex:1 1 220px" aria-label="Colaborador"><option value="">— colaborador —</option>${(() => {
         const ord = doRev.slice().sort((a, b) => a.nome.localeCompare(b.nome)), tem = c => S.ferias.filter(f => f.matricula === c.matricula && f.fim >= hj).sort((a, b) => a.inicio.localeCompare(b.inicio));
         const sem = ord.filter(c => !tem(c).length), com = ord.filter(c => tem(c).length), cd = d => dataBr(d).slice(0, 6) + d.slice(2, 4);
@@ -2286,6 +2300,7 @@ function vCadastro(m) {
     if (b.dataset.aba) { C.aba = b.dataset.aba; C.sel.clear(); vCadastro(m); }
     else if ((b.dataset.rc !== undefined || b.dataset.ac === 'limpaf') && trataCascata(C, S.cols, b, OB)) { C.sel.clear(); vCadastro(m); }
     else if (b.hasAttribute('data-sincf')) ocupado(b, async () => { const r = await call('sincFerias'); S.sincFerias = r; await carregar(); toast(`Férias sincronizadas: <b>${r.novos}</b> novas${r.removidos ? `, ${r.removidos} retiradas` : ''}${r.iguais ? `, ${r.iguais} já estavam` : ''}.${r.conflitos.length ? ' ' + r.conflitos.length + ' com conflito.' : ''}`, !!r.conflitos.length); });
+    else if (b.dataset.irfer) irParaFerias(b.dataset.irfer);
     else if (b.dataset.delf) { if (confirm('Remover este período de férias?')) ocupado(b, async () => { await call('removerFerias', { id: b.dataset.delf }); S.ferias = S.ferias.filter(f => f.id !== b.dataset.delf); revalida(); vCadastro(m); }); }
     else if (b.dataset.cf) { C.f = b.dataset.cf; vCadastro(m); }
     else if (b.hasAttribute('data-btodos')) { L.forEach(c => C.sel.add(c.matricula)); vCadastro(m); }
@@ -2853,7 +2868,7 @@ function renderFerias() {
   }
   if (FX.colsRef !== S.cols) { FX.colsRef = S.cols; montaFerias(); }
   const adm = S.user.perfil === 'ADMIN', P = doAno(), anos = uniq(FX.P.map(p => p.ano)).sort();
-  const abas = [['prog', '📝 Programar'], ['painel', '📊 Painel'], ['rel', '📣 Relatório']].concat(adm ? [['dp', '📄 Planilha do DP']] : []);
+  const abas = [['prog', '📝 Programar'], ['painel', '📊 Painel'], ['rel', '📣 Relatório']].concat(S.user.perfil !== 'ANALISTA' ? [['dp', '📄 Planilha do DP']] : []);
   let h = `<section class="card fx-top"><div class="fx-hd"><div><h2>Férias ${esc(FX.ano)}</h2><small>${P.length} períodos aquisitivos · ${new Set(P.map(p => p.matricula)).size} colaboradores${adm && FX.d.migracao ? ` · trazido do sistema anterior em ${esc(dh(FX.d.migracao.em))}` : ''}</small></div>
       <div class="fx-sel">${anos.length > 1 ? `<label class="cb"><small>Ano</small><select data-fxano>${anos.map(a => `<option ${a === FX.ano ? 'selected' : ''}>${a}</option>`).join('')}</select></label>` : ''}
       ${revsFer().length > 1 ? `<label class="cb${FX.rev ? ' on' : ''}"><small>Revenda</small><select data-fxrev>${opts(revsFer(), FX.rev, 'Todas')}</select></label>` : ''}
@@ -3113,13 +3128,13 @@ function painelFerias() {
   base.forEach(p => plano(p).forEach(x => porMes(x).forEach((d, i) => { if (d) pes[i].add(p.matricula); })));
   const pcM = pes.map(s => qg ? s.size / qg * 100 : 0), top3 = [...vol].sort((a, b) => b - a)[2] || 0;
   h += `<div class="fx-2"><section class="card"><div class="card-h"><h3>Volume OBZ ${esc(FX.ano)} por mês</h3><small class="hint">barras = ${esc(FX.ano)} · linha = ano anterior (HL)</small></div><div class="card-b">${vT ? graficoBarras(vol, { linha: ref, tf: v => fmt(v / 1000) + 'k', vf: v => fmt(v / 1000, 1) + 'k', rot: i => vol[i] === Math.max(...vol) || vol[i] === Math.min(...vol), tip: i => `${FM[i]}: ${fmt(vol[i])} HL (ano anterior ${fmt(ref[i])})` }) : '<p class="hint">Sem volume cadastrado para este ano.</p>'}</div></section>
-    <section class="card"><div class="card-h"><h3>% do QLP de férias por mês</h3><div class="chips" style="padding:0">${[['LOG', 'Logística'], ['ALL', 'Todos']].concat(uniq(ativos.map(p => p.setor)).map(s => [s, s])).map(([k, l]) => `<button type="button" class="chip" data-fxarea="${esc(k)}" aria-pressed="${areaSel === k}">${esc(l)}</button>`).join('')}</div></div><div class="card-b">${graficoBarras(pcM, { max: Math.max(10, ...pcM) * 1.12, tf: v => fmt(v) + '%', vf: v => fmt(v) + '%', rot: () => true, hl: vol.map(v => vT && v >= top3), tip: i => `${FM[i]}: ${pes[i].size} de ${qg} pessoas (${fmt(pcM[i], 1)}%)` })}
+    <section class="card"><div class="card-h"><h3>% do QLP de férias por mês</h3><small class="hint" style="flex-basis:100%">conta quem está de férias em algum dia do mês (inclui quem saiu no mês anterior)</small><div class="chips" style="padding:0">${[['LOG', 'Logística'], ['ALL', 'Todos']].concat(uniq(ativos.map(p => p.setor)).map(s => [s, s])).map(([k, l]) => `<button type="button" class="chip" data-fxarea="${esc(k)}" aria-pressed="${areaSel === k}">${esc(l)}</button>`).join('')}</div></div><div class="card-b">${graficoBarras(pcM, { max: Math.max(10, ...pcM) * 1.12, tf: v => fmt(v) + '%', vf: v => fmt(v) + '%', rot: () => true, hl: vol.map(v => vT && v >= top3), tip: i => `${FM[i]}: ${pes[i].size} de ${qg} pessoas (${fmt(pcM[i], 1)}%)` })}
       <p class="hint"><span class="fx-sq"></span> barra laranja = um dos 3 meses de maior volume: evitar férias aqui</p></div></section></div>`;
   // mapa de calor
   const md = pn.heat, chave = p => md === 'l' ? (revs.length > 1 ? p.revenda + ' · ' : '') + p.localF : md === 'g' ? p.grupo : p.setor;
   const Q = {}, PE = {}, FT = {}; ativos.forEach(p => { const k = chave(p); (Q[k] = Q[k] || new Set()).add(p.matricula); PE[k] = PE[k] || Array.from({ length: 12 }, () => new Set()); FT[k] = FT[k] || Array(12).fill(0); plano(p).forEach(x => porMes(x).forEach((d, i) => { if (d) { PE[k][i].add(p.matricula); FT[k][i] += d; } })); });
   const ks = Object.keys(Q).sort(), dimA = FM.map((x, i) => diasMes(+FX.ano, i));
-  h += `<section class="card"><div class="card-h"><h3>🔥 Mapa de calor: quem sai em cada mês</h3><div class="chips" style="padding:0">${[['g', 'Função'], ['a', 'Setor'], ['l', 'Local']].map(([k, l]) => `<button type="button" class="chip" data-fxheat="${k}" aria-pressed="${md === k}">${l}</button>`).join('')}</div></div><div class="card-b ovf"><table class="fx-heat"><thead><tr><th class="rl">${md === 'l' ? 'Local' : md === 'g' ? 'Função' : 'Setor'}</th><th>QLP</th>${FM.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>`;
+  h += `<section class="card"><div class="card-h"><h3>🔥 Mapa de calor: quem está de férias em cada mês</h3><div class="chips" style="padding:0">${[['g', 'Função'], ['a', 'Setor'], ['l', 'Local']].map(([k, l]) => `<button type="button" class="chip" data-fxheat="${k}" aria-pressed="${md === k}">${l}</button>`).join('')}</div></div><div class="card-b ovf"><table class="fx-heat"><thead><tr><th class="rl">${md === 'l' ? 'Local' : md === 'g' ? 'Função' : 'Setor'}</th><th>QLP</th>${FM.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>`;
   if (vT) h += `<tr class="vol"><td class="rl">Volume OBZ (HL)</td><td></td>${vol.map(v => `<td>${fmt(v / 1000, 1)}k</td>`).join('')}</tr>`;
   ks.forEach(k => { const q = Q[k].size; h += `<tr><td class="rl">${esc(k)}</td><td class="q">${q}</td>${PE[k].map((s, i) => { const p_ = q ? s.size / q * 100 : 0, [bg, fg] = corCalor(p_); return `<td><div class="fx-hc" style="background:${bg};color:${fg}" title="${esc(k)} · ${FM[i]}: ${s.size} de ${q} (${fmt(p_, 1)}%) · equivale a ${fmt(FT[k][i] / dimA[i], 1)} pessoas fora">${s.size || '·'}${s.size ? `<small>${fmt(p_)}%</small>` : ''}</div></td>`; }).join('')}</tr>`; });
   const qt = ks.reduce((s, k) => s + Q[k].size, 0), totM = FM.map((x, i) => ks.reduce((s, k) => s + PE[k][i].size, 0)), disp = FM.map((x, i) => ks.reduce((s, k) => s + Q[k].size - FT[k][i] / dimA[i], 0));
@@ -3199,7 +3214,7 @@ function relFerias() {
   let corpo = '';
   if (!rows.length) corpo = `<p class="hint" style="text-align:center;padding:30px">Nenhuma férias ${R.conf ? 'confirmada ' : ''}neste filtro.</p>`;
   else if (R.mes) corpo = tb(rows);
-  else for (let i = 1; i <= 12; i++) { const L = rows.filter(l => l.m === i); if (L.length) corpo += `<div class="fx-rmh">${MESES[i - 1].replace(/^./, c => c.toUpperCase())} <span>${L.length} ${L.length > 1 ? 'pessoas' : 'pessoa'}</span></div>` + tb(L); }
+  else for (let i = 1; i <= 12; i++) { const L = rows.filter(l => l.m === i); if (L.length) corpo += `<div class="fx-rmh">${MESES[i - 1].replace(/^./, c => c.toUpperCase())} <span>${L.length} ${L.length > 1 ? 'saem' : 'sai'} de férias no mês</span></div>` + tb(L); }
   return `<section class="card"><div class="filt fx-pf"><label class="f">Unidade<select data-fxrel="rev"><option value="all">Todas</option>${revs.map(r => `<option ${R.rev === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
       <label class="f">Mês<select data-fxrel="mes"><option value="0">Geral (ano todo)</option>${MESES.map((x, i) => `<option value="${i + 1}" ${R.mes === i + 1 ? 'selected' : ''}>${x.replace(/^./, c => c.toUpperCase())}/${FX.ano}</option>`).join('')}</select></label>
       <label class="f">Setor<select data-fxrel="setor">${opts(uniq(doAno().map(p => p.setor)), R.setor, 'Todos')}</select></label>
@@ -3215,15 +3230,15 @@ function carregaScript(url, glob) {
 
 /* ---------- PLANILHA DO DP ---------- */
 function dpFerias() {
-  const mg = FX.d.migracao, ag = FX.d.aguardando || {};
-  return `<div class="fx-2"><section class="card"><div class="card-h"><h3>📤 Preencher a planilha do DP</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Escolha a planilha "Programação de férias" original da unidade. A Gestão preenche início e dias de cada período (e "Domingo" como folga) e devolve o arquivo com a formatação e as fórmulas do DP.</p>
+  const mg = FX.d.migracao, ag = FX.d.aguardando || {}, adm = S.user.perfil === 'ADMIN', dp = adm || S.user.perfil === 'DP';
+  return `<div class="${dp ? 'fx-2' : ''}"><section class="card"><div class="card-h"><h3>📤 Preencher a planilha do DP</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Escolha a planilha "Programação de férias" original da unidade. A Gestão preenche início e dias de cada período (e "Domingo" como folga) e devolve o arquivo com a formatação e as fórmulas do DP.</p>
       <div class="filt fx-pf" style="padding:0"><label class="f">Unidade<select id="dp-rev">${revsFer().map(r => `<option ${r === FX.rev ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label><label class="f fx-ck"><input type="checkbox" id="dp-sug"> Incluir sugestões não confirmadas</label></div>
-      <label class="btn" for="dp-file">📎 Escolher a planilha e gerar</label><input type="file" id="dp-file" accept=".xlsx" hidden><p class="hint" id="dp-res"></p></div></section>
-    <section class="card"><div class="card-h"><h3>📥 Importar a programação de um ano novo</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Para o próximo ano: importe a planilha "Programação de férias" que o DP gera para cada unidade (uma linha por período aquisitivo). A Gestão cria os períodos e sugere o mesmo período do ano anterior. O que o DP já programou entra como confirmado.</p>
-      <label class="btn" for="dpi-file">📎 Escolher a planilha</label><input type="file" id="dpi-file" accept=".xlsx,.xls" hidden></div></section></div>
-    <section class="card"><div class="card-h"><h3>⬇ Sistema anterior (Férias 2027)</h3></div><div class="card-b"><p class="hint" style="margin-top:0">${mg ? `Trazido em ${esc(dh(mg.em))} por ${esc(mg.por)}: ${mg.novos + mg.atualizados} períodos, ${mg.confirmadas} confirmados, ${mg.feriados} feriados novos.` : 'Ainda não trazido.'} Trazer de novo atualiza só o que ainda não foi mexido aqui na Gestão.</p>
+      <label class="btn" for="dp-file">📎 Escolher a planilha e gerar</label><input type="file" id="dp-file" accept=".xlsx" hidden><p class="hint" id="dp-res"></p>${dp ? '' : '<p class="hint">A planilha sai preenchida com as férias dos seus colaboradores; as linhas de outras equipes ficam como estavam.</p>'}</div></section>
+    ${dp ? `<section class="card"><div class="card-h"><h3>📥 Importar a programação de um ano novo</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Para o próximo ano: importe a planilha "Programação de férias" que o DP gera para cada unidade (uma linha por período aquisitivo). A Gestão cria os períodos e sugere o mesmo período do ano anterior. O que o DP já programou entra como confirmado.</p>
+      <label class="btn" for="dpi-file">📎 Escolher a planilha</label><input type="file" id="dpi-file" accept=".xlsx,.xls" hidden></div></section>` : ''}</div>
+    ${adm ? `<section class="card"><div class="card-h"><h3>⬇ Sistema anterior (Férias 2027)</h3></div><div class="card-b"><p class="hint" style="margin-top:0">${mg ? `Trazido em ${esc(dh(mg.em))} por ${esc(mg.por)}: ${mg.novos + mg.atualizados} períodos, ${mg.confirmadas} confirmados, ${mg.feriados} feriados novos.` : 'Ainda não trazido.'} Trazer de novo atualiza só o que ainda não foi mexido aqui na Gestão.</p>
       <button type="button" class="btn" data-fxmig>⬇ Trazer de novo</button>
-      ${Object.keys(ag).length ? `<p class="hint">Guardados de departamentos ainda não ativados (ative em Regras → Departamentos e importe o DP): ${Object.entries(ag).map(([k, n]) => esc(k) + ' (' + n + ')').join(' · ')}</p>` : ''}</div></section>`;
+      ${Object.keys(ag).length ? `<p class="hint">Guardados de departamentos ainda não ativados (ative em Regras → Departamentos e importe o DP): ${Object.entries(ag).map(([k, n]) => esc(k) + ' (' + n + ')').join(' · ')}</p>` : ''}</div></section>` : ''}`;
 }
 const serial = iso => { const [y, m, d] = iso.split('-').map(Number); return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5); };
 const xmlEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

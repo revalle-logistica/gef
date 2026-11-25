@@ -279,3 +279,37 @@ function diaBomPerto_(iso, fer) {
   for (let k = 1; k < 31; k++) for (const s of [-k, k]) { const d = isoMaisDias(iso, s); if (d.slice(0, 7) === iso.slice(0, 7) && !ruim(d)) return d; }
   return iso;
 }
+
+
+/**
+ * Correção pontual (rota liberada uma vez pela prop AJUSTE_FERIAS_MATS = 'MAT1,MAT2'): quem trocou, pela escala,
+ * as férias que vinham do módulo Férias. As férias lançadas à mão viram o plano confirmado do período do módulo
+ * (mesmo ano), e as linhas manuais saem; a escala passa a receber de novo pelo módulo.
+ */
+function ajusteFeriasManuais_() {
+  const props = PropertiesService.getScriptProperties(), mats = String(props.getProperty('AJUSTE_FERIAS_MATS') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+  if (!mats.length) throw new Error('Ajuste não liberado.');
+  props.deleteProperty('AJUSTE_FERIAS_MATS');
+  return comLock_(function () {
+    const cols = pfColsMapa_(), porMat = {}; Object.keys(cols).forEach(function (k) { porMat[cols[k].matricula] = k; });
+    const lst = pfLista_(), fer = ler_('Ferias'), feitos = [], out = [], tirar = {};
+    mats.forEach(function (m) {
+      const man = fer.filter(function (f) { return f.matricula === m && !/^PF\|/.test(String(f.id)); }).sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; });
+      if (!man.length) { out.push(m + ': sem férias lançadas à mão'); return; }
+      const ano = man[0].inicio.slice(0, 4), chave = porMat[m];
+      const p = lst.filter(function (x) { return pfChaveCol_(x.revenda, x.codigo) === chave && x.ano === ano && x.origem !== 'gozado'; })[0];
+      if (!p) { out.push(m + ': sem período no módulo Férias em ' + ano); return; }
+      const pl = man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).map(function (f) { return { ini: f.inicio, dias: Math.round((Date.parse(f.fim) - Date.parse(f.inicio)) / 864e5) + 1 }; });
+      p.plano = JSON.stringify(pl); p.conf = 'S'; p.por = man[0].criadoPor || p.por; p.em = man[0].criadoEm || agora_(); p.editadoGestao = 'S';
+      man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).forEach(function (f) { tirar[f.id] = true; });
+      feitos.push(p); out.push(m + ': ' + p.plano);
+    });
+    if (feitos.length) {
+      gravarTudo_('FeriasPeriodos', lst);
+      gravarTudo_('Ferias', fer.filter(function (f) { return !tirar[f.id]; }));
+      pfEntradas_(feitos, cols);
+    }
+    log_({ nome: 'ajuste', login: 'ajuste' }, '', 'férias: escala → módulo Férias', out.join(' · '));
+    return out;
+  });
+}

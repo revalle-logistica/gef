@@ -99,7 +99,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
@@ -683,6 +683,10 @@ function dataOk_(v, nome) { v = String(v || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test
 function salvarFerias_(u, d) {
   const c = achaColab_(u, d.matricula), ini = dataOk_(d.inicio, 'início'), fim = dataOk_(d.fim, 'fim');
   if (fim < ini) throw new Error('O fim das férias é antes do início.');
+  // quem tem período no módulo Férias para esse ano programa por lá (senão a escala e o módulo ficam diferentes)
+  const ch = pfChaveCol_(c.revenda, codigoMatricula(c.matricula)), ano = ini.slice(0, 4);
+  if (pfLista_().some(function (p) { return pfChaveCol_(p.revenda, p.codigo) === ch && p.ano === ano && p.origem !== 'gozado'; }))
+    throw new Error('Esta pessoa tem férias de ' + ano + ' no módulo Férias. Programe por lá (menu Férias → Programar) para a escala e o módulo ficarem iguais.');
   return comLock_(function () {
     const choque = ler_('Ferias').filter(function (f) { return f.matricula === c.matricula && f.inicio <= fim && ini <= f.fim; })[0];
     if (choque) throw new Error('Já existe férias nesse período (' + dataBr_(choque.inicio) + ' a ' + dataBr_(choque.fim) + ').');
@@ -697,6 +701,7 @@ function removerFerias_(u, d) {
     const lst = ler_('Ferias'), f = lst.filter(function (x) { return x.id === d.id; })[0];
     if (!f) throw new Error('Férias não encontradas.');
     achaColab_(u, f.matricula);
+    if (/^PF\|/.test(String(f.id))) throw new Error('Estas férias foram programadas no módulo Férias. Altere por lá (botão "Alterar em Férias") para a programação e a escala ficarem iguais.');
     gravarTudo_('Ferias', lst.filter(function (x) { return x.id !== d.id; }));
     log_(u, f.matricula, 'removeu férias', f.inicio + ' a ' + f.fim);
     return true;
@@ -1466,6 +1471,40 @@ function diaBomPerto_(iso, fer) {
   if (!ruim(iso)) return iso;
   for (let k = 1; k < 31; k++) for (const s of [-k, k]) { const d = isoMaisDias(iso, s); if (d.slice(0, 7) === iso.slice(0, 7) && !ruim(d)) return d; }
   return iso;
+}
+
+
+/**
+ * Correção pontual (rota liberada uma vez pela prop AJUSTE_FERIAS_MATS = 'MAT1,MAT2'): quem trocou, pela escala,
+ * as férias que vinham do módulo Férias. As férias lançadas à mão viram o plano confirmado do período do módulo
+ * (mesmo ano), e as linhas manuais saem; a escala passa a receber de novo pelo módulo.
+ */
+function ajusteFeriasManuais_() {
+  const props = PropertiesService.getScriptProperties(), mats = String(props.getProperty('AJUSTE_FERIAS_MATS') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+  if (!mats.length) throw new Error('Ajuste não liberado.');
+  props.deleteProperty('AJUSTE_FERIAS_MATS');
+  return comLock_(function () {
+    const cols = pfColsMapa_(), porMat = {}; Object.keys(cols).forEach(function (k) { porMat[cols[k].matricula] = k; });
+    const lst = pfLista_(), fer = ler_('Ferias'), feitos = [], out = [], tirar = {};
+    mats.forEach(function (m) {
+      const man = fer.filter(function (f) { return f.matricula === m && !/^PF\|/.test(String(f.id)); }).sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; });
+      if (!man.length) { out.push(m + ': sem férias lançadas à mão'); return; }
+      const ano = man[0].inicio.slice(0, 4), chave = porMat[m];
+      const p = lst.filter(function (x) { return pfChaveCol_(x.revenda, x.codigo) === chave && x.ano === ano && x.origem !== 'gozado'; })[0];
+      if (!p) { out.push(m + ': sem período no módulo Férias em ' + ano); return; }
+      const pl = man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).map(function (f) { return { ini: f.inicio, dias: Math.round((Date.parse(f.fim) - Date.parse(f.inicio)) / 864e5) + 1 }; });
+      p.plano = JSON.stringify(pl); p.conf = 'S'; p.por = man[0].criadoPor || p.por; p.em = man[0].criadoEm || agora_(); p.editadoGestao = 'S';
+      man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).forEach(function (f) { tirar[f.id] = true; });
+      feitos.push(p); out.push(m + ': ' + p.plano);
+    });
+    if (feitos.length) {
+      gravarTudo_('FeriasPeriodos', lst);
+      gravarTudo_('Ferias', fer.filter(function (f) { return !tirar[f.id]; }));
+      pfEntradas_(feitos, cols);
+    }
+    log_({ nome: 'ajuste', login: 'ajuste' }, '', 'férias: escala → módulo Férias', out.join(' · '));
+    return out;
+  });
 }
 
 
