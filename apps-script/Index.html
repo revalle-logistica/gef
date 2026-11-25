@@ -427,6 +427,7 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .lcal button{border:1px solid var(--ln);background:var(--sf);border-radius:8px;height:36px;font:inherit;font-weight:600;cursor:pointer}.lcal button.dom{color:#b42318}.lcal button.on{background:#7e22ce;color:#fff;border-color:#7e22ce}
 .rs-modo .seg{display:inline-flex;background:var(--sunk);border-radius:10px;padding:3px;gap:2px}.rs-modo .seg button{border:0;background:transparent;padding:7px 16px;border-radius:8px;font:inherit;font-weight:700;font-size:13px;color:var(--mut);cursor:pointer}.rs-modo .seg button.on{background:#fff;color:var(--b8);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .rs-tab tr.rs-sg th{background:#f3f6fd;color:#3b4a6b;text-align:left;font-size:12px;font-weight:700;padding:5px 10px;border-top:1px solid var(--ln)}.rs-tab tr.rs-sg th span{color:var(--mut);font-weight:600;margin-left:4px}
+.fx-supb{display:flex;align-items:center;gap:8px}.fx-supb .fx-bar{flex:1}.fx-supb.er .fx-bar span{background:var(--er)}.fx-supb.al .fx-bar span{background:#e8a317}.fx-supb.ok .fx-bar span{background:var(--ok)}.fx-supb b{min-width:38px;text-align:right}
 </style>
 
 </head>
@@ -2817,6 +2818,15 @@ function painelFerias() {
     h += `<h4 style="margin:14px 0 6px">${u === '*' ? 'Todas as unidades' : esc(u)} · ${s === '*' ? 'todos os setores' : esc(s)}: por função</h4><table class="tb"><tr><th>Função</th><th>Obrigatórios</th><th>Confirmados</th><th>A confirmar</th><th>Sem data</th><th>Progresso</th></tr>${gs.map(g => { const c = cel(sub.filter(p => p.grupo === g)); return `<tr><td>${esc(g)}</td><td>${c.n}</td><td>${c.v}</td><td>${c.s}</td><td>${c.se || ''}</td><td><div class="fx-bar"><span style="width:${c.p}%"></span></div> ${Math.round(c.p)}%</td></tr>`; }).join('')}</table>`;
   }
   h += '</div></section>';
+  // farol por supervisor (pior primeiro); clicar abre a programação filtrada por ele
+  const nmS = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id ? 'Outro supervisor' : 'Sem supervisor');
+  const porSup = {}; ativos.forEach(p => { const k = (p.c && p.c.supervisor) || ''; (porSup[k] = porSup[k] || []).push(p); });
+  const linS = Object.keys(porSup).map(k => ({ k, q: new Set(porSup[k].map(p => p.matricula)).size, c: cel(porSup[k]) })).filter(x => x.c.n)
+    .sort((a, b) => a.c.p - b.c.p || b.c.n - a.c.n);
+  if (linS.length) {
+    h += `<section class="card"><div class="card-h"><h3>👤 Farol por supervisor</h3><small class="hint">do menor para o maior % · clique no nome para abrir a programação dele</small></div><div class="card-b ovf"><table class="tb fx-sup"><tr><th>Supervisor</th><th>Colaboradores</th><th>Obrigatórios</th><th>Confirmados</th><th>A confirmar</th><th>Sem data</th><th style="min-width:180px">Concluído</th></tr>
+      ${linS.map(x => { const st = x.c.p >= 100 ? 'ok' : x.c.p >= 50 ? 'al' : 'er'; return `<tr><td><button type="button" class="fx-lk" data-fxsupir="${esc(x.k)}"><b>${esc(nmS(x.k))}</b></button></td><td>${x.q}</td><td>${x.c.n}</td><td>${x.c.v}</td><td>${x.c.s ? `<b style="color:#b45309">${x.c.s}</b>` : '0'}</td><td>${x.c.se ? `<b style="color:var(--er)">${x.c.se}</b>` : ''}</td><td><div class="fx-supb ${st}"><div class="fx-bar"><span style="width:${x.c.p}%"></span></div><b>${Math.round(x.c.p)}%</b></div></td></tr>`; }).join('')}</table></div></section>`;
+  }
   // gráficos
   const areaSel = pn.area, noGrafico = p => areaSel === 'LOG' ? LOGIST.includes(p.area) : areaSel === 'ALL' ? true : p.setor === areaSel;
   const base = ativos.filter(noGrafico), qg = new Set(base.map(p => p.matricula)).size, pes = Array.from({ length: 12 }, () => new Set());
@@ -3029,6 +3039,7 @@ function ligaFerias(m) {
     if (b.hasAttribute('data-fxatu')) return ocupado(b, async () => { await carregaFerias(true); renderFerias(); toast('Férias atualizadas.'); });
     if (b.hasAttribute('data-fxmig')) { if (!confirm('Trazer as férias do sistema anterior? Períodos já ajustados aqui na Gestão não são alterados. A sincronização de hora em hora é desligada.')) return; return ocupado(b, async () => { const r = await call('feriasMigrar'); await carregaFerias(true); await carregar(); FX.aba = 'prog'; toast(`Trazido: <b>${r.novos + r.atualizados}</b> períodos, ${r.confirmadas} confirmados, ${r.feriados} feriados novos.`); }); }
     if (d.fxtab) { FX.tab = d.fxtab; return renderFerias(); }
+    if (d.fxsupir !== undefined) { FX.sup = d.fxsupir; FX.aba = 'prog'; FX.tab = 'pend'; FX.mes = 0; FX.ed = null; Object.assign(FX.h, { dep: '', lc: '', tipo: '', loc: '', tur: '' }); FX.fn = ''; renderFerias(); window.scrollTo(0, 0); return; }
     if (d.fxloc !== undefined) { FX.loc = d.fxloc; return renderFerias(); }
     if (d.fxfn !== undefined) { FX.fn = FX.fn === d.fxfn ? '' : d.fxfn; return renderFerias(); }
     if (d.fxm !== undefined) { const mm = +d.fxm, g = d.fxmf || ''; if (!mm || (FX.mes === mm && FX.fn === g)) FX.mes = 0; else { FX.mes = mm; FX.fn = g; } return renderFerias(); }
