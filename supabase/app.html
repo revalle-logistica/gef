@@ -2875,14 +2875,14 @@ function semDadosFerias(adm) {
 /* ---------- PROGRAMAR (equipe) ---------- */
 function progFerias() {
   const P0 = doAno().filter(p => (!FX.rev || p.revenda === FX.rev) && p.origem !== 'gozado');
-  const supDe = p => (p.c && p.c.supervisor) || '', nmSup = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id ? 'Outro supervisor' : 'Sem supervisor');
+  const supDe = p => (p.c && p.c.supervisor) || '-', nmSup = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id && id !== '-' ? 'Outro supervisor' : 'Sem supervisor');
   // mesmos filtros das Escalas (Revenda › Departamento › Função › Localidade + recortes), sobre os colaboradores; supervisor à parte
   const H = FX.h; H.rev = FX.rev; H.fn = FX.fn; FX.loc = '';
   const cm = new Map(); P0.forEach(p => { if (p.ativo && p.c) cm.set(p.matricula, p.c); });
   const colsAll = [...cm.values()], sc = {};
-  colsAll.forEach(c => { if (passaH(H, c)) { const k = c.supervisor || ''; sc[k] = (sc[k] || 0) + 1; } });
+  colsAll.forEach(c => { if (passaH(H, c)) { const k = c.supervisor || '-'; sc[k] = (sc[k] || 0) + 1; } });
   if (FX.sup && !sc[FX.sup]) FX.sup = '';
-  const colsB = colsAll.filter(c => !FX.sup || (c.supervisor || '') === FX.sup);
+  const colsB = colsAll.filter(c => !FX.sup || (c.supervisor || '-') === FX.sup);
   arrumaH(H, colsB); FX.fn = H.fn;
   const P = P0.filter(p => p.c && passaH(H, p.c) && (!FX.sup || supDe(p) === FX.sup));
   const ativos = P.filter(p => p.ativo);
@@ -2897,7 +2897,7 @@ function progFerias() {
   // filtros de local e função
   const lc = {}, fc = {}; ativos.forEach(p => { if (okF(p)) (lc[p.localF] = lc[p.localF] || new Set()).add(p.matricula); if (okL(p)) (fc[p.grupo] = fc[p.grupo] || new Set()).add(p.matricula); });
   const lk = Object.keys(lc).sort((a, b) => a === 'Sede' ? -1 : b === 'Sede' ? 1 : a.localeCompare(b)), fk = Object.keys(fc).sort();
-  const supSel = Object.keys(sc).length > 1 || FX.sup ? `<label class="cb${FX.sup ? ' on' : ''}"><small>Supervisor</small><select data-fxsupsel><option value="">Todos</option>${Object.keys(sc).sort((a, b) => !a - !b || nmSup(a).localeCompare(nmSup(b), 'pt')).map(g => `<option value="${esc(g)}" ${FX.sup === g ? 'selected' : ''}>${esc(nmSup(g))} · ${sc[g]}</option>`).join('')}</select></label>` : '';
+  const supSel = Object.keys(sc).length > 1 || FX.sup ? `<label class="cb${FX.sup ? ' on' : ''}"><small>Supervisor</small><select data-fxsupsel><option value="">Todos</option>${Object.keys(sc).sort((a, b) => (a === '-') - (b === '-') || nmSup(a).localeCompare(nmSup(b), 'pt')).map(g => `<option value="${esc(g)}" ${FX.sup === g ? 'selected' : ''}>${esc(nmSup(g))} · ${sc[g]}</option>`).join('')}</select></label>` : '';
   h += `<div class="fx fxh" style="border-top:1px solid var(--ln)">${cascataHtml(H, colsB, { direita: supSel, ativo: FX.sup })}</div>`;
   // função x mês
   const revPk = FX.rev || (P[0] && P[0].revenda) || '', pk = picos(revPk), bq = ativos.filter(okL), fq = {}, fo = {};
@@ -3099,8 +3099,8 @@ function painelFerias() {
   }
   h += '</div></section>';
   // farol por supervisor (pior primeiro); clicar abre a programação filtrada por ele
-  const nmS = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id ? 'Outro supervisor' : 'Sem supervisor');
-  const porSup = {}; ativos.forEach(p => { const k = (p.c && p.c.supervisor) || ''; (porSup[k] = porSup[k] || []).push(p); });
+  const nmS = id => (typeof nomeSup === 'function' && nomeSup(id)) || (id && id !== '-' ? 'Outro supervisor' : 'Sem supervisor');
+  const porSup = {}; ativos.forEach(p => { const k = (p.c && p.c.supervisor) || '-'; (porSup[k] = porSup[k] || []).push(p); });
   const linS = Object.keys(porSup).map(k => ({ k, q: new Set(porSup[k].map(p => p.matricula)).size, c: cel(porSup[k]) })).filter(x => x.c.n)
     .sort((a, b) => a.c.p - b.c.p || b.c.n - a.c.n);
   if (linS.length) {
@@ -3295,7 +3295,7 @@ function ligaFerias(m) {
   sel('[data-fxsupsel]', e => { FX.sup = e.target.value; FX.mes = 0; renderFerias(); });
   const fh = m.querySelector('.fxh');
   if (fh) {
-    const base = () => FX.P.filter(p => p.ativo && p.c && (!FX.rev || p.revenda === FX.rev)).map(p => p.c).filter(c => !FX.sup || (c.supervisor || '') === FX.sup);
+    const base = () => FX.P.filter(p => p.ativo && p.c && (!FX.rev || p.revenda === FX.rev)).map(p => p.c).filter(c => !FX.sup || (c.supervisor || '-') === FX.sup);
     const trata = el => { if (!trataCascata(FX.h, base(), el, { limpar: () => { FX.sup = ''; } })) return; FX.rev = FX.h.rev; FX.fn = FX.h.fn; FX.mes = 0; FX.ed = null; renderFerias(); };
     fh.onchange = e => { if (e.target.dataset.ff) trata(e.target); };
     fh.addEventListener('click', e => { const b = e.target.closest('[data-rc], [data-ac=limpaf]'); if (b) { e.stopPropagation(); trata(b); } });
