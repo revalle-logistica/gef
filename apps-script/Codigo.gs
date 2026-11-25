@@ -1475,34 +1475,61 @@ function diaBomPerto_(iso, fer) {
 
 
 /**
- * Correção pontual (rota liberada uma vez pela prop AJUSTE_FERIAS_MATS = 'MAT1,MAT2'): quem trocou, pela escala,
- * as férias que vinham do módulo Férias. As férias lançadas à mão viram o plano confirmado do período do módulo
- * (mesmo ano), e as linhas manuais saem; a escala passa a receber de novo pelo módulo.
+ * Correção pontual (rota liberada uma vez pela prop AJUSTE_FERIAS_MATS = 'MAT1,MAT2' ou '*2027' = todos daquele ano):
+ * férias lançadas à mão pela escala passam para o módulo Férias. Regras:
+ *  - só manual (sem férias do módulo no ano): as datas manuais viram o plano confirmado do período do módulo;
+ *  - manual igual/sobreposta às do módulo: a manual sai (o módulo já tem);
+ *  - manual diferente das do módulo, mais de um período no ano ou mais de 2 lançamentos: não mexe, vai para conferência.
+ * Devolve uma linha por colaborador para a conferência dos supervisores.
  */
 function ajusteFeriasManuais_() {
-  const props = PropertiesService.getScriptProperties(), mats = String(props.getProperty('AJUSTE_FERIAS_MATS') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
-  if (!mats.length) throw new Error('Ajuste não liberado.');
+  const props = PropertiesService.getScriptProperties(), arg = String(props.getProperty('AJUSTE_FERIAS_MATS') || '').trim();
+  if (!arg) throw new Error('Ajuste não liberado.');
   props.deleteProperty('AJUSTE_FERIAS_MATS');
+  const todosAno = /^\*\d{4}$/.test(arg) ? arg.slice(1) : '';
   return comLock_(function () {
     const cols = pfColsMapa_(), porMat = {}; Object.keys(cols).forEach(function (k) { porMat[cols[k].matricula] = k; });
+    const usu = {}; ler_('Usuarios').forEach(function (x) { usu[x.id] = x.nome; });
+    const colM = {}; ler_('Colaboradores').forEach(function (c) { colM[c.matricula] = c; });
     const lst = pfLista_(), fer = ler_('Ferias'), feitos = [], out = [], tirar = {};
-    mats.forEach(function (m) {
-      const man = fer.filter(function (f) { return f.matricula === m && !/^PF\|/.test(String(f.id)); }).sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; });
-      if (!man.length) { out.push(m + ': sem férias lançadas à mão'); return; }
-      const ano = man[0].inicio.slice(0, 4), chave = porMat[m];
-      const p = lst.filter(function (x) { return pfChaveCol_(x.revenda, x.codigo) === chave && x.ano === ano && x.origem !== 'gozado'; })[0];
-      if (!p) { out.push(m + ': sem período no módulo Férias em ' + ano); return; }
-      const pl = man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).map(function (f) { return { ini: f.inicio, dias: Math.round((Date.parse(f.fim) - Date.parse(f.inicio)) / 864e5) + 1 }; });
-      p.plano = JSON.stringify(pl); p.conf = 'S'; p.por = man[0].criadoPor || p.por; p.em = man[0].criadoEm || agora_(); p.editadoGestao = 'S';
-      man.filter(function (f) { return f.inicio.slice(0, 4) === ano; }).slice(0, 2).forEach(function (f) { tirar[f.id] = true; });
-      feitos.push(p); out.push(m + ': ' + p.plano);
+    const dd = function (iso) { return String(iso).split('-').reverse().join('/'); };
+    const dias = function (f) { return Math.round((Date.parse(f.fim) - Date.parse(f.inicio)) / 864e5) + 1; };
+    let alvo = [];
+    if (todosAno) {
+      const vistos = {}; fer.forEach(function (f) { if (!/^PF\|/.test(String(f.id)) && f.inicio.slice(0, 4) === todosAno && porMat[f.matricula] && !vistos[f.matricula]) { vistos[f.matricula] = 1; alvo.push([f.matricula, todosAno]); } });
+    } else arg.split(',').map(function (x) { return x.trim(); }).filter(String).forEach(function (m) {
+      const f = fer.filter(function (x) { return x.matricula === m && !/^PF\|/.test(String(x.id)); })[0]; if (f) alvo.push([m, f.inicio.slice(0, 4)]);
     });
-    if (feitos.length) {
-      gravarTudo_('FeriasPeriodos', lst);
-      gravarTudo_('Ferias', fer.filter(function (f) { return !tirar[f.id]; }));
-      pfEntradas_(feitos, cols);
-    }
-    log_({ nome: 'ajuste', login: 'ajuste' }, '', 'férias: escala → módulo Férias', out.join(' · '));
+    alvo.forEach(function (a) {
+      const m = a[0], ano = a[1], c = colM[m] || {}, chave = porMat[m];
+      const man = fer.filter(function (f) { return f.matricula === m && !/^PF\|/.test(String(f.id)) && f.inicio.slice(0, 4) === ano; }).sort(function (x, y) { return x.inicio < y.inicio ? -1 : 1; });
+      const pf = fer.filter(function (f) { return f.matricula === m && /^PF\|/.test(String(f.id)) && f.inicio.slice(0, 4) === ano; });
+      const pers = lst.filter(function (x) { return pfChaveCol_(x.revenda, x.codigo) === chave && x.ano === ano && x.origem !== 'gozado'; });
+      const lin = { matricula: m, nome: c.nome || '', supervisor: usu[c.supervisor] || '', revenda: c.revenda || '', funcao: c.funcao || '',
+        lancadoPor: man.map(function (f) { return f.criadoPor; }).filter(function (v, i, arr) { return v && arr.indexOf(v) === i; }).join(', '),
+        escala: man.map(function (f) { return dd(f.inicio) + ' a ' + dd(f.fim); }).join(' + '),
+        modulo: pf.map(function (f) { return dd(f.inicio) + ' a ' + dd(f.fim); }).join(' + '), ficou: '', acao: '', obs: '' };
+      const sobre = function (f) { return pf.some(function (g) { return g.inicio <= f.fim && f.inicio <= g.fim; }); };
+      if (!pers.length) { lin.acao = 'Não mexido'; lin.obs = 'sem período deste ano no módulo Férias'; lin.ficou = lin.escala; out.push(lin); return; }
+      if (pf.length) {
+        if (man.every(sobre)) { man.forEach(function (f) { tirar[f.id] = 1; }); lin.acao = 'Duplicada removida'; lin.ficou = lin.modulo; lin.obs = 'a escala tinha a mesma férias lançada duas vezes; ficou a do módulo'; }
+        else { lin.acao = 'Conferir'; lin.ficou = lin.modulo + ' (módulo) e ' + lin.escala + ' (escala)'; lin.obs = 'datas da escala diferentes das do módulo: dizer qual vale'; }
+        out.push(lin); return;
+      }
+      if (pers.length > 1 || man.length > 2) { lin.acao = 'Conferir'; lin.ficou = lin.escala; lin.obs = pers.length > 1 ? 'tem ' + pers.length + ' períodos aquisitivos no ano: dizer a qual pertence' : 'mais de 2 lançamentos no ano'; out.push(lin); return; }
+      const p = pers[0], pl = man.map(function (f) { return { ini: f.inicio, dias: Math.min(30, dias(f)) }; });
+      const tot = pl.reduce(function (t, x) { return t + x.dias; }, 0);
+      p.plano = JSON.stringify(pl); p.conf = 'S'; p.por = man[0].criadoPor || p.por; p.em = man[0].criadoEm || agora_(); p.editadoGestao = 'S';
+      man.forEach(function (f) { tirar[f.id] = 1; }); feitos.push(p);
+      lin.acao = 'Passada para o módulo'; lin.ficou = pl.map(function (x) { return dd(x.ini) + ' a ' + dd(isoMaisDias(x.ini, x.dias - 1)); }).join(' + ');
+      const obs = []; if (man.some(function (f) { return dias(f) > 30; })) obs.push('lançamento com mais de 30 dias: ficou com 30');
+      if (tot !== (+p.saldo || 30)) obs.push('total ' + tot + ' dias, saldo do período ' + (+p.saldo || 30));
+      lin.obs = obs.join('; '); out.push(lin);
+    });
+    if (feitos.length) gravarTudo_('FeriasPeriodos', lst);
+    if (Object.keys(tirar).length) gravarTudo_('Ferias', fer.filter(function (f) { return !tirar[f.id]; }));
+    if (feitos.length) pfEntradas_(feitos, cols);
+    log_({ nome: 'ajuste', login: 'ajuste' }, '', 'férias: escala → módulo Férias', out.length + ' colaborador(es): ' + out.map(function (l) { return l.matricula + ' ' + l.acao; }).join(' · '));
     return out;
   });
 }
