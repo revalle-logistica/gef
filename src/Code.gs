@@ -96,7 +96,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_, abrirAnoFerias: feriasAbrirAnoAuto_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
@@ -121,6 +121,7 @@ function rotas_() {
   feriasAcomp: { f: feriasAcomp_ },
   feriasMigrar: { f: feriasMigrar_, admin: true },
   feriasImportarDP: { f: feriasImportarDP_, admin: true, dp: true },
+  feriasAbrirAno: { f: feriasAbrirAno_, admin: true, dp: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   salvarQlp: { f: salvarQlp_ },

@@ -99,7 +99,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 /* ---------------- roteador ---------------- */
 // rotas montadas na chamada (as funções ficam em outros arquivos .gs)
 function rotas_() {
-  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_ }, PRIVADAS: {
+  return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_, abrirAnoFerias: feriasAbrirAnoAuto_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
@@ -124,6 +124,7 @@ function rotas_() {
   feriasAcomp: { f: feriasAcomp_ },
   feriasMigrar: { f: feriasMigrar_, admin: true },
   feriasImportarDP: { f: feriasImportarDP_, admin: true, dp: true },
+  feriasAbrirAno: { f: feriasAbrirAno_, admin: true, dp: true },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   salvarQlp: { f: salvarQlp_ },
@@ -1532,6 +1533,54 @@ function ajusteFeriasManuais_() {
     log_({ nome: 'ajuste', login: 'ajuste' }, '', 'férias: escala → módulo Férias', out.length + ' colaborador(es): ' + out.map(function (l) { return l.matricula + ' ' + l.acao; }).join(' · '));
     return out;
   });
+}
+
+
+/**
+ * Abre um ano novo na programação: para cada empregado, cria o período aquisitivo seguinte ao último que existe
+ * (aquisitivo = o ano seguinte ao último; prazo com a mesma folga do último), quando ele cai no ano pedido.
+ * Sugestão: os mesmos meses do plano do último período; sem plano, logo que completar o aquisitivo.
+ * Ninguém sai confirmado. Se o DP importar a planilha desse ano depois, os mesmos períodos são atualizados (mesmo id).
+ */
+function feriasAbrirAno_(u, d) {
+  const ano = String(d.ano || '');
+  if (!/^20\d\d$/.test(ano)) throw new Error('Informe o ano.');
+  return comLock_(function () {
+    const lst = pfLista_(), porId = {}, ult = {}, quando = agora_(), fer = {}, res = { ano: ano, novos: 0, jaTinha: 0 };
+    ler_('Feriados').forEach(function (f) { if (f.contaAlerta !== 'N') (fer[f.revenda] = fer[f.revenda] || {})[f.data] = f.descricao; });
+    lst.forEach(function (p) { porId[p.id] = p; const k = p.revenda + '|' + p.codigo; if (!ult[k] || p.fimAq > ult[k].fimAq) ult[k] = p; });
+    const anoMais = function (iso, n) { const y = +iso.slice(0, 4) + n, md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return y + '-' + md; };
+    Object.keys(ult).forEach(function (k) {
+      let b = ult[k];
+      if (b.ativoDP === 'N') return;
+      const folga = Math.round((Date.parse(b.prazo) - Date.parse(b.fimAq)) / 864e5) || 335;
+      let iniAq = isoMaisDias(b.fimAq, 1), fimAq = isoMaisDias(anoMais(iniAq, 1), -1);
+      while (+fimAq.slice(0, 4) + 1 < +ano) { iniAq = isoMaisDias(fimAq, 1); fimAq = isoMaisDias(anoMais(iniAq, 1), -1); }
+      if (String(+fimAq.slice(0, 4) + 1) !== ano) return;
+      const id = b.sig + '-' + b.codigo + '-' + iniAq;
+      if (porId[id]) { res.jaTinha++; return; }
+      const prazo = isoMaisDias(fimAq, folga), F = fer[b.revenda] || {}, pl = pfPlano_(b);
+      let sug = pl.length ? pl.map(function (x) { return { ini: inicioBom_(ano + x.ini.slice(4), F), dias: x.dias }; })
+        : [{ ini: inicioBom_(isoMaisDias(fimAq, 1) < ano + '-01-01' ? ano + '-01-01' : isoMaisDias(fimAq, 1), F), dias: 30 }];
+      sug = sug.map(function (x) { return x.ini <= fimAq ? { ini: inicioBom_(isoMaisDias(fimAq, 1), F), dias: x.dias } : x; });
+      const p = {};
+      Object.keys(b).forEach(function (c) { p[c] = ''; });
+      Object.assign(p, { id: id, revenda: b.revenda, sig: b.sig, codigo: b.codigo, nome: b.nome, depto: b.depto, setorF: b.setorF, grupo: b.grupo, cargo: b.cargo,
+        admissao: b.admissao, ativoDP: b.ativoDP, situacao: b.situacao, local: b.local, turno: b.turno, iniAq: iniAq, fimAq: fimAq, prazo: prazo,
+        direito: '30', abono: '', gozados: '0', saldo: '30', origem: prazo > ano + '-12-31' ? 'opc' : pl.length ? 'ref' : 'sem_ref', ano: ano,
+        sugestao: JSON.stringify(sug), plano: '', conf: 'N', fonte: 'projetado (ano aberto em ' + quando + ')', editadoGestao: '' });
+      lst.push(p); porId[id] = p; res.novos++;
+    });
+    if (res.novos) gravarTudo_('FeriasPeriodos', lst);
+    log_(u, '', 'férias: abriu o ano', JSON.stringify(res));
+    return res;
+  });
+}
+function feriasAbrirAnoAuto_() {
+  const props = PropertiesService.getScriptProperties(), ano = String(props.getProperty('ABRIR_ANO_FERIAS') || '');
+  if (!/^20\d\d$/.test(ano)) throw new Error('Não liberado.');
+  props.deleteProperty('ABRIR_ANO_FERIAS');
+  return feriasAbrirAno_({ nome: 'Sistema', login: 'sistema' }, { ano: ano });
 }
 
 

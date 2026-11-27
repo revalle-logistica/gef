@@ -2765,10 +2765,15 @@ function montaFerias() {
     const local = area === 'arm' ? (c.turno || 'Armazém') : area === 'adm' ? 'Administrativo' : (c.lotacao || 'Sede');
     return Object.assign(p, { c, nome: c.nome, cargo: c.funcao, grupo: c.vis ? c.vis.funcao : c.funcao, area, setor: SETOR_LBL[area] || 'Administrativo', localF: local, ativo: p.ativoDP !== 'N' });
   }).filter(Boolean);
-  const anos = uniq(FX.P.map(p => p.ano)).sort();
+  const anos = anosFer();
   if (!anos.includes(FX.ano)) { const y = String(new Date().getFullYear() + 1); FX.ano = anos.includes(y) ? y : (anos[anos.length - 1] || y); }
 }
-const doAno = () => FX.P.filter(p => p.ano === FX.ano);
+/** Período cujo prazo passa para o ano seguinte (opcional no seu ano) e que ficou para o ano seguinte: sem férias no seu ano, ou já programado no seguinte. */
+const vaiProSeguinte = p => p.prazo > p.ano + '-12-31' && p.plano !== null && p.plano !== undefined && (!p.plano.length || p.plano[0].ini.slice(0, 4) > p.ano);
+/** Anos que dá para programar: os dos períodos e o seguinte de quem tem prazo nele. */
+const anosFer = () => uniq(FX.P.map(p => p.ano).concat(FX.P.filter(p => p.prazo > p.ano + '-12-31').map(p => String(+p.ano + 1)))).sort();
+/** Períodos do ano escolhido: os do ano e os que vieram do ano anterior (ficaram para este). */
+const doAno = () => FX.P.filter(p => p.ano === FX.ano || (String(+p.ano + 1) === FX.ano && vaiProSeguinte(p)));
 const revsFer = () => uniq(FX.P.map(p => p.revenda));
 
 /* ---------- regras ---------- */
@@ -2867,7 +2872,7 @@ function renderFerias() {
     return;
   }
   if (FX.colsRef !== S.cols) { FX.colsRef = S.cols; montaFerias(); }
-  const adm = S.user.perfil === 'ADMIN', P = doAno(), anos = uniq(FX.P.map(p => p.ano)).sort();
+  const adm = S.user.perfil === 'ADMIN', P = doAno(), anos = anosFer();
   const abas = [['prog', '📝 Programar'], ['painel', '📊 Painel'], ['rel', '📣 Relatório']].concat(S.user.perfil !== 'ANALISTA' ? [['dp', '📄 Planilha do DP']] : []);
   let h = `<section class="card fx-top"><div class="fx-hd"><div><h2>Férias ${esc(FX.ano)}</h2><small>${P.length} períodos aquisitivos · ${new Set(P.map(p => p.matricula)).size} colaboradores${adm && FX.d.migracao ? ` · trazido do sistema anterior em ${esc(dh(FX.d.migracao.em))}` : ''}</small></div>
       <div class="fx-sel">${anos.length > 1 ? `<label class="cb"><small>Ano</small><select data-fxano>${anos.map(a => `<option ${a === FX.ano ? 'selected' : ''}>${a}</option>`).join('')}</select></label>` : ''}
@@ -3235,7 +3240,9 @@ function dpFerias() {
       <div class="filt fx-pf" style="padding:0"><label class="f">Unidade<select id="dp-rev">${revsFer().map(r => `<option ${r === FX.rev ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label><label class="f fx-ck"><input type="checkbox" id="dp-sug"> Incluir sugestões não confirmadas</label></div>
       <label class="btn" for="dp-file">📎 Escolher a planilha e gerar</label><input type="file" id="dp-file" accept=".xlsx" hidden><p class="hint" id="dp-res"></p>${dp ? '' : '<p class="hint">A planilha sai preenchida com as férias dos seus colaboradores; as linhas de outras equipes ficam como estavam.</p>'}</div></section>
     ${dp ? `<section class="card"><div class="card-h"><h3>📥 Importar a programação de um ano novo</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Para o próximo ano: importe a planilha "Programação de férias" que o DP gera para cada unidade (uma linha por período aquisitivo). A Gestão cria os períodos e sugere o mesmo período do ano anterior. O que o DP já programou entra como confirmado.</p>
-      <label class="btn" for="dpi-file">📎 Escolher a planilha</label><input type="file" id="dpi-file" accept=".xlsx,.xls" hidden></div></section>` : ''}</div>
+      <label class="btn" for="dpi-file">📎 Escolher a planilha</label><input type="file" id="dpi-file" accept=".xlsx,.xls" hidden></div></section>
+    <section class="card"><div class="card-h"><h3>🗓️ Abrir o ano seguinte</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Cria, para quem já está no módulo, o próximo período aquisitivo, com sugestão nos mesmos meses do ano anterior, para os supervisores já programarem. Ninguém sai confirmado. Se depois o DP importar a planilha desse ano, os mesmos períodos são atualizados.</p>
+      <button type="button" class="btn" data-fxabrir="${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1}">Abrir ${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1} para programar</button></div></section>` : ''}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>⬇ Sistema anterior (Férias 2027)</h3></div><div class="card-b"><p class="hint" style="margin-top:0">${mg ? `Trazido em ${esc(dh(mg.em))} por ${esc(mg.por)}: ${mg.novos + mg.atualizados} períodos, ${mg.confirmadas} confirmados, ${mg.feriados} feriados novos.` : 'Ainda não trazido.'} Trazer de novo atualiza só o que ainda não foi mexido aqui na Gestão.</p>
       <button type="button" class="btn" data-fxmig>⬇ Trazer de novo</button>
       ${Object.keys(ag).length ? `<p class="hint">Guardados de departamentos ainda não ativados (ative em Regras → Departamentos e importe o DP): ${Object.entries(ag).map(([k, n]) => esc(k) + ' (' + n + ')').join(' · ')}</p>` : ''}</div></section>` : ''}`;
@@ -3327,6 +3334,9 @@ function ligaFerias(m) {
     el.querySelector('[data-fxacs]').onchange = grava; el.querySelector('[data-fxaco]').onchange = grava;
   });
   const f1 = m.querySelector('#dp-file'); if (f1) f1.onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) preencheDP(f); };
+  const ab = m.querySelector('[data-fxabrir]'); if (ab) ab.onclick = ev => { const ano = ab.dataset.fxabrir; if (!confirm(`Abrir ${ano} para programar? Os períodos de ${ano} serão criados com sugestão.`)) return; ocupado(ev.currentTarget, async () => {
+    const r = await call('feriasAbrirAno', { ano }); await carregaFerias(true); FX.ano = ano; FX.aba = 'prog'; renderFerias();
+    toast(`${ano} aberto: <b>${r.novos}</b> períodos criados${r.jaTinha ? `, ${r.jaTinha} já existiam` : ''}.`); }); };
   const f2 = m.querySelector('#dpi-file'); if (f2) f2.onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { previaImportDP(await lePlanilhaDP(f), f.name); } catch (err) { toast(esc(err.message), true); } };
   m.onclick = e => {
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
