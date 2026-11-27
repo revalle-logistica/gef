@@ -2489,7 +2489,7 @@ function montaFerias() {
   if (!anos.includes(FX.ano)) { const y = String(new Date().getFullYear() + 1); FX.ano = anos.includes(y) ? y : (anos[anos.length - 1] || y); }
 }
 /** Período cujo prazo passa para o ano seguinte (opcional no seu ano) e que ficou para o ano seguinte: sem férias no seu ano, ou já programado no seguinte. */
-const vaiProSeguinte = p => p.prazo > p.ano + '-12-31' && p.plano !== null && p.plano !== undefined && (!p.plano.length || p.plano[0].ini.slice(0, 4) > p.ano);
+const vaiProSeguinte = p => p.prazo > p.ano + '-12-31' && p.origem !== 'gozado' && !(p.plano && p.plano.length && p.plano[0].ini.slice(0, 4) <= p.ano);
 /** Anos que dá para programar: os dos períodos e o seguinte de quem tem prazo nele. */
 const anosFer = () => uniq(FX.P.map(p => p.ano).concat(FX.P.filter(p => p.prazo > p.ano + '-12-31').map(p => String(+p.ano + 1)))).sort();
 /** Períodos do ano escolhido: os do ano e os que vieram do ano anterior (ficaram para este). */
@@ -2513,12 +2513,17 @@ function diaBomPerto(rev, y, m, d) {
   return d;
 }
 function diaBomDesde(rev, iso) { for (let k = 0; k < 20; k++) { const d = isoMaisDias(iso, k); if (!inicioRuim(rev, d)) return d; } return iso; }
-const plano = p => (p.plano !== null && p.plano !== undefined) ? p.plano : (p.sugestao || []);
+const plano = p => (p.plano !== null && p.plano !== undefined) ? p.plano : p.ano !== FX.ano ? sugNoAno(p) : (p.sugestao || []);
+/** Período que veio do ano anterior: a sugestão vai para os mesmos meses do ano que está aberto na tela (sem passar do prazo). */
+function sugNoAno(p) {
+  const y = +FX.ano;
+  return (p.sugestao || []).map(x => { let ini = y + x.ini.slice(4); if (ini.slice(5) === '02-29') ini = y + '-02-28'; if (ini > p.prazo) ini = isoDe(y, 1, diaBomPerto(p.revenda, y, 1, 4)); return { ini, dias: x.dias }; });
+}
 const editado = p => p.plano !== null && p.plano !== undefined;
 /** Decidido não tirar férias deste período no ano em tela (fica para o ano seguinte, dentro do prazo). */
 const naoProg = p => editado(p) && !p.plano.length;
 const podeAdiar = p => p.prazo > FX.ano + '-12-31';
-const obrig = p => p.ativo && (p.origem === 'ref' || p.origem === 'sem_ref');
+const obrig = p => p.ativo && (p.origem === 'ref' || p.origem === 'sem_ref' || (p.ano !== FX.ano && p.origem !== 'gozado'));
 function statusF(p) {
   if (p.origem === 'gozado') return 'gozado';
   if (!p.ativo) return 'fora';
@@ -2683,7 +2688,7 @@ function linhaMeses(p, pl) {
 const perTxt = pl => pl.map(x => `${fdl(x.ini, FX.ano)} → ${fdl(fimDe(x), FX.ano)} <span class="hint">${x.dias} dias</span>`).join(' <span class="hint">+</span> ');
 function blocoPeriodo(p, k, n, base) {
   const pl = plano(p), st = statusF(p), al = alertasF(p).filter(a => !/pico/.test(a[1])), cr = al.filter(a => a[0] === 'c'), ed = FX.ed && FX.ed.id === p.id;
-  const fonte = editado(p) ? 'ajustado' : p.origem === 'ref' ? 'mesmo período do ano anterior' : p.origem === 'sem_ref' ? 'sugestão pelo prazo (sem férias no ano anterior)' : p.origem === 'opc' ? 'opcional (prazo no ano seguinte)' : '';
+  const fonte = editado(p) ? 'ajustado' : p.ano !== FX.ano ? 'veio de ' + p.ano + ' · prazo ' + dataBr(p.prazo) : p.origem === 'ref' ? 'mesmo período do ano anterior' : p.origem === 'sem_ref' ? 'sugestão pelo prazo (sem férias no ano anterior)' : p.origem === 'opc' ? 'opcional (prazo no ano seguinte)' : '';
   const tot = pl.reduce((s, x) => s + x.dias, 0);
   let h = `<div class="fx-pbk ${st === 'val' ? 'ok' : ''} ${cr.length ? 'wn' : ''}" data-fxid="${esc(p.id)}"><div>
     <div class="fx-aq">${n > 1 ? `<b>${k + 1}º período</b> · ` : ''}${vencida(p) ? '<span class="tg er">férias vencidas</span> ' : ''}Aquisitivo <b>${dataBr(p.iniAq)} a ${dataBr(p.fimAq)}</b> · pode sair de <b>${dataBr(isoMaisDias(p.fimAq, 1))}</b> até <b>${dataBr(ultimoInicio(p))}</b> · prazo ${dataBr(p.prazo)} · saldo ${p.saldo} dias</div>
@@ -2896,7 +2901,7 @@ function filtroPainel(P) {
 }
 function listaPainel(P) {
   const pn = FX.pn, rs = filtroPainel(P); FX.lista = rs;
-  const aConf = rs.filter(p => p.ativo && plano(p).length && !p.conf).length;
+  const aConf = rs.filter(p => p.ativo && plano(p).length && !p.conf && p.ano === FX.ano).length;
   let h = `<section class="card" id="fx-lista"><div class="card-h"><h3>Lista de períodos <span class="hint">${rs.length}</span></h3><div class="fx-row" style="margin:0">${aConf ? `<button type="button" class="btn sm ok" data-fxlote>✓ Confirmar ${aConf} como estão</button>` : ''}<button type="button" class="btn sm" data-fxcopia>📋 Copiar para o Excel</button></div></div>
     <div class="filt fx-pf"><label class="f">Situação<select data-fxpn="st">${[['', 'Todas'], ['val', 'Confirmados'], ['sug', 'A confirmar'], ['sem', 'Sem programação'], ['opc', 'Opcionais'], ['fora', 'Fora do QLP'], ['alert', 'Com alerta']].map(([k, l]) => `<option value="${k}" ${pn.st === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="f">Mês<select data-fxpn="mes"><option value="">Todos</option>${FM.map((x, i) => `<option value="${i + 1}" ${pn.mes === String(i + 1) ? 'selected' : ''}>${x}/${FX.ano.slice(2)}</option>`).join('')}<option value="0" ${pn.mes === '0' ? 'selected' : ''}>Sem mês</option></select></label>
@@ -3078,14 +3083,14 @@ function ligaFerias(m) {
     if (d.fxheat) { FX.pn.heat = d.fxheat; const y = window.scrollY; renderFerias(); window.scrollTo(0, y); return; }
     if (b.hasAttribute('data-fxcopia')) { navigator.clipboard.writeText(tsvPainel()).then(() => toast('Copiado: cole no Excel.')).catch(() => toast('Não consegui copiar neste navegador.', true)); return; }
     if (b.hasAttribute('data-fxlote')) {
-      const alvo = (FX.lista || []).filter(p => p.ativo && plano(p).length && !p.conf); if (!alvo.length || !confirm(`Confirmar ${alvo.length} períodos como estão?`)) return;
+      const alvo = (FX.lista || []).filter(p => p.ativo && plano(p).length && !p.conf && p.ano === FX.ano); if (!alvo.length || !confirm(`Confirmar ${alvo.length} períodos como estão?`)) return;
       return ocupado(b, async () => { const r = await call('feriasLote', { ids: alvo.map(p => p.id) }); r.forEach(x => { const p = FX.P.find(y => y.id === x.id); if (p) { Object.assign(p, x); atualizaFeriasEscala(p); } }); renderFerias(); toast(`${r.length} períodos confirmados.`); });
     }
     if (b.hasAttribute('data-fxprint')) { document.body.classList.add('fx-imprime'); window.print(); setTimeout(() => document.body.classList.remove('fx-imprime'), 500); return; }
     if (b.hasAttribute('data-fximg')) return ocupado(b, async () => { const h2c = await carregaScript('https:\/\/cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas'); const cv = await h2c($('#fx-rcard'), { scale: 2, backgroundColor: '#ffffff' }); const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'Ferias_' + FX.ano + '_' + (FX.rel.rev === 'all' ? 'Todas' : FX.rel.rev.replace(/ /g, '_')) + '_' + (FX.rel.mes ? FM[FX.rel.mes - 1] : 'Geral') + '.png'; document.body.appendChild(a); a.click(); a.remove(); });
     // ações de um período
     const bk = b.closest('[data-fxid]'); if (!bk) return; const p = FX.P.find(x => x.id === bk.dataset.fxid); if (!p) return;
-    if (d.fxa === 'ok') return salvaPeriodo(p, { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
+    if (d.fxa === 'ok') return salvaPeriodo(p, p.ano !== FX.ano && !editado(p) ? { plano: plano(p), conf: true } : { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
     if (d.fxa === 'edit') { iniciaEdicao(p); renderFerias(); setTimeout(() => { const el = FX.m.querySelector(`[data-fxid="${CSS.escape(p.id)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); return; }
     if (d.fxa === 'cancel') { FX.ed = null; return renderFerias(); }
     if (d.fxa === 'naoprog') { FX.ed = null; return salvaPeriodo(p, { plano: [], conf: true }, `${p.nome.split(' ')[0]}: sem férias deste período em ${FX.ano}`); }
@@ -3095,7 +3100,7 @@ function ligaFerias(m) {
       const ed = FX.ed; salvaPeriodo(p, { saldo: s }, `Saldo de ${p.nome.split(' ')[0]} corrigido para ${s} dias`).then(() => { if (ed && ed.id === p.id) { iniciaEdicao(p); renderFerias(); } }); return;
     }
     if (d.fxa === 'reset') { FX.ed = null; return salvaPeriodo(p, { reset: true }, '↺ ' + p.nome.split(' ')[0] + ': voltou à sugestão'); }
-    if (d.fxa === 'save') { const pl = rascunho(p); if (!pl.length) return; FX.ed = null; return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) ? null : pl, conf: true }, '✓ Férias de ' + p.nome.split(' ')[0] + ' salvas'); }
+    if (d.fxa === 'save') { const pl = rascunho(p); if (!pl.length) return; FX.ed = null; return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) && p.ano === FX.ano ? null : pl, conf: true }, '✓ Férias de ' + p.nome.split(' ')[0] + ' salvas'); }
     if (d.fxtm) {
       const mm = +d.fxtm, y = +FX.ano; let pl = JSON.parse(JSON.stringify(plano(p)));
       if (!pl.length) pl = [{ ini: isoDe(y, mm, diaBomPerto(p.revenda, y, mm, 1)), dias: Math.min(30, Math.max(p.saldo || 30, 5)) }];
