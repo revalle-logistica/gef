@@ -400,6 +400,26 @@ function gerarLink_(u, d) {
     return { token: l.token, link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso };
   });
 }
+/** Links de vários colaboradores de uma vez: reaproveita o link ativo de cada um e cria para quem não tem. */
+function gerarLinksLote_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  if (!mats.length) throw new Error('Nenhum colaborador na lista.');
+  if (mats.length > 600) throw new Error('Muitos de uma vez (máximo 600). Filtre a lista.');
+  const cs = mats.map(function (m) { return achaColab_(u, m); }), cfg = cfg_();
+  const base = String(cfg.LINK_SISTEMA || '').replace(/[?#].*$/, ''), sep = base.indexOf('?') < 0 ? '?' : '&';
+  return comLock_(function () {
+    const lst = ler_('Links'), quando = agora_(), at = {}, out = [];
+    let novos = 0;
+    lst.forEach(function (l) { if (l.ativo === 'S') at[l.matricula] = l; });
+    cs.forEach(function (c) {
+      let l = at[c.matricula];
+      if (!l) { l = { token: (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, ''), matricula: c.matricula, ativo: 'S', criadoPor: u.nome, criadoEm: quando, acessos: '0', ultimoAcesso: '' }; lst.push(l); at[c.matricula] = l; novos++; }
+      out.push({ matricula: c.matricula, nome: c.nome, funcao: c.funcao, token: l.token, link: base + sep + 'e=' + l.token, criadoEm: l.criadoEm, criadoPor: l.criadoPor, acessos: +l.acessos || 0, ultimoAcesso: l.ultimoAcesso, novo: l.criadoEm === quando && l.criadoPor === u.nome });
+    });
+    if (novos) { gravarTudo_('Links', lst); log_(u, '', 'gerou links em lote', novos + ' novo(s) · ' + out.length + ' na lista'); }
+    return out;
+  });
+}
 /** Público: a escala de um colaborador a partir do link (sem login, só leitura). */
 function minhaEscala_(d) {
   const tk = String(d.token || '');

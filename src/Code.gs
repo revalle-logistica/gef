@@ -98,6 +98,7 @@ function setup() { Logger.log('Base de dados: ' + ss_().getUrl()); }
 function rotas_() {
   return { PUBLICAS: { registrar: registrar_, login: login_, minhaEscala: minhaEscala_, centralFeed: centralFeed_, alertaPrazo: alertasPrazoDP_, ajusteInicio: ajusteInicioEscala_, diagProntidao: diagProntidao_, ajusteFeriasManuais: ajusteFeriasManuais_, abrirAnoFerias: feriasAbrirAnoAuto_ }, PRIVADAS: {
   gerarLink: { f: gerarLink_ },
+  gerarLinksLote: { f: gerarLinksLote_ },
   carregar: { f: carregar_ },
   logout: { f: logout_ },
   trocarSenha: { f: trocarSenha_ },
@@ -259,7 +260,7 @@ function uniq_(a) { return Array.from(new Set(a.filter(String))).sort(); }
 /** Administrador e DP veem todos os colaboradores. */
 function veTudo_(u) { return u.perfil === 'ADMIN' || u.perfil === 'DP'; }
 /** Ações de escala/férias/QLP que o DP não faz (ele só consulta). */
-var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, salvarAjuste: 1, salvarAjustesLote: 1, replicarSemana: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
+var SO_ADMIN_SUP_ = { liberarDP: 1, salvarEscala: 1, salvarLote: 1, removerPeriodo: 1, setTele: 1, gerarLinksLote: 1, salvarAjuste: 1, salvarAjustesLote: 1, replicarSemana: 1, salvarQlp: 1, removerQlp: 1, salvarPontos: 1, salvarFerias: 1, removerFerias: 1, feriasSalvar: 1, feriasLote: 1, feriasAcomp: 1, feriasMigrar: 1 };
 function podeVer_(u, c) {
   if (veTudo_(u)) return true;
   if (u.perfil === 'ANALISTA') {

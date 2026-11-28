@@ -430,6 +430,14 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .rs-tab tr.rs-sg th{background:#f3f6fd;color:#3b4a6b;text-align:left;font-size:12px;font-weight:700;padding:5px 10px;border-top:1px solid var(--ln)}.rs-tab tr.rs-sg th span{color:var(--mut);font-weight:600;margin-left:4px}
 .fx-supb{display:flex;align-items:center;gap:8px}.fx-supb .fx-bar{flex:1}.fx-supb.er .fx-bar span{background:var(--er)}.fx-supb.al .fx-bar span{background:#e8a317}.fx-supb.ok .fx-bar span{background:var(--ok)}.fx-supb b{min-width:38px;text-align:right}
 .fx-ys{display:inline-flex;gap:4px;margin:0 0 6px}.fx-ys button{border:1px solid var(--ln);background:var(--sf);border-radius:8px;padding:4px 12px;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}.fx-ys button.on{background:var(--b8);color:#fff;border-color:var(--b8)}
+.mn-seg{display:flex;background:var(--sunk,#eef1f6);border-radius:12px;padding:3px;gap:3px}.mn-seg button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px;font:inherit;font-weight:700;color:var(--mut);cursor:pointer}.mn-seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.mn-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.mn-cal .h{text-align:center;font-size:11px;font-weight:700;color:var(--mut);padding:2px 0}
+.mn-cal .mc{position:relative;border:1px solid var(--ln);border-radius:9px;min-height:62px;padding:4px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;font:inherit;cursor:pointer;background:var(--sf);color:var(--ink)}
+.mn-cal .mc b{font-size:14px;line-height:1.2}.mn-cal .mc small{font-size:10.5px;line-height:1.15;font-weight:600}
+.mn-cal .mc.t{background:#e8efff;border-color:#c5d5fb}.mn-cal .mc.t small{color:#1d3f99}.mn-cal .mc.f{background:var(--oks);border-color:#bfe3cc}.mn-cal .mc.f small{color:#17683a}.mn-cal .mc.v{background:#efe8fb;border-color:#d8c8f3}.mn-cal .mc.v small{color:#5b2fa8}.mn-cal .mc.n{color:var(--mut)}
+.mn-cal .mc.hj{outline:2px solid var(--ac);outline-offset:1px}.mn-cal .mc.sel{box-shadow:0 0 0 2px #0b1f4d inset}.mn-cal .mc i{position:absolute;top:1px;right:3px;font-style:normal;font-size:10px}
+.mn-leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}.mn-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}.mn-leg i.t{background:#c5d5fb}.mn-leg i.f{background:#bfe3cc}.mn-leg i.v{background:#d8c8f3}
+.lk-lote tr.ok td{background:#eefaf2}
 </style>
 
 </head>
@@ -1129,6 +1137,7 @@ function vEscalas(m) {
     else if (t.dataset.ac === 'pdf') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', S.semana));
     else if (t.dataset.ac === 'pdfmes') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'fichas', '', mesDaSemana()));
     else if (t.dataset.ac === 'quadro') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', S.semana));
+    else if (t.dataset.ac === 'links') ocupado(t, () => linksLote(alvo().lista));
     else if (t.dataset.ac === 'quadromes') ocupado(t, () => pdfServidor(alvo().lista.map(c => c.matricula), 'quadro', '', mesDaSemana()));
   };
   m.onchange = e => {
@@ -1163,6 +1172,7 @@ function acoes() {
     <button type="button" class="btn sm" data-ac="pdf" title="Uma ficha em PDF por colaborador, com a semana escolhida">${ic('pdf')}Fichas da semana</button>
     <button type="button" class="btn sm" data-ac="pdfmes" title="Uma ficha em PDF por colaborador, com o mês inteiro e o horário de cada dia">${ic('pdf')}Fichas do mês</button>
     <button type="button" class="btn sm" data-ac="quadro" title="Quadro da semana em PDF">${ic('pdf')}Quadro da semana</button>
+    <button type="button" class="btn sm" data-ac="links" title="Link da escala de cada colaborador da lista, para mandar pelo WhatsApp">${ic('copy')}Links dos colaboradores</button>
     <button type="button" class="btn sm" data-ac="quadromes" title="Quadro do mês inteiro em PDF, com o horário de cada dia">${ic('pdf')}Quadro do mês</button>`;
 }
 function semana(e) {
@@ -1335,6 +1345,29 @@ function desenhaEditor() {
       S.ferias.push(f); revalida(); ev.target.reset(); listaFerias(); toast('Férias cadastradas.');
     });
   };
+}
+/** Mensagem do link para o WhatsApp. */
+const msgLink = (nome, link) => { const p = String(nome).split(' ')[0], nm = p.charAt(0) + p.slice(1).toLowerCase(); return `Olá, ${nm}! Este é o link da sua escala de trabalho na Revalle. Pelo link você vê seus dias de trabalho, folgas, férias e feriados. É pessoal, não repasse:\n${link}`; };
+/** Links da escala para vários colaboradores: cria quem não tem e mostra a lista para enviar. */
+async function linksLote(lista) {
+  if (!lista.length) throw new Error('Nenhum colaborador na lista.');
+  if (lista.length > 20 && !confirm(`Gerar/mostrar o link da escala de ${lista.length} colaboradores?`)) return;
+  const r = await call('gerarLinksLote', { matriculas: lista.map(c => c.matricula) });
+  r.forEach(x => { const c = S.cols.find(y => y.matricula === x.matricula); if (c) { c.link = { token: x.token, criadoEm: x.criadoEm, criadoPor: x.criadoPor, acessos: x.acessos, ultimoAcesso: x.ultimoAcesso }; c.temLink = true; } });
+  document.querySelectorAll('[data-link]').forEach(b => { if (r.some(x => x.matricula === b.dataset.link)) b.classList.add('on'); });
+  const novos = r.filter(x => x.novo).length, enviados = new Set();
+  abrirModal(`<div class="mdl-h"><div><h2>Links da escala · ${r.length} colaborador${r.length > 1 ? 'es' : ''}</h2><small>${novos ? `${novos} link${novos > 1 ? 's' : ''} novo${novos > 1 ? 's' : ''}; ` : ''}os demais já existiam e continuam os mesmos</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b"><p class="hint" style="margin-top:0">Toque em <b>WhatsApp</b> em cada nome para abrir a conversa com a mensagem pronta (escolha o contato). Ou copie todos e cole numa planilha.</p>
+      <table class="tb lk-lote"><tr><th>Colaborador</th><th>Aberto</th><th></th></tr>${r.map(x => `<tr data-lm="${esc(x.matricula)}"><td><b>${esc(x.nome)}</b><br><small class="hint">${esc(x.funcao || '')} · ${esc(x.matricula)}</small></td><td>${x.acessos ? x.acessos + 'x' : '<span class="hint">ainda não</span>'}</td>
+        <td style="white-space:nowrap"><a class="btn sm ok" target="_blank" rel="noopener" data-lz="${esc(x.matricula)}" href="${'https:\/\/wa.me/?text=' + encodeURIComponent(msgLink(x.nome, x.link))}">WhatsApp</a> <button type="button" class="btn sm" data-lc="${esc(x.link)}">Copiar</button></td></tr>`).join('')}</table></div>
+    <div class="mdl-f"><button type="button" class="btn" data-lall>${ic('copy')}Copiar todos (nome e link)</button><button type="button" class="btn" data-lxls>${ic('xls')}Baixar planilha</button><span style="flex:1"></span><button type="button" class="btn pr" data-x>Fechar</button></div>`, true);
+  const box = modal.querySelector('.mdl'), copia = v => (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Copiado.')).catch(() => toast('Não consegui copiar neste navegador.', true));
+  box.addEventListener('click', e => {
+    const z = e.target.closest('[data-lz]'); if (z) { enviados.add(z.dataset.lz); z.closest('tr').classList.add('ok'); z.textContent = '✓ WhatsApp'; return; }
+    const c = e.target.closest('[data-lc]'); if (c) return copia(c.dataset.lc);
+    if (e.target.closest('[data-lall]')) return copia('Colaborador\tMatrícula\tLink\n' + r.map(x => `${x.nome}\t${x.matricula}\t${x.link}`).join('\n'));
+    if (e.target.closest('[data-lxls]')) loadXLSX().then(XLSX => { const ws = XLSX.utils.aoa_to_sheet([['Colaborador', 'Matrícula', 'Função', 'Link', 'Mensagem']].concat(r.map(x => [x.nome, x.matricula, x.funcao || '', x.link, msgLink(x.nome, x.link)]))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Links'); XLSX.writeFile(wb, 'Links_escala_' + hoje() + '.xlsx'); }).catch(er => toast(er.message, true));
+  });
 }
 /** Botões do quadro de link (editor ou janela própria). Retorna true se tratou o clique. */
 const linkDe = c => { const base = String(S.cfg.LINK_SISTEMA || '').replace(/[?#].*$/, ''); return Object.assign({}, c.link, { link: base + (base.indexOf('?') < 0 ? '?' : '&') + 'e=' + c.link.token }); };
@@ -2708,6 +2741,19 @@ async function telaMinha(tk) {
     }
     return h;
   };
+  let modo = 'cal', sel = hj;
+  try { modo = localStorage.getItem('gef_minha_modo') || 'cal'; } catch (e) { /* sem armazenamento */ }
+  // calendário do mês: domingo a sábado, cor por tipo de dia e o horário em cada dia; tocar no dia mostra o detalhe
+  const calendario = (dias, DD) => {
+    const off = (diaSemanaIso(dias[0]) + 1) % 7, cab = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const cel = ([d, x]) => { const c = x.tipo === 'T' ? 't' : x.tipo === 'FER' ? 'v' : x.tipo === 'F' ? 'f' : 'n';
+      const tx = x.tipo === 'T' ? `<small>${esc(x.ent)}</small><small>${esc(x.sai)}</small>` : x.tipo === 'FER' ? '<small>Férias</small>' : x.tipo === 'F' ? '<small>Folga</small>' : '<small>—</small>';
+      return `<button type="button" class="mc ${c}${d === hj ? ' hj' : ''}${d === sel ? ' sel' : ''}${x.feriado ? ' fer' : ''}" data-md="${d}"><b>${+d.slice(8)}</b>${tx}${x.feriado ? '<i>🎉</i>' : ''}</button>`; };
+    const s0 = DD.find(x => x[0] === sel) || DD.find(x => x[0] === hj) || DD[0];
+    return `<div class="mn-cal">${cab.map(x => `<span class="h">${x}</span>`).join('')}${'<span></span>'.repeat(off)}${DD.map(cel).join('')}</div>
+      <div class="mn-leg"><span><i class="t"></i>Trabalho</span><span><i class="f"></i>Folga</span><span><i class="v"></i>Férias</span><span>🎉 Feriado</span></div>
+      <div class="mn-l" style="margin-top:8px">${linha(s0[0], s0[1])}</div>`;
+  };
   const desenha = () => {
     const dias = diasDoMes(ym), DD = dias.map(d => [d, diaEfetivo(D.escala, d, D.ferias, D.feriados, aj)]);
     const n = k => DD.filter(x => x[1].tipo === k).length, hoj = diaEfetivo(D.escala, hj, D.ferias, D.feriados, aj);
@@ -2716,9 +2762,12 @@ async function telaMinha(tk) {
       <div class="mn-c"><div class="mn-hoje ${hoj.tipo === 'T' ? 't' : hoj.tipo === 'FER' ? 'v' : hoj.tipo === 'F' ? 'f' : 'n'}"><small>Hoje, ${dataBr(hj).slice(0, 5)}</small><b>${hoj.tipo === 'T' ? esc(hoj.ent) + ' às ' + esc(hoj.sai) : hoj.tipo === 'FER' ? 'Férias' : hoj.tipo === 'F' ? 'Folga' : hoj.antes ? 'Escala começa em ' + dataBr(hoj.antes).slice(0, 5) : 'Sem escala definida'}</b>${hoj.feriado ? `<small>Feriado: ${esc(hoj.feriado)}</small>` : ''}</div>
         <div class="mn-nav"><button type="button" class="btn sm" data-m="${pv}" ${pv ? '' : 'disabled'} aria-label="Mês anterior">‹</button><b>${nomeMes(ym)}</b><button type="button" class="btn sm" data-m="${nx}" ${podeNx ? '' : 'disabled'} aria-label="Próximo mês">›</button></div>
         <div class="mn-res"><span><b>${n('T')}</b> ${n('T') === 1 ? 'dia' : 'dias'} de trabalho</span><span><b>${n('F')}</b> ${n('F') === 1 ? 'folga' : 'folgas'}</span>${n('FER') ? `<span><b>${n('FER')}</b> ${n('FER') === 1 ? 'dia' : 'dias'} de férias</span>` : ''}</div>
-        <div class="mn-l">${linhas(DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)))}</div>
+        <div class="mn-seg"><button type="button" data-mv="cal" class="${modo === 'cal' ? 'on' : ''}">📅 Calendário</button><button type="button" data-mv="lista" class="${modo === 'lista' ? 'on' : ''}">☰ Lista</button></div>
+        ${modo === 'cal' ? calendario(dias, DD) : `<div class="mn-l">${linhas(DD.filter(x => ym !== hj.slice(0, 7) || x[0] >= isoMaisDias(hj, -3)))}</div>`}
         <p class="hint" style="text-align:center;margin:14px 0 4px">A escala pode mudar. Abra este link sempre que precisar conferir.<br>Dúvidas? Fale com seu supervisor.</p></div></div>`;
     root.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => { if (b.dataset.m) { ym = b.dataset.m; desenha(); window.scrollTo(0, 0); } }; });
+    root.querySelectorAll('[data-mv]').forEach(b => { b.onclick = () => { modo = b.dataset.mv; try { localStorage.setItem('gef_minha_modo', modo); } catch (e) { /* sem armazenamento */ } desenha(); }; });
+    root.querySelectorAll('[data-md]').forEach(b => { b.onclick = () => { sel = b.dataset.md; desenha(); }; });
   };
   desenha();
 }
