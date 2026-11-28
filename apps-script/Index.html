@@ -439,6 +439,8 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .lk-lote tr.ok td{background:#eefaf2}
 .fx-trava{background:#fff7e6;border:1px solid #f5d38a;color:#7a4b00;border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:13.5px}.fx-trava.on{background:#fdecec;border-color:#f3b4b4;color:#8a1c1c}
 .fx-solp{background:#fff7e6;border:1px solid #f5d38a;border-radius:10px;padding:6px 10px;font-size:12.5px;color:#7a4b00;max-width:260px}
+.fx-cht{white-space:pre-wrap;background:var(--sunk,#f3f5f9);border:1px solid var(--ln);border-radius:10px;padding:10px 12px;font:12.5px/1.45 ui-monospace,Consolas,monospace;margin:4px 0 6px;max-width:560px}
+.fx-solp{max-width:300px}
 </style>
 
 </head>
@@ -2727,6 +2729,11 @@ const travaAtiva = () => !!(FX.d && FX.d.trava && FX.d.trava.ativa) && !['ADMIN'
 const travado = p => travaAtiva() && !!p.conf;
 const solicDe = p => (FX.d.solicitacoes || []).find(x => x.periodo === p.id && x.status === 'PENDENTE');
 const txtPl = pl => pl.length ? pl.map(x => `${dataBr(x.ini)} a ${dataBr(fimDe(x))} (${x.dias}d)`).join(' + ') : 'sem férias no ano';
+function textoChamado(p, pl) {
+  const fmt = a => a.length ? a.map(x => `${dataBr(x.ini)} a ${dataBr(fimDe(x))} (${x.dias} dias)`).join(' + ') : 'sem férias neste ano';
+  const mot = (FX.m && FX.m.querySelector('[data-fxmot]') || {}).value || FX.ed.mot || '';
+  return `Alteração de férias\nColaborador: ${p.nome}\nMatrícula: ${codigoMatricula(p.matricula)} · ${p.revenda}\nFunção: ${p.cargo || ''}\nPeríodo aquisitivo: ${dataBr(p.iniAq)} a ${dataBr(p.fimAq)}\nFérias programadas hoje: ${fmt(p.plano || [])}\nNovas datas: ${fmt(pl)}\nMotivo: ${mot}\nSolicitante: ${S.user.nome}`;
+}
 function avisoTrava() {
   const t = FX.d.trava || {}; if (!t.desde) return '';
   return `<div class="fx-trava ${t.ativa ? 'on' : ''}">🔒 ${t.ativa ? `<b>Programação fechada desde ${dataBr(t.desde)}.</b> Férias já confirmadas só mudam por <b>pedido de alteração ao DP</b>, com pelo menos ${t.antecedencia} dias antes do início.` : `A programação fecha em <b>${dataBr(t.desde)}</b>. Depois disso, férias confirmadas só mudam por pedido ao DP (${t.antecedencia} dias antes do início).`}</div>`;
@@ -2735,9 +2742,9 @@ function avisoTrava() {
 function pedidosAlteracao() {
   if (!['ADMIN', 'DP'].includes(S.user.perfil)) return '';
   const L = (FX.d.solicitacoes || []).filter(x => x.status === 'PENDENTE'); if (!L.length) return '';
-  return `<section class="card fx-sol"><div class="card-h"><h3>📨 Pedidos de alteração de férias <span class="tg">${L.length}</span></h3><small class="hint">aprovando, as novas datas entram na programação e na escala</small></div><div class="card-b ovf"><table class="tb"><tr><th>Colaborador</th><th>Hoje</th><th>Pedido</th><th>Motivo</th><th>Quem pediu</th><th></th></tr>
-    ${L.map(x => `<tr><td><b>${esc(x.nome)}</b><br><small class="hint">${esc(x.matricula)}</small></td><td>${esc(txtPl(x.de))}</td><td><b>${esc(txtPl(x.para))}</b></td><td>${esc(x.motivo)}</td><td>${esc(x.pedidoPor)}<br><small class="hint">${esc(dh(x.pedidoEm))}</small></td>
-      <td style="white-space:nowrap"><button type="button" class="btn sm ok" data-fxdec="${esc(x.id)}" data-ap="1">Aprovar</button> <button type="button" class="btn sm" data-fxdec="${esc(x.id)}" data-ap="">Recusar</button></td></tr>`).join('')}</table></div></section>`;
+  return `<section class="card fx-sol"><div class="card-h"><h3>📨 Alterações de férias aguardando chamado do DP <span class="tg">${L.length}</span></h3><small class="hint">marque quando o chamado for concluído (as novas datas entram na programação e na escala) ou recusado</small></div><div class="card-b ovf"><table class="tb"><tr><th>Colaborador</th><th>Chamado</th><th>Hoje</th><th>Pedido</th><th>Motivo</th><th>Quem pediu</th><th></th></tr>
+    ${L.map(x => `<tr><td><b>${esc(x.nome)}</b><br><small class="hint">${esc(x.matricula)}</small></td><td><b>${esc(x.chamado || '—')}</b></td><td>${esc(txtPl(x.de))}</td><td><b>${esc(txtPl(x.para))}</b></td><td>${esc(x.motivo)}</td><td>${esc(x.pedidoPor)}<br><small class="hint">${esc(dh(x.pedidoEm))}</small></td>
+      <td style="white-space:nowrap"><button type="button" class="btn sm ok" data-fxdec="${esc(x.id)}" data-ap="1">✓ Concluído</button> <button type="button" class="btn sm" data-fxdec="${esc(x.id)}" data-ap="">✗ Recusado</button></td></tr>`).join('')}</table></div></section>`;
 }
 function cartaoPessoa(rs, base) {
   const p0 = rs[0], ok = rs.filter(obrig).every(p => statusF(p) === 'val');
@@ -2766,7 +2773,8 @@ function blocoPeriodo(p, k, n, base) {
     <div class="fx-acts">`;
   const sol = solicDe(p);
   if (st === 'val' && travado(p)) h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div>` + (sol
-    ? `<div class="fx-solp">⏳ Pedido ao DP: <b>${esc(txtPl(sol.para))}</b><br><small>${esc(String(sol.pedidoPor).split(' ')[0])} · ${esc(dh(sol.pedidoEm))}</small> <button type="button" class="fx-lk" data-fxcsol="${esc(sol.id)}">cancelar pedido</button></div>`
+    ? `<div class="fx-solp">⏳ Aguardando DP · chamado <b>${esc(sol.chamado || '—')}</b><br>Novas datas: <b>${esc(txtPl(sol.para))}</b><br><small>${esc(String(sol.pedidoPor).split(' ')[0])} · ${esc(dh(sol.pedidoEm))}</small>
+      <div class="fx-row" style="margin:6px 0 0;gap:6px"><button type="button" class="btn sm ok" data-fxdec="${esc(sol.id)}" data-ap="1">✓ DP concluiu</button><button type="button" class="btn sm" data-fxdec="${esc(sol.id)}" data-ap="">✗ DP recusou</button><button type="button" class="fx-lk" data-fxcsol="${esc(sol.id)}">cancelar</button></div></div>`
     : `<button type="button" class="btn sm" data-fxa="edit">📨 Solicitar alteração</button>`);
   else if (st === 'val') h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div><button type="button" class="btn sm" data-fxa="edit">${naoProg(p) ? 'Programar' : 'Alterar'}</button><button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`;
   else { if (pl.length) h += `<button type="button" class="btn sm ok" data-fxa="ok">✓ Confirmar</button>`; h += `<button type="button" class="btn sm" data-fxa="edit">${pl.length ? 'Trocar mês' : 'Escolher mês'}</button>`; if ((editado(p) || p.conf) && !travado(p)) h += `<button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`; }
@@ -2821,9 +2829,11 @@ function editorPeriodo(p, base) {
   h += (pl.length ? alertasF(p, pl).filter(a => a[0] === 'c') : []).map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('');
   if (travado(p)) {
     const t = FX.d.trava;
-    h += `<div class="fx-wn al">🔒 A programação está fechada: este pedido vai para o DP aprovar. Só dá para mudar férias que começam daqui a pelo menos ${t.antecedencia} dias, e a nova data também precisa respeitar esse prazo (a partir de ${dataBr(isoMaisDias(hoje(), t.antecedencia))}).</div>
-      <label class="f" style="margin-top:8px">Motivo da alteração (vai para o DP)<input data-fxmot maxlength="300" placeholder="Ex.: pedido do colaborador, mudança de escala…"></label>
-      <div class="fx-row"><button type="button" class="btn pr" data-fxa="solic" ${pl.length ? '' : 'disabled'}>📨 Enviar pedido de alteração</button><button type="button" class="btn" data-fxa="cancel">Cancelar</button></div></div>`;
+    h += `<div class="fx-wn al">🔒 A programação está fechada: a alteração precisa de chamado no sistema do DP. As férias só mudam aqui quando o chamado for concluído. Só dá para mudar férias que começam daqui a pelo menos ${t.antecedencia} dias, e a nova data também precisa respeitar esse prazo (a partir de ${dataBr(isoMaisDias(hoje(), t.antecedencia))}).</div>
+      <label class="f" style="margin-top:8px">1. Motivo da alteração<input data-fxmot maxlength="300" placeholder="Ex.: pedido do colaborador, mudança de escala…" value="${esc(FX.ed.mot || '')}"></label>
+      ${pl.length ? `<div class="lbl" style="margin-top:8px">2. Abra o chamado no sistema do DP com este texto</div><pre class="fx-cht" data-fxcht>${esc(textoChamado(p, pl))}</pre><button type="button" class="btn sm" data-fxcopcht style="width:auto;display:inline-flex">📋 Copiar texto do chamado</button>` : ''}
+      <label class="f" style="margin-top:8px;max-width:260px">3. Número do chamado no DP<input data-fxcham maxlength="40" placeholder="Ex.: 12345" value="${esc(FX.ed.cham || '')}"></label>
+      <div class="fx-row"><button type="button" class="btn pr" data-fxa="solic" ${pl.length ? '' : 'disabled'}>📨 Registrar pedido</button><button type="button" class="btn" data-fxa="cancel">Cancelar</button></div></div>`;
     return h;
   }
   h += `<div class="fx-row"><button type="button" class="btn ok" data-fxa="save" ${pl.length ? '' : 'disabled'}>✓ Salvar e confirmar</button><button type="button" class="btn" data-fxa="cancel">Cancelar</button>${editado(p) ? '<button type="button" class="fx-lk" data-fxa="reset">↺ voltar à sugestão</button>' : ''}</div></div>`;
@@ -3125,6 +3135,9 @@ function previaImportDP(R, nomeArq) {
 function ligaFerias(m) {
   const sel = (q, f) => { const el = m.querySelector(q); if (el) el.onchange = f; };
   sel('[data-fxfnsel]', e => { FX.fn = e.target.value; renderFerias(); });
+  m.oninput = e => { const t = e.target; if (!FX.ed) return;
+    if (t.hasAttribute('data-fxmot')) { FX.ed.mot = t.value; const p = FX.P.find(x => x.id === FX.ed.id), pr = m.querySelector('[data-fxcht]'); if (p && pr) pr.textContent = textoChamado(p, rascunho(p)); }
+    if (t.hasAttribute('data-fxcham')) FX.ed.cham = t.value; };
   sel('[data-fxsupsel]', e => { FX.sup = e.target.value; FX.mes = 0; renderFerias(); });
   const fh = m.querySelector('.fxh');
   if (fh) {
@@ -3177,21 +3190,23 @@ function ligaFerias(m) {
     if (b.hasAttribute('data-fxprint')) { document.body.classList.add('fx-imprime'); window.print(); setTimeout(() => document.body.classList.remove('fx-imprime'), 500); return; }
     if (b.hasAttribute('data-fximg')) return ocupado(b, async () => { const h2c = await carregaScript('https:\/\/cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas'); const cv = await h2c($('#fx-rcard'), { scale: 2, backgroundColor: '#ffffff' }); const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'Ferias_' + FX.ano + '_' + (FX.rel.rev === 'all' ? 'Todas' : FX.rel.rev.replace(/ /g, '_')) + '_' + (FX.rel.mes ? FM[FX.rel.mes - 1] : 'Geral') + '.png'; document.body.appendChild(a); a.click(); a.remove(); });
     // ações de um período
+    if (b.hasAttribute('data-fxcopcht')) { const t = (FX.m.querySelector('[data-fxcht]') || {}).textContent || ''; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Texto copiado: cole no chamado do DP.')).catch(() => toast('Não consegui copiar: selecione o texto e copie.', true)); return; }
     if (d.fxcsol) { if (!confirm('Cancelar o pedido de alteração?')) return; return ocupado(b, async () => { await call('feriasCancelarSolic', { id: d.fxcsol }); FX.d.solicitacoes = (FX.d.solicitacoes || []).filter(x => x.id !== d.fxcsol); renderFerias(); toast('Pedido cancelado.'); }); }
     if (d.fxdec) {
-      const ap = !!d.ap, obs = ap ? '' : prompt('Motivo da recusa (vai para o supervisor):'); if (!ap && !obs) return;
-      if (ap && !confirm('Aprovar? As novas datas entram na programação e na escala.')) return;
+      const ap = !!d.ap, obs = ap ? '' : prompt('O que o DP respondeu? (motivo da recusa)'); if (!ap && !obs) return;
+      if (ap && !confirm('O chamado foi concluído pelo DP? As novas datas entram na programação e na escala.')) return;
       return ocupado(b, async () => { const r = await call('feriasDecidir', { id: d.fxdec, aprovar: ap, obs }); const s0 = FX.d.solicitacoes.find(x => x.id === d.fxdec); if (s0) s0.status = r.status;
-        if (r.periodo) { const p = FX.P.find(x => x.id === r.periodo.id); if (p) { Object.assign(p, r.periodo); atualizaFeriasEscala(p); } } renderFerias(); toast(ap ? 'Aprovado: férias alteradas.' : 'Pedido recusado.'); });
+        if (r.periodo) { const p = FX.P.find(x => x.id === r.periodo.id); if (p) { Object.assign(p, r.periodo); atualizaFeriasEscala(p); } } renderFerias(); toast(ap ? 'Chamado concluído: férias alteradas.' : 'Pedido fechado como recusado.'); });
     }
     const bk = b.closest('[data-fxid]'); if (!bk) return; const p = FX.P.find(x => x.id === bk.dataset.fxid); if (!p) return;
     if (d.fxa === 'ok') return salvaPeriodo(p, p.ano !== FX.ano && !editado(p) ? { plano: plano(p), conf: true } : { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
     if (d.fxa === 'edit') { iniciaEdicao(p); renderFerias(); setTimeout(() => { const el = FX.m.querySelector(`[data-fxid="${CSS.escape(p.id)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); return; }
     if (d.fxa === 'cancel') { FX.ed = null; return renderFerias(); }
     if (d.fxa === 'solic') {
-      const pl = rascunho(p), mot = (FX.m.querySelector('[data-fxmot]') || {}).value || '';
+      const pl = rascunho(p), mot = (FX.m.querySelector('[data-fxmot]') || {}).value || '', ch = (FX.m.querySelector('[data-fxcham]') || {}).value || '';
       if (!mot.trim()) { toast('Informe o motivo da alteração.', true); const i = FX.m.querySelector('[data-fxmot]'); if (i) i.focus(); return; }
-      return ocupado(b, async () => { const r = await call('feriasSolicitar', { id: p.id, plano: pl, motivo: mot }); FX.d.solicitacoes = (FX.d.solicitacoes || []).filter(x => !(x.periodo === p.id && x.status === 'PENDENTE')).concat(r); FX.ed = null; renderFerias(); toast('Pedido enviado ao DP. As férias mudam quando ele aprovar.'); });
+      if (!ch.trim()) { toast('Abra o chamado no sistema do DP e informe o número.', true); const i = FX.m.querySelector('[data-fxcham]'); if (i) i.focus(); return; }
+      return ocupado(b, async () => { const r = await call('feriasSolicitar', { id: p.id, plano: pl, motivo: mot, chamado: ch }); FX.d.solicitacoes = (FX.d.solicitacoes || []).filter(x => !(x.periodo === p.id && x.status === 'PENDENTE')).concat(r); FX.ed = null; renderFerias(); toast('Pedido registrado. Quando o DP concluir o chamado, marque "DP concluiu" para as férias mudarem.'); });
     }
     if (d.fxa === 'naoprog') { FX.ed = null; return salvaPeriodo(p, { plano: [], conf: true }, `${p.nome.split(' ')[0]}: sem férias deste período em ${FX.ano}`); }
     if (d.fxa === 'saldo') {

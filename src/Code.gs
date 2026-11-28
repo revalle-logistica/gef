@@ -15,7 +15,7 @@ function autorizarAcessoExterno() {
 const ABAS = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'nome', 'login', 'telefone', 'senhaHash', 'salt', 'perfil', 'status', 'revendas', 'setores', 'criadoEm', 'aprovadoPor', 'aprovadoEm', 'ultimoAcesso', 'email'],
-  FeriasSolic: ['id', 'periodo', 'matricula', 'nome', 'revenda', 'de', 'para', 'motivo', 'status', 'pedidoPor', 'pedidoPorLogin', 'pedidoEm', 'decididoPor', 'decididoEm', 'obsDecisao'],
+  FeriasSolic: ['id', 'periodo', 'matricula', 'nome', 'revenda', 'de', 'para', 'motivo', 'chamado', 'status', 'pedidoPor', 'pedidoPorLogin', 'pedidoEm', 'decididoPor', 'decididoEm', 'obsDecisao'],
   Propostas: ['id', 'matricula', 'tipo', 'dados', 'obs', 'status', 'criadoPor', 'criadoPorNome', 'criadoEm', 'decididoPor', 'decididoEm', 'motivo'],
   Colaboradores: ['matricula', 'nome', 'funcao', 'revenda', 'setor', 'lotacao', 'turno', 'situacao', 'teleatendimento', 'ativo', 'atualizadoEm', 'tipoMot', 'supervisor', 'departamento', 'admissao'],
   Escalas: ['matricula', 'vigencia', 'dias', 'status', 'total', 'msgs', 'atualizadoPor', 'atualizadoEm', 'ate'],
@@ -128,7 +128,7 @@ function rotas_() {
   feriasAbrirAno: { f: feriasAbrirAno_, admin: true, dp: true },
   feriasSolicitar: { f: feriasSolicitar_ },
   feriasCancelarSolic: { f: feriasCancelarSolic_ },
-  feriasDecidir: { f: feriasDecidir_, admin: true, dp: true },
+  feriasDecidir: { f: feriasDecidir_ },
   classificar: { f: classificar_ },
   salvarPontos: { f: salvarPontos_ },
   salvarQlp: { f: salvarQlp_ },
