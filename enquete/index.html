@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap">
+<style>*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#F5F6FA;color:#14213D}
+header{background:#0B1F4D;color:#F5F6FA;padding:20px 20px 24px}header small{color:#F2A93B;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px}header h1{font-family:'Space Grotesk',Arial;font-size:26px;margin:6px 0 0}
+main{max-width:560px;margin:0 auto;padding:16px}
+.q{background:#fff;border:1px solid #E1E5EE;border-radius:18px;padding:18px;margin:14px 0}.q h2{font-family:'Space Grotesk',Arial;font-size:20px;margin:0 0 14px}
+.q button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:2px solid #DDE3EF;background:#F9FAFC;border-radius:14px;padding:14px;margin:8px 0;font:600 17px Inter,Arial;color:#14213D;cursor:pointer}
+.q button b{background:#0B1F4D;color:#F2A93B;border-radius:8px;min-width:30px;height:30px;display:grid;place-items:center;font-family:'Space Grotesk'}
+.q button.on{border-color:#F2A93B;background:#FFF5E1}.q.done button:not(.on){opacity:.45}
+.ok{color:#1E6B3A;font-weight:700;margin-top:8px}.er{color:#A3261B;font-weight:600;margin-top:8px}p.hint{color:#4A5568;font-size:14px;text-align:center}
+</style><title>Enquete · Escala 5x2 · Revalle</title></head><body>
+<header><small>Revalle · Escala 5x2</small><h1>Responda e veja o resultado ao vivo na tela</h1></header>
+<main id="m"></main><p class="hint">Uma resposta por pergunta, por celular. Anônima.</p>
+<script>
+const URL='https://krlkencgakuaisyrxeho.supabase.co',KEY='sb_publishable_YjqzrA164cNIDlBS11j06g_ewK9PJk6',EV='reuniao-5x2',P=[{"t":"O que mais vai mudar na sua semana com a escala 5x2?","o":["Mais tempo com a família","Mais descanso e menos cansaço","Resolver coisas pessoais sem faltar","Ainda estou me adaptando"]},
+{"t":"Para você, a segunda folga vai ser principalmente para:","o":["Família","Descanso e saúde","Estudos","Lazer e outros"]}];
+let dev=null;try{dev=localStorage.getItem('enq_dev');if(!dev){dev=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now()).replace(/-/g,'');localStorage.setItem('enq_dev',dev);}}catch(e){dev=String(Math.random()).slice(2)+Date.now();}
+const feito=k=>{try{return localStorage.getItem('enq_'+EV+'_'+k)}catch(e){return null}};
+const m=document.getElementById('m');
+m.innerHTML=P.map((q,i)=>`<section class="q" id="q${i}"><h2>${i+1}. ${q.t}</h2>${q.o.map((o,j)=>`<button data-q="${i}" data-o="${'ABCD'[j]}"><b>${'ABCD'[j]}</b>${o}</button>`).join('')}<div class="st"></div></section>`).join('');
+P.forEach((q,i)=>{const v=feito(i);if(v)marca(i,v,'✓ Resposta registrada. Obrigado!');});
+function marca(i,v,msg,erro){const s=document.getElementById('q'+i);s.classList.add('done');s.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.o===v));s.querySelector('.st').innerHTML=`<div class="${erro?'er':'ok'}">${msg}</div>`;}
+m.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const i=+b.dataset.q,v=b.dataset.o;if(feito(i))return;
+ b.disabled=true;
+ try{const r=await fetch(URL+'/rest/v1/enquete_voto',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({evento:EV,pergunta:i+1,opcao:v,dispositivo:dev})});
+  if(r.ok||r.status===409){try{localStorage.setItem('enq_'+EV+'_'+i,v)}catch(e){}marca(i,v,r.ok?'✓ Resposta registrada. Obrigado!':'Você já respondeu esta pergunta.');}
+  else{b.disabled=false;document.querySelector('#q'+i+' .st').innerHTML='<div class="er">Não consegui registrar. Tente de novo.</div>';}
+ }catch(err){b.disabled=false;document.querySelector('#q'+i+' .st').innerHTML='<div class="er">Sem conexão. Tente de novo.</div>';}};
+</script></body></html>
