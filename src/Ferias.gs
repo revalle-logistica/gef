@@ -35,8 +35,10 @@ function feriasDados_(u) {
       conf: p.conf === 'S', por: p.por, em: p.em, acomp: parse_(p.acomp, null), ajuste: p.ajuste
     });
   });
-  const anos = uniq_(pfLista_().map(function (p) { return p.ano; }));
-  return { periodos: out, volume: pfVolume_(), anos: anos, aguardando: aguardando, migracao: parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_MIGRACAO'), null) };
+  const anos = uniq_(pfLista_().map(function (p) { return p.ano; })), vis = {}; out.forEach(function (p) { vis[p.id] = 1; });
+  const cfg = cfg_(), solic = ler_('FeriasSolic').filter(function (s) { return vis[s.periodo] && (s.status === 'PENDENTE' || s.decididoEm >= isoMaisDias(hoje_(), -30)); })
+    .map(function (s) { return { id: s.id, periodo: s.periodo, matricula: s.matricula, nome: s.nome, de: parse_(s.de, []), para: parse_(s.para, []), motivo: s.motivo, status: s.status, pedidoPor: s.pedidoPor, pedidoEm: s.pedidoEm, decididoPor: s.decididoPor, decididoEm: s.decididoEm, obsDecisao: s.obsDecisao }; });
+  return { trava: { desde: cfg.FERIAS_TRAVA || '', antecedencia: +cfg.FERIAS_ANTECEDENCIA || 45, ativa: !!cfg.FERIAS_TRAVA && hoje_() >= cfg.FERIAS_TRAVA }, solicitacoes: solic, periodos: out, volume: pfVolume_(), anos: anos, aguardando: aguardando, migracao: parse_(PropertiesService.getScriptProperties().getProperty('FERIAS_MIGRACAO'), null) };
 }
 
 function pfAcha_(u, id, lst) {
@@ -76,6 +78,7 @@ function pfEntradas_(periodos, cols) {
 function feriasSalvar_(u, d) {
   return comLock_(function () {
     const lst = pfLista_(), a = pfAcha_(u, d.id, lst), p = a.p;
+    const tv = pfTrava_(u, p); if (tv) throw new Error(tv);
     if (d.reset) { p.plano = ''; p.conf = 'N'; }
     else {
       if (d.plano !== undefined) {
@@ -387,4 +390,83 @@ function feriasAbrirAnoAuto_() {
   if (!/^20\d\d$/.test(ano)) throw new Error('Não liberado.');
   props.deleteProperty('ABRIR_ANO_FERIAS');
   return feriasAbrirAno_({ nome: 'Sistema', login: 'sistema' }, { ano: ano });
+}
+
+
+/* ---------- trava da programação e solicitações de alteração ---------- */
+function hoje_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
+/** Mensagem de bloqueio (ou '') para mexer num período: depois da data da trava, férias confirmadas só mudam por solicitação. DP e administrador mudam direto. */
+function pfTrava_(u, p) {
+  if (u.perfil === 'ADMIN' || u.perfil === 'DP') return '';
+  const cfg = cfg_(), dt = String(cfg.FERIAS_TRAVA || '');
+  if (!dt || hoje_() < dt || p.conf !== 'S') return '';
+  return 'A programação de férias está fechada desde ' + brData_(dt) + '. Para mudar férias já confirmadas, use "Solicitar alteração" (o DP aprova).';
+}
+/** Supervisor pede para mudar férias confirmadas depois da trava: precisa de N dias de antecedência do início (atual e novo). */
+function feriasSolicitar_(u, d) {
+  return comLock_(function () {
+    const a = pfAcha_(u, d.id), p = a.p, cfg = cfg_(), ant = +cfg.FERIAS_ANTECEDENCIA || 45, hj = hoje_(), lim = isoMaisDias(hj, ant);
+    if (p.conf !== 'S') throw new Error('Estas férias ainda não foram confirmadas: altere direto.');
+    const de = pfPlano_(p), para = pfPlanoLimpo_(d.plano) || [], motivo = String(d.motivo || '').trim().slice(0, 300);
+    if (!motivo) throw new Error('Informe o motivo da alteração.');
+    if (!para.length && String(p.prazo) <= p.ano + '-12-31') throw new Error('Não dá para deixar sem férias: o prazo vence em ' + p.ano + '.');
+    const mud = function (x) { return !para.some(function (y) { return y.ini === x.ini && y.dias === x.dias; }); };
+    de.filter(mud).forEach(function (x) { if (x.ini < lim) throw new Error('As férias de ' + brData_(x.ini) + ' começam em menos de ' + ant + ' dias. Pelo prazo do DP não dá mais para alterar pelo sistema: fale com o DP.'); });
+    para.filter(function (y) { return !de.some(function (x) { return x.ini === y.ini && x.dias === y.dias; }); }).forEach(function (y) {
+      if (y.ini < lim) throw new Error('A nova data (' + brData_(y.ini) + ') precisa ser daqui a pelo menos ' + ant + ' dias (a partir de ' + brData_(lim) + ').');
+    });
+    if (JSON.stringify(de) === JSON.stringify(para)) throw new Error('As datas são as mesmas de hoje.');
+    const lst = ler_('FeriasSolic'), quando = agora_();
+    lst.forEach(function (s) { if (s.periodo === p.id && s.status === 'PENDENTE') { s.status = 'SUBSTITUIDA'; s.decididoEm = quando; } });
+    const s = { id: Utilities.getUuid(), periodo: p.id, matricula: a.c.matricula, nome: a.c.nome, revenda: a.c.revenda, de: JSON.stringify(de), para: JSON.stringify(para), motivo: motivo,
+      status: 'PENDENTE', pedidoPor: u.nome, pedidoPorLogin: u.login, pedidoEm: quando, decididoPor: '', decididoEm: '', obsDecisao: '' };
+    lst.push(s); gravarTudo_('FeriasSolic', lst);
+    log_(u, a.c.matricula, 'férias: pediu alteração', s.de + ' → ' + s.para + ' · ' + motivo);
+    try { avisaSolic_(s, 'nova'); } catch (e) { /* aviso é extra */ }
+    return { id: s.id, periodo: s.periodo, matricula: s.matricula, nome: s.nome, de: de, para: para, motivo: motivo, status: s.status, pedidoPor: s.pedidoPor, pedidoEm: s.pedidoEm };
+  });
+}
+function feriasCancelarSolic_(u, d) {
+  return comLock_(function () {
+    const lst = ler_('FeriasSolic'), s = lst.filter(function (x) { return x.id === String(d.id); })[0];
+    if (!s || s.status !== 'PENDENTE') throw new Error('Solicitação não encontrada ou já decidida.');
+    pfAcha_(u, s.periodo);
+    s.status = 'CANCELADA'; s.decididoPor = u.nome; s.decididoEm = agora_(); gravarTudo_('FeriasSolic', lst);
+    log_(u, s.matricula, 'férias: cancelou pedido de alteração', '');
+    return { ok: true };
+  });
+}
+/** DP/administrador aprova (aplica as novas datas) ou recusa. */
+function feriasDecidir_(u, d) {
+  return comLock_(function () {
+    const lst = ler_('FeriasSolic'), s = lst.filter(function (x) { return x.id === String(d.id); })[0];
+    if (!s || s.status !== 'PENDENTE') throw new Error('Solicitação não encontrada ou já decidida.');
+    const obs = String(d.obs || '').trim().slice(0, 300), quando = agora_();
+    let per = null;
+    if (d.aprovar) {
+      const pl = pfLista_(), a = pfAcha_(u, s.periodo, pl), p = a.p;
+      p.plano = s.para; p.conf = 'S'; p.por = s.pedidoPor + ' (aprovado por ' + u.nome + ')'; p.em = quando; p.editadoGestao = 'S';
+      gravarLinha_('FeriasPeriodos', p); pfEntradas_([p]); per = feriasUm_(p, a.c);
+    } else if (!obs) throw new Error('Diga o motivo da recusa.');
+    s.status = d.aprovar ? 'APROVADA' : 'RECUSADA'; s.decididoPor = u.nome; s.decididoEm = quando; s.obsDecisao = obs;
+    gravarTudo_('FeriasSolic', lst);
+    log_(u, s.matricula, 'férias: ' + (d.aprovar ? 'aprovou' : 'recusou') + ' alteração', s.para + (obs ? ' · ' + obs : ''));
+    try { avisaSolic_(s, 'decisao'); } catch (e) { /* aviso é extra */ }
+    return { status: s.status, periodo: per };
+  });
+}
+function avisaSolic_(s, tipo) {
+  const cfg = cfg_(), us = ler_('Usuarios'), link = cfg.LINK_SISTEMA || '';
+  const fmt = function (j) { const a = parse_(j, []); return a.length ? a.map(function (x) { return brData_(x.ini) + ' (' + x.dias + ' dias)'; }).join(' + ') : 'sem férias no ano'; };
+  const h = function (x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
+  const corpo = '<p><b>' + h(s.nome) + '</b> (' + h(s.matricula) + ' · ' + h(s.revenda) + ')</p><p>Hoje: ' + h(fmt(s.de)) + '<br>Pedido: <b>' + h(fmt(s.para)) + '</b><br>Motivo: ' + h(s.motivo) + '</p>';
+  if (tipo === 'nova') {
+    const para = us.filter(function (x) { return x.status === 'ATIVO' && x.perfil === 'DP'; }).map(emailDe_).filter(String);
+    if (!para.length) return;
+    MailApp.sendEmail({ to: para.join(','), subject: 'GEF · pedido de alteração de férias: ' + s.nome, htmlBody: '<p>' + h(s.pedidoPor) + ' pediu para alterar férias já confirmadas:</p>' + corpo + '<p>Aprove ou recuse em <a href="' + h(link) + '">Férias → Programar</a>.</p>', name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
+  } else {
+    const sup = us.filter(function (x) { return x.login === s.pedidoPorLogin; })[0], para = emailDe_(sup);
+    if (!para) return;
+    MailApp.sendEmail({ to: para, subject: 'GEF · alteração de férias ' + (s.status === 'APROVADA' ? 'aprovada' : 'recusada') + ': ' + s.nome, htmlBody: '<p>O pedido de alteração foi <b>' + (s.status === 'APROVADA' ? 'aprovado' : 'recusado') + '</b> por ' + h(s.decididoPor) + '.</p>' + corpo + (s.obsDecisao ? '<p>Observação: ' + h(s.obsDecisao) + '</p>' : ''), name: 'GEF · ' + (cfg.EMPRESA || 'Revalle') });
+  }
 }

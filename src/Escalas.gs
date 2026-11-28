@@ -358,7 +358,7 @@ function converterPlanilha_(u, d) {
 
 function salvarConfig_(u, d) {
   // o DP só ajusta como os departamentos do relatório entram na importação
-  if (u.perfil === 'DP' && Object.keys(d || {}).some(function (k) { return ['DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'PRAZO_LIBERACAO_DP', 'PRAZO_DIA_MES'].indexOf(k) < 0; }))
+  if (u.perfil === 'DP' && Object.keys(d || {}).some(function (k) { return ['DEPARTAMENTOS', 'REVENDAS_SIGLAS', 'PRAZO_LIBERACAO_DP', 'PRAZO_DIA_MES', 'FERIAS_TRAVA', 'FERIAS_ANTECEDENCIA'].indexOf(k) < 0; }))
     throw new Error('O perfil DP só altera os departamentos da importação e os prazos de liberação ao DP.');
   return comLock_(function () {
     const linhas = ler_('Config');

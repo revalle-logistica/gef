@@ -438,6 +438,8 @@ table.mt{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%
 .mn-cal .mc.hj{outline:2px solid var(--ac);outline-offset:1px}.mn-cal .mc.sel{box-shadow:0 0 0 2px #0b1f4d inset}.mn-cal .mc i{position:absolute;top:1px;right:3px;font-style:normal;font-size:10px}
 .mn-leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}.mn-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}.mn-leg i.t{background:#c5d5fb}.mn-leg i.f{background:#bfe3cc}.mn-leg i.v{background:#d8c8f3}
 .lk-lote tr.ok td{background:#eefaf2}
+.fx-trava{background:#fff7e6;border:1px solid #f5d38a;color:#7a4b00;border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:13.5px}.fx-trava.on{background:#fdecec;border-color:#f3b4b4;color:#8a1c1c}
+.fx-solp{background:#fff7e6;border:1px solid #f5d38a;border-radius:10px;padding:6px 10px;font-size:12.5px;color:#7a4b00;max-width:260px}
 </style>
 
 </head>
@@ -2966,7 +2968,7 @@ function progFerias() {
   const val = ob.filter(p => statusF(p) === 'val').length, pc = ob.length ? val / ob.length * 100 : 0, pend = ob.length - val;
   const cor = pc >= 100 ? 'var(--ok)' : pc >= 50 ? '#e8a317' : 'var(--er)';
   const r = 42, cc = 2 * Math.PI * r;
-  let h = `<section class="card"><div class="fx-ring"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--ln)" stroke-width="10"/><circle cx="50" cy="50" r="${r}" fill="none" stroke="${cor}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${cc * pc / 100} ${cc}" transform="rotate(-90 50 50)"/><text x="50" y="56" text-anchor="middle" font-size="20" font-weight="800" fill="var(--ink)">${Math.round(pc)}%</text></svg>
+  let h = avisoTrava() + pedidosAlteracao() + `<section class="card"><div class="fx-ring"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--ln)" stroke-width="10"/><circle cx="50" cy="50" r="${r}" fill="none" stroke="${cor}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${cc * pc / 100} ${cc}" transform="rotate(-90 50 50)"/><text x="50" y="56" text-anchor="middle" font-size="20" font-weight="800" fill="var(--ink)">${Math.round(pc)}%</text></svg>
     <div><h3>${pend ? `Faltam ${pend} férias para confirmar` : ob.length ? 'Equipe toda confirmada ✓' : 'Nada para programar'}</h3><small>${val} de ${ob.length} confirmadas · ${new Set(base.map(p => p.matricula)).size} pessoas${FX.sup || H.dep || H.lc || H.tipo || H.loc || H.tur || FX.fn ? ' neste filtro' : ''}</small>
     <div class="chips" style="padding:8px 0 0">${[['pend', 'Pendentes', pend], ['ok', 'Confirmadas', val], ['all', 'Todas', ob.length]].map(([k, l, n]) => `<button type="button" class="chip" data-fxtab="${k}" aria-pressed="${FX.tab === k}">${l} <b>${n}</b></button>`).join('')}</div></div></div>`;
   // filtros de local e função
@@ -3000,6 +3002,23 @@ function progFerias() {
   return h;
 }
 function corCalor(p) { if (p <= 0) return ['var(--sunk)', 'var(--fa)']; if (p < 4) return ['#dbe8fb', 'var(--ink)']; if (p < 8) return ['#b1cdf5', 'var(--ink)']; if (p < 12) return ['#5f97e6', '#fff']; if (p < 16) return ['#2a66c8', '#fff']; return ['#0b2a6b', '#fff']; }
+/** Trava da programação: depois da data, supervisor só muda férias confirmadas por pedido ao DP. */
+const travaAtiva = () => !!(FX.d && FX.d.trava && FX.d.trava.ativa) && !['ADMIN', 'DP'].includes(S.user.perfil);
+const travado = p => travaAtiva() && !!p.conf;
+const solicDe = p => (FX.d.solicitacoes || []).find(x => x.periodo === p.id && x.status === 'PENDENTE');
+const txtPl = pl => pl.length ? pl.map(x => `${dataBr(x.ini)} a ${dataBr(fimDe(x))} (${x.dias}d)`).join(' + ') : 'sem férias no ano';
+function avisoTrava() {
+  const t = FX.d.trava || {}; if (!t.desde) return '';
+  return `<div class="fx-trava ${t.ativa ? 'on' : ''}">🔒 ${t.ativa ? `<b>Programação fechada desde ${dataBr(t.desde)}.</b> Férias já confirmadas só mudam por <b>pedido de alteração ao DP</b>, com pelo menos ${t.antecedencia} dias antes do início.` : `A programação fecha em <b>${dataBr(t.desde)}</b>. Depois disso, férias confirmadas só mudam por pedido ao DP (${t.antecedencia} dias antes do início).`}</div>`;
+}
+/** DP e administrador: pedidos de alteração esperando decisão. */
+function pedidosAlteracao() {
+  if (!['ADMIN', 'DP'].includes(S.user.perfil)) return '';
+  const L = (FX.d.solicitacoes || []).filter(x => x.status === 'PENDENTE'); if (!L.length) return '';
+  return `<section class="card fx-sol"><div class="card-h"><h3>📨 Pedidos de alteração de férias <span class="tg">${L.length}</span></h3><small class="hint">aprovando, as novas datas entram na programação e na escala</small></div><div class="card-b ovf"><table class="tb"><tr><th>Colaborador</th><th>Hoje</th><th>Pedido</th><th>Motivo</th><th>Quem pediu</th><th></th></tr>
+    ${L.map(x => `<tr><td><b>${esc(x.nome)}</b><br><small class="hint">${esc(x.matricula)}</small></td><td>${esc(txtPl(x.de))}</td><td><b>${esc(txtPl(x.para))}</b></td><td>${esc(x.motivo)}</td><td>${esc(x.pedidoPor)}<br><small class="hint">${esc(dh(x.pedidoEm))}</small></td>
+      <td style="white-space:nowrap"><button type="button" class="btn sm ok" data-fxdec="${esc(x.id)}" data-ap="1">Aprovar</button> <button type="button" class="btn sm" data-fxdec="${esc(x.id)}" data-ap="">Recusar</button></td></tr>`).join('')}</table></div></section>`;
+}
 function cartaoPessoa(rs, base) {
   const p0 = rs[0], ok = rs.filter(obrig).every(p => statusF(p) === 'val');
   return `<div class="card fx-pc${ok ? ' ok' : ''}"><div class="av" style="background:${avCor(p0.nome)}">${iniciais(p0.nome)}</div><div class="fx-pb">
@@ -3025,8 +3044,12 @@ function blocoPeriodo(p, k, n, base) {
     <div class="fx-tlw">${linhaMeses(p, pl)}<div>${pl.length ? `<div class="fx-per">${perTxt(pl)}</div>` : naoProg(p) ? `<div class="fx-per">Sem férias em ${FX.ano}</div>` : '<div class="fx-per er">Sem data: toque num mês</div>'}<small class="hint">${naoProg(p) ? 'fica para ' + (+FX.ano + 1) + ' · prazo ' + dataBr(p.prazo) : fonte}</small></div></div>
     ${cr.map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('')}${pl.length && tot < p.saldo ? `<div class="fx-wn al">⚠ Programado ${tot} de ${p.saldo} dias: faltam ${p.saldo - tot}.</div>` : ''}</div>
     <div class="fx-acts">`;
-  if (st === 'val') h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div><button type="button" class="btn sm" data-fxa="edit">${naoProg(p) ? 'Programar' : 'Alterar'}</button><button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`;
-  else { if (pl.length) h += `<button type="button" class="btn sm ok" data-fxa="ok">✓ Confirmar</button>`; h += `<button type="button" class="btn sm" data-fxa="edit">${pl.length ? 'Trocar mês' : 'Escolher mês'}</button>`; if (editado(p) || p.conf) h += `<button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`; }
+  const sol = solicDe(p);
+  if (st === 'val' && travado(p)) h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div>` + (sol
+    ? `<div class="fx-solp">⏳ Pedido ao DP: <b>${esc(txtPl(sol.para))}</b><br><small>${esc(String(sol.pedidoPor).split(' ')[0])} · ${esc(dh(sol.pedidoEm))}</small> <button type="button" class="fx-lk" data-fxcsol="${esc(sol.id)}">cancelar pedido</button></div>`
+    : `<button type="button" class="btn sm" data-fxa="edit">📨 Solicitar alteração</button>`);
+  else if (st === 'val') h += `<div class="fx-ok">✓ ${naoProg(p) ? 'Sem férias em ' + FX.ano : 'Confirmado'}${p.por ? ' por ' + esc(String(p.por).split(' ')[0]) : ''}</div><button type="button" class="btn sm" data-fxa="edit">${naoProg(p) ? 'Programar' : 'Alterar'}</button><button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`;
+  else { if (pl.length) h += `<button type="button" class="btn sm ok" data-fxa="ok">✓ Confirmar</button>`; h += `<button type="button" class="btn sm" data-fxa="edit">${pl.length ? 'Trocar mês' : 'Escolher mês'}</button>`; if ((editado(p) || p.conf) && !travado(p)) h += `<button type="button" class="fx-lk" data-fxa="reset">↺ Desfazer</button>`; }
   if (st !== 'val' && podeAdiar(p) && p.ativo) h += `<button type="button" class="fx-lk" data-fxa="naoprog" title="Prazo ${dataBr(p.prazo)}: dá para tirar no ano seguinte">Não programar em ${FX.ano}</button>`;
   h += '</div>';
   if (ed) h += editorPeriodo(p, base);
@@ -3076,6 +3099,13 @@ function editorPeriodo(p, base) {
   h += `<div class="lbl">Fica assim</div><div class="fx-per">${pl.length ? perTxt(pl) : 'escolha o mês'}</div>`;
   if (pl.length) h += mesmaFuncao(p, pl);
   h += (pl.length ? alertasF(p, pl).filter(a => a[0] === 'c') : []).map(a => `<div class="fx-wn">⚠ ${esc(a[1])}</div>`).join('');
+  if (travado(p)) {
+    const t = FX.d.trava;
+    h += `<div class="fx-wn al">🔒 A programação está fechada: este pedido vai para o DP aprovar. Só dá para mudar férias que começam daqui a pelo menos ${t.antecedencia} dias, e a nova data também precisa respeitar esse prazo (a partir de ${dataBr(isoMaisDias(hoje(), t.antecedencia))}).</div>
+      <label class="f" style="margin-top:8px">Motivo da alteração (vai para o DP)<input data-fxmot maxlength="300" placeholder="Ex.: pedido do colaborador, mudança de escala…"></label>
+      <div class="fx-row"><button type="button" class="btn pr" data-fxa="solic" ${pl.length ? '' : 'disabled'}>📨 Enviar pedido de alteração</button><button type="button" class="btn" data-fxa="cancel">Cancelar</button></div></div>`;
+    return h;
+  }
   h += `<div class="fx-row"><button type="button" class="btn ok" data-fxa="save" ${pl.length ? '' : 'disabled'}>✓ Salvar e confirmar</button><button type="button" class="btn" data-fxa="cancel">Cancelar</button>${editado(p) ? '<button type="button" class="fx-lk" data-fxa="reset">↺ voltar à sugestão</button>' : ''}</div></div>`;
   return h;
 }
@@ -3301,7 +3331,9 @@ function dpFerias() {
     ${dp ? `<section class="card"><div class="card-h"><h3>📥 Importar a programação de um ano novo</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Para o próximo ano: importe a planilha "Programação de férias" que o DP gera para cada unidade (uma linha por período aquisitivo). A Gestão cria os períodos e sugere o mesmo período do ano anterior. O que o DP já programou entra como confirmado.</p>
       <label class="btn" for="dpi-file">📎 Escolher a planilha</label><input type="file" id="dpi-file" accept=".xlsx,.xls" hidden></div></section>
     <section class="card"><div class="card-h"><h3>🗓️ Abrir o ano seguinte</h3></div><div class="card-b"><p class="hint" style="margin-top:0">Cria, para quem já está no módulo, o próximo período aquisitivo, com sugestão nos mesmos meses do ano anterior, para os supervisores já programarem. Ninguém sai confirmado. Se depois o DP importar a planilha desse ano, os mesmos períodos são atualizados.</p>
-      <button type="button" class="btn" data-fxabrir="${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1}">Abrir ${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1} para programar</button></div></section>` : ''}</div>
+      <button type="button" class="btn" data-fxabrir="${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1}">Abrir ${Math.max(+FX.ano, ...FX.P.map(p => +p.ano)) + 1} para programar</button></div></section>
+    <section class="card"><div class="card-h"><h3>🔒 Fechamento da programação</h3></div><div class="card-b"><p class="hint" style="margin-top:0">A partir da data, o supervisor não muda mais férias já confirmadas: ele envia um <b>pedido de alteração</b> e o DP aprova ou recusa (com e-mail para os dois lados). Só dá para pedir se o início das férias estiver a pelo menos N dias. DP e administrador continuam alterando direto.</p>
+      <div class="fx-row" style="align-items:flex-end"><label class="f">Fecha em<input type="date" data-fxtrava value="${esc((FX.d.trava || {}).desde || '')}"></label><label class="f" style="max-width:170px">Antecedência mínima (dias)<input type="number" min="0" max="120" data-fxant value="${(FX.d.trava || {}).antecedencia || 45}"></label><button type="button" class="btn pr" data-fxtravasalva>Salvar</button></div></div></section>` : ''}</div>
     ${adm ? `<section class="card"><div class="card-h"><h3>⬇ Sistema anterior (Férias 2027)</h3></div><div class="card-b"><p class="hint" style="margin-top:0">${mg ? `Trazido em ${esc(dh(mg.em))} por ${esc(mg.por)}: ${mg.novos + mg.atualizados} períodos, ${mg.confirmadas} confirmados, ${mg.feriados} feriados novos.` : 'Ainda não trazido.'} Trazer de novo atualiza só o que ainda não foi mexido aqui na Gestão.</p>
       <button type="button" class="btn" data-fxmig>⬇ Trazer de novo</button>
       ${Object.keys(ag).length ? `<p class="hint">Guardados de departamentos ainda não ativados (ative em Regras → Departamentos e importe o DP): ${Object.entries(ag).map(([k, n]) => esc(k) + ' (' + n + ')').join(' · ')}</p>` : ''}</div></section>` : ''}`;
@@ -3393,6 +3425,8 @@ function ligaFerias(m) {
     el.querySelector('[data-fxacs]').onchange = grava; el.querySelector('[data-fxaco]').onchange = grava;
   });
   const f1 = m.querySelector('#dp-file'); if (f1) f1.onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) preencheDP(f); };
+  const tvb = m.querySelector('[data-fxtravasalva]'); if (tvb) tvb.onclick = ev => { const v = m.querySelector('[data-fxtrava]').value, n = Math.round(+m.querySelector('[data-fxant]').value || 45);
+    ocupado(ev.currentTarget, async () => { S.cfg = await call('salvarConfig', { FERIAS_TRAVA: v, FERIAS_ANTECEDENCIA: String(n) }); await carregaFerias(true); renderFerias(); toast(v ? `Programação fecha em ${dataBr(v)} (pedidos com ${n} dias de antecedência).` : 'Trava desligada.'); }); };
   const ab = m.querySelector('[data-fxabrir]'); if (ab) ab.onclick = ev => { const ano = ab.dataset.fxabrir; if (!confirm(`Abrir ${ano} para programar? Os períodos de ${ano} serão criados com sugestão.`)) return; ocupado(ev.currentTarget, async () => {
     const r = await call('feriasAbrirAno', { ano }); await carregaFerias(true); FX.ano = ano; FX.aba = 'prog'; renderFerias();
     toast(`${ano} aberto: <b>${r.novos}</b> períodos criados${r.jaTinha ? `, ${r.jaTinha} já existiam` : ''}.`); }); };
@@ -3423,10 +3457,22 @@ function ligaFerias(m) {
     if (b.hasAttribute('data-fxprint')) { document.body.classList.add('fx-imprime'); window.print(); setTimeout(() => document.body.classList.remove('fx-imprime'), 500); return; }
     if (b.hasAttribute('data-fximg')) return ocupado(b, async () => { const h2c = await carregaScript('https:\/\/cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas'); const cv = await h2c($('#fx-rcard'), { scale: 2, backgroundColor: '#ffffff' }); const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'Ferias_' + FX.ano + '_' + (FX.rel.rev === 'all' ? 'Todas' : FX.rel.rev.replace(/ /g, '_')) + '_' + (FX.rel.mes ? FM[FX.rel.mes - 1] : 'Geral') + '.png'; document.body.appendChild(a); a.click(); a.remove(); });
     // ações de um período
+    if (d.fxcsol) { if (!confirm('Cancelar o pedido de alteração?')) return; return ocupado(b, async () => { await call('feriasCancelarSolic', { id: d.fxcsol }); FX.d.solicitacoes = (FX.d.solicitacoes || []).filter(x => x.id !== d.fxcsol); renderFerias(); toast('Pedido cancelado.'); }); }
+    if (d.fxdec) {
+      const ap = !!d.ap, obs = ap ? '' : prompt('Motivo da recusa (vai para o supervisor):'); if (!ap && !obs) return;
+      if (ap && !confirm('Aprovar? As novas datas entram na programação e na escala.')) return;
+      return ocupado(b, async () => { const r = await call('feriasDecidir', { id: d.fxdec, aprovar: ap, obs }); const s0 = FX.d.solicitacoes.find(x => x.id === d.fxdec); if (s0) s0.status = r.status;
+        if (r.periodo) { const p = FX.P.find(x => x.id === r.periodo.id); if (p) { Object.assign(p, r.periodo); atualizaFeriasEscala(p); } } renderFerias(); toast(ap ? 'Aprovado: férias alteradas.' : 'Pedido recusado.'); });
+    }
     const bk = b.closest('[data-fxid]'); if (!bk) return; const p = FX.P.find(x => x.id === bk.dataset.fxid); if (!p) return;
     if (d.fxa === 'ok') return salvaPeriodo(p, p.ano !== FX.ano && !editado(p) ? { plano: plano(p), conf: true } : { conf: true }, '✓ ' + p.nome.split(' ')[0] + ' confirmado');
     if (d.fxa === 'edit') { iniciaEdicao(p); renderFerias(); setTimeout(() => { const el = FX.m.querySelector(`[data-fxid="${CSS.escape(p.id)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); return; }
     if (d.fxa === 'cancel') { FX.ed = null; return renderFerias(); }
+    if (d.fxa === 'solic') {
+      const pl = rascunho(p), mot = (FX.m.querySelector('[data-fxmot]') || {}).value || '';
+      if (!mot.trim()) { toast('Informe o motivo da alteração.', true); const i = FX.m.querySelector('[data-fxmot]'); if (i) i.focus(); return; }
+      return ocupado(b, async () => { const r = await call('feriasSolicitar', { id: p.id, plano: pl, motivo: mot }); FX.d.solicitacoes = (FX.d.solicitacoes || []).filter(x => !(x.periodo === p.id && x.status === 'PENDENTE')).concat(r); FX.ed = null; renderFerias(); toast('Pedido enviado ao DP. As férias mudam quando ele aprovar.'); });
+    }
     if (d.fxa === 'naoprog') { FX.ed = null; return salvaPeriodo(p, { plano: [], conf: true }, `${p.nome.split(' ')[0]}: sem férias deste período em ${FX.ano}`); }
     if (d.fxa === 'saldo') {
       const v = prompt(`Saldo correto de dias de férias de ${p.nome} neste período aquisitivo (0 a 30):`, String(+p.saldo || 30)); if (v === null) return;
@@ -3435,6 +3481,7 @@ function ligaFerias(m) {
     }
     if (d.fxa === 'reset') { FX.ed = null; return salvaPeriodo(p, { reset: true }, '↺ ' + p.nome.split(' ')[0] + ': voltou à sugestão'); }
     if (d.fxa === 'save') { const pl = rascunho(p); if (!pl.length) return; FX.ed = null; return salvaPeriodo(p, { plano: mesmoQueSugestao(p, pl) && p.ano === FX.ano ? null : pl, conf: true }, '✓ Férias de ' + p.nome.split(' ')[0] + ' salvas'); }
+    if (d.fxtm && travado(p)) { iniciaEdicao(p); return renderFerias(); }
     if (d.fxtm) {
       const mm = +d.fxtm, y = +FX.ano; let pl = JSON.parse(JSON.stringify(plano(p)));
       if (!pl.length) pl = [{ ini: isoDe(y, mm, diaBomPerto(p.revenda, y, mm, 1)), dias: Math.min(30, Math.max(p.saldo || 30, 5)) }];
