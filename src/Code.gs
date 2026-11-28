@@ -134,6 +134,7 @@ function rotas_() {
   salvarQlp: { f: salvarQlp_ },
   removerQlp: { f: removerQlp_ },
   removerColaboradores: { f: removerColaboradores_, admin: true, dp: true },
+  reativarColaboradores: { f: reativarColaboradores_, admin: true, dp: true },
   salvarFerias: { f: salvarFerias_ },
   removerFerias: { f: removerFerias_ },
   salvarFeriado: { f: salvarFeriado_, admin: true },

@@ -1350,6 +1350,23 @@ function desenhaEditor() {
     });
   };
 }
+/** Depois da importação: quem está na planilha do DP mas foi removido no sistema. Marcados podem voltar. */
+function reativarRemovidos(L) {
+  const sel = new Set(L.map(x => x.matricula)), grupos = {};
+  L.forEach(x => { const k = `${x.revenda} · ${x.setor || 'sem setor'}`; (grupos[k] = grupos[k] || []).push(x); });
+  abrirModal(`<div class="mdl-h"><div><h2>${L.length} da planilha estão removidos no sistema</h2><small>Eles estão no relatório do DP, mas alguém removeu do GEF. Se foi engano, reative: escalas, férias e cadastro voltam como estavam.</small></div><button type="button" class="x" data-x aria-label="Fechar">×</button></div>
+    <div class="mdl-b">${Object.keys(grupos).sort().map(k => `<div class="lbl" style="font-weight:700;margin:10px 0 4px"><label class="ck"><input type="checkbox" data-rgk="${esc(k)}" checked> ${esc(k)} <span class="hint">(${grupos[k].length})</span></label></div>
+      <div class="ck" style="display:grid;gap:3px;padding-left:20px">${grupos[k].map(x => `<label><input type="checkbox" data-rm="${esc(x.matricula)}" data-rg="${esc(k)}" checked> ${esc(x.nome)} <span class="hint">· ${esc(x.funcao || '')} · ${esc(codigoMatricula(x.matricula))}${x.quando ? ' · removido em ' + esc(dh(x.quando)) : ''}</span></label>`).join('')}</div>`).join('')}</div>
+    <div class="mdl-f"><span class="hint" id="rr-n"></span><span style="flex:1"></span><button type="button" class="btn" data-x>Deixar removidos</button><button type="button" class="btn pr" data-rrok>Reativar marcados</button></div>`, true);
+  const box = modal.querySelector('.mdl'), conta = () => { $('#rr-n').textContent = `${sel.size} marcado${sel.size === 1 ? '' : 's'}`; };
+  box.addEventListener('change', e => {
+    const g = e.target.dataset.rgk; if (g !== undefined) { box.querySelectorAll(`[data-rg="${CSS.escape(g)}"]`).forEach(c => { c.checked = e.target.checked; c.checked ? sel.add(c.dataset.rm) : sel.delete(c.dataset.rm); }); return conta(); }
+    const m = e.target.dataset.rm; if (m) { e.target.checked ? sel.add(m) : sel.delete(m); conta(); }
+  });
+  box.querySelector('[data-rrok]').onclick = ev => { if (!sel.size) return toast('Nenhum marcado.', true);
+    ocupado(ev.currentTarget, async () => { const r = await call('reativarColaboradores', { matriculas: [...sel] }); fecharModal(true); await carregar(); toast(`${r.reativados} colaborador${r.reativados === 1 ? '' : 'es'} reativado${r.reativados === 1 ? '' : 's'}.`); }); };
+  conta();
+}
 /** Mensagem do link para o WhatsApp. */
 const msgLink = (nome, link) => { const p = String(nome).split(' ')[0], nm = p.charAt(0) + p.slice(1).toLowerCase(); return `Olá, ${nm}! Este é o link da sua escala de trabalho na Revalle. Pelo link você vê seus dias de trabalho, folgas, férias e feriados. É pessoal, não repasse:\n${link}`; };
 /** Links da escala para vários colaboradores: cria quem não tem e mostra a lista para enviar. */
@@ -2241,6 +2258,7 @@ function vImportar(m) {
     S.imp = null;
     toast(`Importado (${esc(r.revendas.join(', '))}): <b>${r.novos}</b> novos incluídos · ${r.jaExistiam} já estavam cadastrados. Agora complete o <b>Cadastro</b>.`);
     S.view = 'cadastro'; await carregar();
+    if (r.removidos && r.removidos.length) reativarRemovidos(r.removidos);
   });
 }
 

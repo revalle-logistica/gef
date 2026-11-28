@@ -124,13 +124,18 @@ function importar_(u, d) {
     const atual = ler_('Colaboradores'), mapa = {};
     atual.forEach(function (c) { mapa[c.matricula] = c; });
     const grupos = uniq_(rows.map(function (r) { return String(r.revenda || '').trim() + '|' + areaSetor(r.setor); }));
-    const vistos = {}, res = { novos: 0, jaExistiam: 0, desligados: 0 };
+    const vistos = {}, res = { novos: 0, jaExistiam: 0, desligados: 0, removidos: [] };
     const quando = agora_();
     rows.forEach(function (r) {
       const m = String(r.matricula || '').trim();
       if (!m || !String(r.nome || '').trim() || vistos[m]) return;
       vistos[m] = true;
-      if (mapa[m]) { res.jaExistiam++; return; } // já importado antes: não altera (exclusão é manual)
+      if (mapa[m]) { // já importado antes: não altera (exclusão é manual), mas avisa quem foi removido e continua na planilha
+        res.jaExistiam++;
+        const c = mapa[m];
+        if (c.ativo === 'N' && !/demit|deslig|rescis/i.test(String(r.situacao || ''))) res.removidos.push({ matricula: m, nome: c.nome, funcao: c.funcao, revenda: c.revenda, setor: c.setor, quando: c.atualizadoEm });
+        return;
+      }
       if (/demit|deslig|rescis/i.test(String(r.situacao || ''))) { res.desligados++; return; }
       mapa[m] = {
         matricula: m, nome: String(r.nome).trim(), funcao: String(r.funcao || '').trim(), revenda: String(r.revenda || '').trim(),
@@ -149,6 +154,19 @@ function importar_(u, d) {
 }
 
 /** Remove (inativa) colaboradores manualmente. A escala e o histórico ficam guardados. */
+/** Traz de volta colaboradores removidos (escalas, férias e cadastro continuam guardados). */
+function reativarColaboradores_(u, d) {
+  const mats = (d.matriculas || []).map(String);
+  if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
+  return comLock_(function () {
+    const todos = ler_('Colaboradores'), quando = agora_();
+    let n = 0;
+    todos.forEach(function (c) { if (mats.indexOf(c.matricula) >= 0 && c.ativo === 'N') { c.ativo = 'S'; c.atualizadoEm = quando; n++; } });
+    gravarTudo_('Colaboradores', todos);
+    log_(u, mats.length === 1 ? mats[0] : '', 'reativou colaboradores', n + ': ' + mats.join(', '));
+    return { reativados: n };
+  });
+}
 function removerColaboradores_(u, d) {
   const mats = (d.matriculas || []).map(String);
   if (!mats.length) throw new Error('Selecione ao menos um colaborador.');
