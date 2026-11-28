@@ -425,7 +425,7 @@ function feriasSolicitar_(u, d) {
       status: 'PENDENTE', pedidoPor: u.nome, pedidoPorLogin: u.login, pedidoEm: quando, decididoPor: '', decididoEm: '', obsDecisao: '' };
     lst.push(s); gravarTudo_('FeriasSolic', lst);
     log_(u, a.c.matricula, 'férias: pediu alteração', s.de + ' → ' + s.para + ' · chamado ' + chamado + ' · ' + motivo);
-    try { avisaSolic_(s, 'nova'); } catch (e) { /* aviso é extra */ }
+    // o DP é avisado pelo chamado aberto no sistema dele (não por e-mail do GEF)
     return { id: s.id, periodo: s.periodo, matricula: s.matricula, nome: s.nome, de: de, para: para, motivo: motivo, chamado: chamado, status: s.status, pedidoPor: s.pedidoPor, pedidoEm: s.pedidoEm };
   });
 }
