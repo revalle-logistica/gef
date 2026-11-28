@@ -1,29 +1,40 @@
 <!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap">
 <style>*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#F5F6FA;color:#14213D}
-header{background:#0B1F4D;color:#F5F6FA;padding:20px 20px 24px}header small{color:#F2A93B;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px}header h1{font-family:'Space Grotesk',Arial;font-size:26px;margin:6px 0 0}
-main{max-width:560px;margin:0 auto;padding:16px}
-.q{background:#fff;border:1px solid #E1E5EE;border-radius:18px;padding:18px;margin:14px 0}.q h2{font-family:'Space Grotesk',Arial;font-size:20px;margin:0 0 14px}
+header{background:#0B1F4D;color:#F5F6FA;padding:20px 20px 24px}header small{color:#F2A93B;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px}header h1{font-family:'Space Grotesk',Arial;font-size:24px;margin:6px 0 0}
+main{max-width:560px;margin:0 auto;padding:12px 16px}
+.q{background:#fff;border:1px solid #E1E5EE;border-radius:18px;padding:18px;margin:14px 0;animation:in .4s}@keyframes in{from{opacity:0;transform:translateY(12px)}}
+.q h2{font-family:'Space Grotesk',Arial;font-size:20px;margin:0 0 14px}.n{color:#C47F12;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .q button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:2px solid #DDE3EF;background:#F9FAFC;border-radius:14px;padding:14px;margin:8px 0;font:600 17px Inter,Arial;color:#14213D;cursor:pointer}
 .q button b{background:#0B1F4D;color:#F2A93B;border-radius:8px;min-width:30px;height:30px;display:grid;place-items:center;font-family:'Space Grotesk'}
-.q button.on{border-color:#F2A93B;background:#FFF5E1}.q.done button:not(.on){opacity:.45}
-.ok{color:#1E6B3A;font-weight:700;margin-top:8px}.er{color:#A3261B;font-weight:600;margin-top:8px}p.hint{color:#4A5568;font-size:14px;text-align:center}
+.q button.on{border-color:#F2A93B;background:#FFF5E1}.q.done button:not(.on){opacity:.45}.q.done button.certa{opacity:1;border-color:#1E6B3A;background:#E7F5EC}
+.ok{color:#1E6B3A;font-weight:700;margin-top:8px}.er{color:#A3261B;font-weight:600;margin-top:8px}
+.esp{text-align:center;color:#4A5568;padding:22px 10px;font-size:15px}.esp i{display:inline-block;width:10px;height:10px;border-radius:50%;background:#F2A93B;margin-right:8px;animation:pi 1.2s infinite}@keyframes pi{50%{opacity:.25}}
 </style><title>Enquete · Escala 5x2 · Revalle</title></head><body>
-<header><small>Revalle · Escala 5x2</small><h1>Responda e veja o resultado ao vivo na tela</h1></header>
-<main id="m"></main><p class="hint">Uma resposta por pergunta, por celular. Anônima.</p>
+<header><small>Revalle · Escala 5x2</small><h1>Responda e veja o resultado ao vivo na tela</h1><p id="sub" style="margin:8px 0 0;color:#B9C4DE"></p></header>
+<main id="m"></main><div class="esp" id="esp"><i></i>A próxima pergunta aparece aqui sozinha. Deixe esta página aberta.</div>
 <script>
-const URL='https://krlkencgakuaisyrxeho.supabase.co',KEY='sb_publishable_YjqzrA164cNIDlBS11j06g_ewK9PJk6',EV='reuniao-5x2',P=[{"t":"O que mais vai mudar na sua semana com a escala 5x2?","o":["Mais tempo com a família","Mais descanso e menos cansaço","Resolver coisas pessoais sem faltar","Ainda estou me adaptando"]},
-{"t":"Para você, a segunda folga vai ser principalmente para:","o":["Família","Descanso e saúde","Estudos","Lazer e outros"]}];
+const URL='https://krlkencgakuaisyrxeho.supabase.co',KEY='sb_publishable_YjqzrA164cNIDlBS11j06g_ewK9PJk6',CFG={"dist": {"nome": "Distribuição", "sess": null, "P": [{"t": "O que mais vai mudar na sua semana com a escala 5x2?", "o": ["Mais tempo com a família", "Mais descanso e menos cansaço", "Resolver coisas pessoais sem faltar", "Ainda estou me adaptando"]}, {"t": "Para você, a segunda folga vai ser principalmente para:", "o": ["Família", "Descanso e saúde", "Estudos", "Lazer e outros"]}, {"t": "Trabalhar 5 dias, com o dia um pouco mais longo. O que você acha?", "o": ["Prefiro assim", "Tanto faz", "Vou precisar me adaptar", "Preferia como era antes"]}, {"t": "Quiz: quantas horas extras, no máximo, por dia agora, inclusive para motorista e ajudante?", "o": ["Até 1 hora", "Até 2 horas", "Até 4 horas", "Não tem limite"], "c": 1}, {"t": "Quiz: faltou sem justificativa. O que acontece?", "o": ["Nada, se avisar depois", "Perde só o dia", "Perde o dia e o descanso remunerado", "Compensa no banco de horas"], "c": 2}, {"t": "Na sua visão, qual vai ser o maior desafio da 5x2 na entrega?", "o": ["Cobrir a folga de motorista e ajudante", "Manter o padrão das entregas", "Rota que cabe no dia, sem esticar", "Manter a escala atualizada"]}, {"t": "Quiz: viu um erro na sua escala. O que fazer?", "o": ["Avisar o supervisor na hora", "Esperar o dia e ver", "Trocar com um colega por conta própria", "Não fazer nada"], "c": 0}, {"t": "Como ficou a explicação de hoje para você?", "o": ["Ficou tudo claro", "Ficou claro, tenho poucas dúvidas", "Ainda tenho muitas dúvidas"]}]}, "arm": {"nome": "Armazém", "sess": ["Turnos 1 e 2", "Turno 3"], "P": [{"t": "O que mais vai mudar na sua semana com a escala 5x2?", "o": ["Mais tempo com a família", "Mais descanso e menos cansaço", "Resolver coisas pessoais sem faltar", "Ainda estou me adaptando"]}, {"t": "Para você, a segunda folga vai ser principalmente para:", "o": ["Família", "Descanso e saúde", "Estudos", "Lazer e outros"]}, {"t": "Trabalhar 5 dias, com o dia um pouco mais longo. O que você acha?", "o": ["Prefiro assim", "Tanto faz", "Vou precisar me adaptar", "Preferia como era antes"]}, {"t": "Quiz: quantas horas extras, no máximo, por dia na Revalle agora?", "o": ["Até 1 hora", "Até 2 horas", "Até 4 horas", "Não tem limite"], "c": 1}, {"t": "Quiz: faltou sem justificativa. O que acontece?", "o": ["Nada, se avisar depois", "Perde só o dia", "Perde o dia e o descanso remunerado", "Compensa no banco de horas"], "c": 2}, {"t": "Na sua visão, qual vai ser o maior desafio da 5x2 no armazém?", "o": ["Cobrir as folgas dentro do turno", "O rodízio entre turnos", "Manter o ritmo de separação e carregamento", "Manter a escala atualizada"]}, {"t": "Quiz: mudou de turno no rodízio. Qual o descanso mínimo entre a saída de um dia e a entrada do outro?", "o": ["8 horas", "11 horas", "12 horas", "Não tem mínimo"], "c": 1}, {"t": "Quiz: viu um erro na sua escala. O que fazer?", "o": ["Avisar o supervisor na hora", "Esperar o dia e ver", "Trocar com um colega por conta própria", "Não fazer nada"], "c": 0}, {"t": "Como ficou a explicação de hoje para você?", "o": ["Ficou tudo claro", "Ficou claro, tenho poucas dúvidas", "Ainda tenho muitas dúvidas"]}]}},L='ABCDE';
+let EV=(new URLSearchParams(location.search).get('e')||'dist').toLowerCase();if(!CFG[EV])EV='dist';const P=CFG[EV].P;
+const H={apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json'};
+const rpc=(f,b)=>fetch(URL+'/rest/v1/rpc/'+f,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.ok?r.json():null).catch(()=>null);
+
 let dev=null;try{dev=localStorage.getItem('enq_dev');if(!dev){dev=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now()).replace(/-/g,'');localStorage.setItem('enq_dev',dev);}}catch(e){dev=String(Math.random()).slice(2)+Date.now();}
-const feito=k=>{try{return localStorage.getItem('enq_'+EV+'_'+k)}catch(e){return null}};
-const m=document.getElementById('m');
-m.innerHTML=P.map((q,i)=>`<section class="q" id="q${i}"><h2>${i+1}. ${q.t}</h2>${q.o.map((o,j)=>`<button data-q="${i}" data-o="${'ABCD'[j]}"><b>${'ABCD'[j]}</b>${o}</button>`).join('')}<div class="st"></div></section>`).join('');
-P.forEach((q,i)=>{const v=feito(i);if(v)marca(i,v,'✓ Resposta registrada. Obrigado!');});
-function marca(i,v,msg,erro){const s=document.getElementById('q'+i);s.classList.add('done');s.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.o===v));s.querySelector('.st').innerHTML=`<div class="${erro?'er':'ok'}">${msg}</div>`;}
-m.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const i=+b.dataset.q,v=b.dataset.o;if(feito(i))return;
- b.disabled=true;
- try{const r=await fetch(URL+'/rest/v1/enquete_voto',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({evento:EV,pergunta:i+1,opcao:v,dispositivo:dev})});
-  if(r.ok||r.status===409){try{localStorage.setItem('enq_'+EV+'_'+i,v)}catch(e){}marca(i,v,r.ok?'✓ Resposta registrada. Obrigado!':'Você já respondeu esta pergunta.');}
+const feito=k=>{try{return localStorage.getItem('enq_'+EV+'_'+sess+'_'+k)}catch(e){return null}};
+const m=document.getElementById('m');let aberta=0,revela=[],sess=0;
+function sec(i){const q=P[i];return `<section class="q" id="q${i}"><div class="n">Pergunta ${i+1} de ${P.length}</div><h2>${q.t}</h2>${q.o.map((o,j)=>`<button data-q="${i}" data-o="${L[j]}"><b>${L[j]}</b>${o}</button>`).join('')}<div class="st"></div></section>`;}
+function marca(i,v,msg,erro){const s=document.getElementById('q'+i);if(!s)return;s.classList.add('done');s.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.o===v));s.querySelector('.st').innerHTML=`<div class="${erro?'er':'ok'}">${msg}</div>`;certa(i);}
+function certa(i){const q=P[i];if(q.c==null||!revela.includes(i+1))return;const s=document.getElementById('q'+i);if(!s)return;s.querySelectorAll('button').forEach(b=>b.classList.toggle('certa',b.dataset.o===L[q.c]));
+ const v=feito(i);if(v&&!s.querySelector('.gab'))s.querySelector('.st').insertAdjacentHTML('beforeend',`<div class="gab ${v===L[q.c]?'ok':'er'}">${v===L[q.c]?'🎉 Você acertou!':'Resposta certa: '+L[q.c]+') '+q.o[q.c]}</div>`);}
+async function estado(){const d=await rpc('enquete_estado',{p_evento:EV});if(!d||!d[0])return;if(d[0].sessao!==sess){sess=d[0].sessao;aberta=0;m.innerHTML='';}const a=Math.min(d[0].aberta,P.length);revela=d[0].revela||[];
+ let nova=null;for(let i=aberta;i<a;i++){m.insertAdjacentHTML('afterbegin',sec(i));const v=feito(i);if(v)marca(i,v,'✓ Resposta registrada. Obrigado!');nova=i;}
+ aberta=Math.max(aberta,a);for(let i=0;i<aberta;i++)certa(i);
+ document.getElementById('esp').style.display=aberta>=P.length?'none':'';if(nova!==null&&aberta>1)window.scrollTo({top:0,behavior:'smooth'});}
+document.getElementById('sub').textContent='Conversa com o time · '+CFG[EV].nome;
+estado();setInterval(()=>{if(!document.hidden)estado()},6000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)estado()});
+m.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const i=+b.dataset.q,v=b.dataset.o;if(feito(i))return;b.disabled=true;
+ try{const r=await fetch(URL+'/rest/v1/enquete_voto',{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({evento:EV,pergunta:i+1,opcao:v,dispositivo:dev,sessao:sess})});
+  if(r.ok||r.status===409){try{localStorage.setItem('enq_'+EV+'_'+sess+'_'+i,v)}catch(e){}marca(i,v,r.ok?'✓ Resposta registrada. Obrigado!':'Você já respondeu esta pergunta.');}
   else{b.disabled=false;document.querySelector('#q'+i+' .st').innerHTML='<div class="er">Não consegui registrar. Tente de novo.</div>';}
  }catch(err){b.disabled=false;document.querySelector('#q'+i+' .st').innerHTML='<div class="er">Sem conexão. Tente de novo.</div>';}};
 </script></body></html>
